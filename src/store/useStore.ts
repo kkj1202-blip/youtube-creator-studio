@@ -1,0 +1,638 @@
+'use client';
+
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
+import { v4 as uuidv4 } from 'uuid';
+import type {
+  Project,
+  Scene,
+  Settings,
+  Template,
+  ProjectVersion,
+  AspectRatio,
+  ImageStyle,
+  TransitionType,
+  KenBurnsEffect,
+  MotionEffect,
+  EmotionTag,
+  SubtitleStyle,
+  ElevenLabsAccount,
+  RenderSettings,
+  TTSEngine,
+} from '@/types';
+
+// ==================== 기본값 ====================
+
+const defaultSubtitleStyle: SubtitleStyle = {
+  fontFamily: 'Noto Sans KR',
+  fontSize: 24,
+  fontColor: '#ffffff',
+  backgroundColor: '#000000',
+  backgroundOpacity: 0.7,
+  position: 'bottom',
+  bold: true,
+  italic: false,
+  outline: true,
+  outlineColor: '#000000',
+};
+
+const defaultSettings: Settings = {
+  kieApiKey: '',
+  elevenLabsAccounts: [
+    { name: '계정 1', apiKey: '', voices: [] },
+    { name: '계정 2', apiKey: '', voices: [] },
+  ],
+  youtubeApiKey: '',
+  defaultAspectRatio: '16:9',
+  defaultImageStyle: 'realistic',
+  defaultVoiceId: undefined,
+  autoSaveInterval: 30,
+  maxVersionHistory: 10,
+};
+
+const defaultRenderSettings: RenderSettings = {
+  quality: 'high',
+  resolution: '1080p',
+  fps: 30,
+  stabilization: true,
+  denoiseAudio: true,
+  denoiseVideo: false,
+  sharpness: 50,
+  bitrate: 'high',
+};
+
+const createDefaultScene = (order: number, script: string = ''): Scene => ({
+  id: uuidv4(),
+  order,
+  script,
+  imageSource: 'none',
+  audioGenerated: false,
+  rendered: false,
+  voiceSpeed: 1.0,
+  emotion: 'normal',
+  ttsEngine: 'edge-tts', // 기본값: 무료 Edge TTS
+  postAudioGap: 0.5,
+  transition: 'fade',
+  transitionDuration: 0.5,
+  kenBurns: 'zoom-in',
+  kenBurnsSpeed: 1.0,
+  kenBurnsZoom: 20,
+  motionEffect: 'none',
+  motionIntensity: 1.0,
+  combineEffects: true, // 기본: 효과 조합 사용
+  subtitleEnabled: true,
+  isProcessing: false,
+});
+
+const createDefaultProject = (name: string = '새 프로젝트'): Project => ({
+  id: uuidv4(),
+  name,
+  createdAt: new Date().toISOString(),
+  updatedAt: new Date().toISOString(),
+  aspectRatio: '16:9',
+  imageStyle: 'realistic',
+  scenes: [],
+  defaultVoiceSpeed: 1.0,
+  defaultEmotion: 'normal',
+  elevenLabsAccountIndex: 0,
+  defaultTransition: 'fade',
+  defaultKenBurns: 'zoom-in',
+  defaultKenBurnsSpeed: 1.0,
+  defaultKenBurnsZoom: 20,
+  defaultMotionEffect: 'none',
+  defaultMotionIntensity: 1.0,
+  defaultCombineEffects: true,
+  defaultPostAudioGap: 0.5,
+  defaultTTSEngine: 'edge-tts',
+  bgmEnabled: false,
+  bgmVolume: 0.3,
+  subtitleEnabled: true,
+  subtitleStyle: defaultSubtitleStyle,
+  renderSettings: defaultRenderSettings,
+  renderQuality: 'high',
+});
+
+// ==================== 스토어 타입 ====================
+
+interface AppState {
+  // 현재 프로젝트
+  currentProject: Project | null;
+  
+  // 저장된 프로젝트 목록
+  projects: Project[];
+  
+  // 템플릿
+  templates: Template[];
+  
+  // 설정
+  settings: Settings;
+  
+  // 버전 히스토리
+  versionHistory: ProjectVersion[];
+  
+  // UI 상태
+  activeSceneId: string | null;
+  sidebarOpen: boolean;
+  currentTab: 'editor' | 'preview' | 'settings';
+  
+  // 자동 저장 타이머
+  lastSavedAt: string | null;
+  
+  // ==================== 프로젝트 액션 ====================
+  createProject: (name?: string) => void;
+  loadProject: (projectId: string) => void;
+  saveProject: () => void;
+  deleteProject: (projectId: string) => void;
+  updateProject: (updates: Partial<Project>) => void;
+  duplicateProject: (projectId: string) => void;
+  
+  // ==================== 씬 액션 ====================
+  parseScriptToScenes: (script: string) => void;
+  addScene: (afterSceneId?: string) => void;
+  updateScene: (sceneId: string, updates: Partial<Scene>) => void;
+  deleteScene: (sceneId: string) => void;
+  duplicateScene: (sceneId: string) => void;
+  reorderScenes: (fromIndex: number, toIndex: number) => void;
+  setActiveScene: (sceneId: string | null) => void;
+  
+  // ==================== 일괄 작업 액션 ====================
+  generateAllImages: () => Promise<void>;
+  generateAllAudio: () => Promise<void>;
+  renderAllScenes: () => Promise<void>;
+  applyToAllScenes: (updates: Partial<Scene>) => void;
+  
+  // ==================== 템플릿 액션 ====================
+  saveAsTemplate: (name: string, description?: string) => void;
+  loadTemplate: (templateId: string) => void;
+  deleteTemplate: (templateId: string) => void;
+  
+  // ==================== 설정 액션 ====================
+  updateSettings: (updates: Partial<Settings>) => void;
+  updateElevenLabsAccount: (index: number, account: Partial<ElevenLabsAccount>) => void;
+  
+  // ==================== 버전 히스토리 액션 ====================
+  saveVersion: () => void;
+  restoreVersion: (versionId: string) => void;
+  clearOldVersions: () => void;
+  
+  // ==================== UI 액션 ====================
+  setSidebarOpen: (open: boolean) => void;
+  setCurrentTab: (tab: 'editor' | 'preview' | 'settings') => void;
+}
+
+// ==================== 스토어 구현 ====================
+
+export const useStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      // 초기 상태
+      currentProject: null,
+      projects: [],
+      templates: [],
+      settings: defaultSettings,
+      versionHistory: [],
+      activeSceneId: null,
+      sidebarOpen: true,
+      currentTab: 'editor',
+      lastSavedAt: null,
+
+      // ==================== 프로젝트 액션 ====================
+      
+      createProject: (name) => {
+        const newProject = createDefaultProject(name);
+        set((state) => ({
+          currentProject: newProject,
+          projects: [...state.projects, newProject],
+          activeSceneId: null,
+        }));
+      },
+
+      loadProject: (projectId) => {
+        const { projects } = get();
+        const project = projects.find((p) => p.id === projectId);
+        if (project) {
+          set({
+            currentProject: { ...project },
+            activeSceneId: project.scenes[0]?.id || null,
+          });
+        }
+      },
+
+      saveProject: () => {
+        const { currentProject, projects } = get();
+        if (!currentProject) return;
+
+        const updatedProject = {
+          ...currentProject,
+          updatedAt: new Date().toISOString(),
+        };
+
+        set((state) => ({
+          currentProject: updatedProject,
+          projects: state.projects.map((p) =>
+            p.id === updatedProject.id ? updatedProject : p
+          ),
+          lastSavedAt: new Date().toISOString(),
+        }));
+
+        // 버전 저장
+        get().saveVersion();
+      },
+
+      deleteProject: (projectId) => {
+        set((state) => ({
+          projects: state.projects.filter((p) => p.id !== projectId),
+          currentProject:
+            state.currentProject?.id === projectId ? null : state.currentProject,
+          versionHistory: state.versionHistory.filter(
+            (v) => v.projectId !== projectId
+          ),
+        }));
+      },
+
+      updateProject: (updates) => {
+        set((state) => ({
+          currentProject: state.currentProject
+            ? { ...state.currentProject, ...updates, updatedAt: new Date().toISOString() }
+            : null,
+        }));
+      },
+
+      duplicateProject: (projectId) => {
+        const { projects } = get();
+        const project = projects.find((p) => p.id === projectId);
+        if (!project) return;
+
+        const duplicated: Project = {
+          ...project,
+          id: uuidv4(),
+          name: `${project.name} (복사본)`,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          scenes: project.scenes.map((s) => ({ ...s, id: uuidv4() })),
+        };
+
+        set((state) => ({
+          projects: [...state.projects, duplicated],
+        }));
+      },
+
+      // ==================== 씬 액션 ====================
+
+      parseScriptToScenes: (script) => {
+        const lines = script.split('\n\n').filter((line) => line.trim());
+        const scenes = lines.map((line, index) =>
+          createDefaultScene(index, line.trim())
+        );
+
+        set((state) => ({
+          currentProject: state.currentProject
+            ? {
+                ...state.currentProject,
+                scenes,
+                updatedAt: new Date().toISOString(),
+              }
+            : null,
+          activeSceneId: scenes[0]?.id || null,
+        }));
+      },
+
+      addScene: (afterSceneId) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+
+          const scenes = [...state.currentProject.scenes];
+          let insertIndex = scenes.length;
+
+          if (afterSceneId) {
+            const afterIndex = scenes.findIndex((s) => s.id === afterSceneId);
+            if (afterIndex !== -1) {
+              insertIndex = afterIndex + 1;
+            }
+          }
+
+          const newScene = createDefaultScene(insertIndex);
+          scenes.splice(insertIndex, 0, newScene);
+
+          // 순서 재정렬
+          const reorderedScenes = scenes.map((s, i) => ({ ...s, order: i }));
+
+          return {
+            currentProject: {
+              ...state.currentProject,
+              scenes: reorderedScenes,
+              updatedAt: new Date().toISOString(),
+            },
+            activeSceneId: newScene.id,
+          };
+        });
+      },
+
+      updateScene: (sceneId, updates) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+
+          const scenes = state.currentProject.scenes.map((s) =>
+            s.id === sceneId ? { ...s, ...updates } : s
+          );
+
+          return {
+            currentProject: {
+              ...state.currentProject,
+              scenes,
+              updatedAt: new Date().toISOString(),
+            },
+          };
+        });
+      },
+
+      deleteScene: (sceneId) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+
+          const scenes = state.currentProject.scenes
+            .filter((s) => s.id !== sceneId)
+            .map((s, i) => ({ ...s, order: i }));
+
+          const newActiveId =
+            state.activeSceneId === sceneId
+              ? scenes[0]?.id || null
+              : state.activeSceneId;
+
+          return {
+            currentProject: {
+              ...state.currentProject,
+              scenes,
+              updatedAt: new Date().toISOString(),
+            },
+            activeSceneId: newActiveId,
+          };
+        });
+      },
+
+      duplicateScene: (sceneId) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+
+          const sceneIndex = state.currentProject.scenes.findIndex(
+            (s) => s.id === sceneId
+          );
+          if (sceneIndex === -1) return state;
+
+          const originalScene = state.currentProject.scenes[sceneIndex];
+          const duplicatedScene: Scene = {
+            ...originalScene,
+            id: uuidv4(),
+            audioUrl: undefined,
+            audioGenerated: false,
+            videoUrl: undefined,
+            rendered: false,
+            isProcessing: false,
+            error: undefined,
+          };
+
+          const scenes = [...state.currentProject.scenes];
+          scenes.splice(sceneIndex + 1, 0, duplicatedScene);
+
+          const reorderedScenes = scenes.map((s, i) => ({ ...s, order: i }));
+
+          return {
+            currentProject: {
+              ...state.currentProject,
+              scenes: reorderedScenes,
+              updatedAt: new Date().toISOString(),
+            },
+            activeSceneId: duplicatedScene.id,
+          };
+        });
+      },
+
+      reorderScenes: (fromIndex, toIndex) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+
+          const scenes = [...state.currentProject.scenes];
+          const [movedScene] = scenes.splice(fromIndex, 1);
+          scenes.splice(toIndex, 0, movedScene);
+
+          const reorderedScenes = scenes.map((s, i) => ({ ...s, order: i }));
+
+          return {
+            currentProject: {
+              ...state.currentProject,
+              scenes: reorderedScenes,
+              updatedAt: new Date().toISOString(),
+            },
+          };
+        });
+      },
+
+      setActiveScene: (sceneId) => {
+        set({ activeSceneId: sceneId });
+      },
+
+      // ==================== 일괄 작업 액션 ====================
+
+      generateAllImages: async () => {
+        // TODO: 실제 API 연동
+        console.log('Generating all images...');
+      },
+
+      generateAllAudio: async () => {
+        // TODO: 실제 API 연동
+        console.log('Generating all audio...');
+      },
+
+      renderAllScenes: async () => {
+        // TODO: 실제 렌더링 로직
+        console.log('Rendering all scenes...');
+      },
+
+      applyToAllScenes: (updates) => {
+        set((state) => {
+          if (!state.currentProject) return state;
+
+          const scenes = state.currentProject.scenes.map((s) => ({
+            ...s,
+            ...updates,
+          }));
+
+          return {
+            currentProject: {
+              ...state.currentProject,
+              scenes,
+              updatedAt: new Date().toISOString(),
+            },
+          };
+        });
+      },
+
+      // ==================== 템플릿 액션 ====================
+
+      saveAsTemplate: (name, description) => {
+        const { currentProject } = get();
+        if (!currentProject) return;
+
+        const template: Template = {
+          id: uuidv4(),
+          name,
+          description,
+          createdAt: new Date().toISOString(),
+          aspectRatio: currentProject.aspectRatio,
+          imageStyle: currentProject.imageStyle,
+          customStylePrompt: currentProject.customStylePrompt,
+          defaultVoiceId: currentProject.defaultVoiceId,
+          defaultVoiceSpeed: currentProject.defaultVoiceSpeed,
+          defaultEmotion: currentProject.defaultEmotion,
+          defaultTransition: currentProject.defaultTransition,
+          defaultKenBurns: currentProject.defaultKenBurns,
+          defaultPostAudioGap: currentProject.defaultPostAudioGap,
+          bgmEnabled: currentProject.bgmEnabled,
+          subtitleEnabled: currentProject.subtitleEnabled,
+          subtitleStyle: currentProject.subtitleStyle,
+        };
+
+        set((state) => ({
+          templates: [...state.templates, template],
+        }));
+      },
+
+      loadTemplate: (templateId) => {
+        const { templates, currentProject } = get();
+        const template = templates.find((t) => t.id === templateId);
+        if (!template || !currentProject) return;
+
+        set((state) => ({
+          currentProject: {
+            ...currentProject,
+            aspectRatio: template.aspectRatio,
+            imageStyle: template.imageStyle,
+            customStylePrompt: template.customStylePrompt,
+            defaultVoiceId: template.defaultVoiceId,
+            defaultVoiceSpeed: template.defaultVoiceSpeed,
+            defaultEmotion: template.defaultEmotion,
+            defaultTransition: template.defaultTransition,
+            defaultKenBurns: template.defaultKenBurns,
+            defaultPostAudioGap: template.defaultPostAudioGap,
+            bgmEnabled: template.bgmEnabled,
+            subtitleEnabled: template.subtitleEnabled,
+            subtitleStyle: template.subtitleStyle,
+            updatedAt: new Date().toISOString(),
+          },
+        }));
+      },
+
+      deleteTemplate: (templateId) => {
+        set((state) => ({
+          templates: state.templates.filter((t) => t.id !== templateId),
+        }));
+      },
+
+      // ==================== 설정 액션 ====================
+
+      updateSettings: (updates) => {
+        set((state) => ({
+          settings: { ...state.settings, ...updates },
+        }));
+      },
+
+      updateElevenLabsAccount: (index, account) => {
+        set((state) => {
+          const accounts = [...state.settings.elevenLabsAccounts];
+          accounts[index] = { ...accounts[index], ...account };
+          return {
+            settings: { ...state.settings, elevenLabsAccounts: accounts },
+          };
+        });
+      },
+
+      // ==================== 버전 히스토리 액션 ====================
+
+      saveVersion: () => {
+        const { currentProject, versionHistory, settings } = get();
+        if (!currentProject) return;
+
+        const version: ProjectVersion = {
+          id: uuidv4(),
+          projectId: currentProject.id,
+          savedAt: new Date().toISOString(),
+          data: { ...currentProject },
+        };
+
+        // 같은 프로젝트의 버전만 필터링
+        const projectVersions = versionHistory.filter(
+          (v) => v.projectId === currentProject.id
+        );
+
+        // 최대 버전 수 초과 시 오래된 것 제거
+        const otherVersions = versionHistory.filter(
+          (v) => v.projectId !== currentProject.id
+        );
+
+        let updatedProjectVersions = [...projectVersions, version];
+        if (updatedProjectVersions.length > settings.maxVersionHistory) {
+          updatedProjectVersions = updatedProjectVersions.slice(
+            -settings.maxVersionHistory
+          );
+        }
+
+        set({
+          versionHistory: [...otherVersions, ...updatedProjectVersions],
+        });
+      },
+
+      restoreVersion: (versionId) => {
+        const { versionHistory } = get();
+        const version = versionHistory.find((v) => v.id === versionId);
+        if (!version) return;
+
+        set((state) => ({
+          currentProject: { ...version.data },
+          projects: state.projects.map((p) =>
+            p.id === version.data.id ? version.data : p
+          ),
+        }));
+      },
+
+      clearOldVersions: () => {
+        const { currentProject, settings } = get();
+        if (!currentProject) return;
+
+        set((state) => {
+          const projectVersions = state.versionHistory
+            .filter((v) => v.projectId === currentProject.id)
+            .slice(-settings.maxVersionHistory);
+
+          const otherVersions = state.versionHistory.filter(
+            (v) => v.projectId !== currentProject.id
+          );
+
+          return {
+            versionHistory: [...otherVersions, ...projectVersions],
+          };
+        });
+      },
+
+      // ==================== UI 액션 ====================
+
+      setSidebarOpen: (open) => {
+        set({ sidebarOpen: open });
+      },
+
+      setCurrentTab: (tab) => {
+        set({ currentTab: tab });
+      },
+    }),
+    {
+      name: 'youtube-creator-studio',
+      partialize: (state) => ({
+        projects: state.projects,
+        templates: state.templates,
+        settings: state.settings,
+        versionHistory: state.versionHistory,
+      }),
+    }
+  )
+);
+
+export default useStore;

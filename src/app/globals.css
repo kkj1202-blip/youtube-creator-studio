@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0a0a0f;
+  --foreground: #f0f0f5;
+  --card: #12121a;
+  --card-hover: #1a1a25;
+  --border: #2a2a3a;
+  --primary: #8b5cf6;
+  --primary-hover: #7c3aed;
+  --secondary: #3b82f6;
+  --accent: #06b6d4;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+  --muted: #6b7280;
+  --muted-foreground: #9ca3af;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-hover: var(--card-hover);
+  --color-border: var(--border);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-secondary: var(--secondary);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-error: var(--error);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  min-height: 100vh;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--card);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
+/* Button Base Styles */
+.btn {
+  @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply bg-primary hover:bg-primary-hover text-white;
+}
+
+.btn-secondary {
+  @apply bg-secondary hover:bg-secondary/80 text-white;
+}
+
+.btn-ghost {
+  @apply bg-transparent hover:bg-card-hover text-foreground border border-border;
+}
+
+.btn-danger {
+  @apply bg-error hover:bg-error/80 text-white;
+}
+
+/* Card Styles */
+.card {
+  @apply bg-card border border-border rounded-xl p-4;
+}
+
+.card-hover {
+  @apply hover:bg-card-hover hover:border-primary/50 transition-all duration-200;
+}
+
+/* Input Styles */
+.input {
+  @apply w-full bg-card border border-border rounded-lg px-4 py-2.5 text-foreground placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all;
+}
+
+.textarea {
+  @apply w-full bg-card border border-border rounded-lg px-4 py-3 text-foreground placeholder:text-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all resize-none;
+}
+
+.select {
+  @apply w-full bg-card border border-border rounded-lg px-4 py-2.5 text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all appearance-none cursor-pointer;
+}
+
+/* Label */
+.label {
+  @apply block text-sm font-medium text-muted-foreground mb-1.5;
+}
+
+/* Badge */
+.badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+}
+
+.badge-primary {
+  @apply bg-primary/20 text-primary;
+}
+
+.badge-success {
+  @apply bg-success/20 text-success;
+}
+
+.badge-warning {
+  @apply bg-warning/20 text-warning;
+}
+
+.badge-error {
+  @apply bg-error/20 text-error;
+}
+
+/* Tooltip */
+.tooltip {
+  @apply relative;
+}
+
+.tooltip::after {
+  content: attr(data-tooltip);
+  @apply absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-foreground text-background text-xs rounded opacity-0 pointer-events-none transition-opacity whitespace-nowrap;
+}
+
+.tooltip:hover::after {
+  @apply opacity-100;
+}
+
+/* Animation */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideIn {
+  from { opacity: 0; transform: translateX(-20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 5px var(--primary); }
+  50% { box-shadow: 0 0 20px var(--primary); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideIn 0.3s ease-out;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Progress Bar */
+.progress-bar {
+  @apply h-2 bg-border rounded-full overflow-hidden;
+}
+
+.progress-bar-fill {
+  @apply h-full bg-gradient-to-r from-primary to-secondary transition-all duration-300;
+}
+
+/* Scene Card */
+.scene-card {
+  @apply bg-card border border-border rounded-xl p-4 transition-all duration-200;
+}
+
+.scene-card.active {
+  @apply border-primary bg-card-hover;
+}
+
+.scene-card.dragging {
+  @apply opacity-50 scale-95;
+}
+
+/* Toggle Switch */
+.toggle {
+  @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer;
+}
+
+.toggle-checked {
+  @apply bg-primary;
+}
+
+.toggle-unchecked {
+  @apply bg-border;
+}
+
+.toggle-thumb {
+  @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform;
+}
+
+.toggle-thumb-checked {
+  @apply translate-x-6;
+}
+
+.toggle-thumb-unchecked {
+  @apply translate-x-1;
+}
+
+/* Gradient Text */
+.gradient-text {
+  @apply bg-gradient-to-r from-primary via-secondary to-accent bg-clip-text text-transparent;
+}
+
+/* Glass Effect */
+.glass {
+  @apply bg-card/80 backdrop-blur-sm border border-border/50;
+}
