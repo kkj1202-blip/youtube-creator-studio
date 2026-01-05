@@ -18,9 +18,12 @@ import {
   ChevronUp,
   RotateCcw,
   Trash2,
-  Pause,
-  FolderDown,
   Upload,
+  RefreshCw,
+  Clock,
+  AlertTriangle,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, Card, Select, Toggle, Slider, Modal } from '@/components/ui';
@@ -66,7 +69,35 @@ interface ProgressState {
     voice: number;
     render: number;
   };
+  startTime: number | null;
+  currentSceneNumber: number;
 }
+
+// 시간 포맷 함수
+const formatTime = (seconds: number): string => {
+  if (seconds < 60) return `${Math.round(seconds)}초`;
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.round(seconds % 60);
+  return `${mins}분 ${secs}초`;
+};
+
+// 예상 시간 계산
+const estimateRemainingTime = (
+  completed: number,
+  total: number,
+  elapsedMs: number,
+  type: 'image' | 'voice' | 'render'
+): string => {
+  if (completed === 0 || elapsedMs === 0) {
+    // 기본 예상 시간 (타입별)
+    const baseTimePerScene = { image: 15, voice: 5, render: 10 }[type];
+    return formatTime(total * baseTimePerScene);
+  }
+  
+  const avgTimePerScene = elapsedMs / 1000 / completed;
+  const remaining = (total - completed) * avgTimePerScene;
+  return formatTime(remaining);
+};
 
 const BatchActions: React.FC = () => {
   const {
@@ -77,14 +108,16 @@ const BatchActions: React.FC = () => {
   } = useStore();
 
   const [showBulkSettings, setShowBulkSettings] = useState(false);
-  const [showDownloadModal, setShowDownloadModal] = useState(false);
   const [showBatchImageUploader, setShowBatchImageUploader] = useState(false);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [processingState, setProcessingState] = useState<ProgressState>({
     isRunning: false,
     currentStage: 'idle',
     progress: null,
     errors: [],
     completed: { image: 0, voice: 0, render: 0 },
+    startTime: null,
+    currentSceneNumber: 0,
   });
   const [bulkSettings, setBulkSettings] = useState({
     voiceSpeed: 1.0,
@@ -98,14 +131,38 @@ const BatchActions: React.FC = () => {
   if (!currentProject) return null;
 
   const scenes = currentProject.scenes;
-  const stats = {
-    total: scenes.length,
-    withImage: scenes.filter((s) => s.imageUrl).length,
-    withAudio: scenes.filter((s) => s.audioGenerated).length,
-    rendered: scenes.filter((s) => s.rendered).length,
-    processing: scenes.filter((s) => s.isProcessing).length,
-    errors: scenes.filter((s) => s.error).length,
-  };
+  
+  // 상세 통계
+  const stats = useMemo(() => {
+    const errorScenes = scenes.filter((s) => s.error);
+    const errorDetails = {
+      image: errorScenes.filter(s => !s.imageUrl).length,
+      voice: errorScenes.filter(s => !s.audioGenerated && s.imageUrl).length,
+      render: errorScenes.filter(s => !s.rendered && s.audioGenerated).length,
+    };
+    
+    // 실패한 씬 목록
+    const failedScenes = {
+      image: scenes.filter(s => !s.imageUrl && s.script.trim()),
+      voice: scenes.filter(s => !s.audioGenerated && s.script.trim()),
+      render: scenes.filter(s => !s.rendered && s.imageUrl && s.audioGenerated),
+    };
+    
+    return {
+      total: scenes.length,
+      withImage: scenes.filter((s) => s.imageUrl).length,
+      withAudio: scenes.filter((s) => s.audioGenerated).length,
+      rendered: scenes.filter((s) => s.rendered).length,
+      processing: scenes.filter((s) => s.isProcessing).length,
+      errors: errorScenes.length,
+      errorDetails,
+      failedScenes,
+      errorMessages: errorScenes.map(s => ({
+        sceneNumber: s.order + 1,
+        error: s.error || '알 수 없는 오류',
+      })),
+    };
+  }, [scenes]);
 
   // 기존 이미지가 있는 씬 맵
   const existingSceneImages = useMemo(() => {
@@ -116,20 +173,37 @@ const BatchActions: React.FC = () => {
     );
   }, [scenes]);
 
-  // 진행률 계산
-  const progressPercent = processingState.progress
-    ? Math.round((processingState.progress.completed / processingState.progress.total) * 100)
-    : 0;
+  // 진행률 및 시간 계산
+  const progressInfo = useMemo(() => {
+    const { progress, startTime, currentStage } = processingState;
+    const percent = progress
+      ? Math.round((progress.completed / progress.total) * 100)
+      : 0;
+    
+    const elapsed = startTime ? Date.now() - startTime : 0;
+    const remaining = progress && startTime
+      ? estimateRemainingTime(progress.completed, progress.total, elapsed, currentStage as 'image' | 'voice' | 'render')
+      : '';
+    
+    return { percent, elapsed, remaining };
+  }, [processingState]);
 
   // API 키 확인
   const hasImageApiKey = !!settings.kieApiKey;
-  const accountIndex = currentProject.elevenLabsAccountIndex || 0;
-  const hasVoiceApiKey = !!settings.elevenLabsAccounts[accountIndex]?.apiKey;
-  const hasDefaultVoice = !!(currentProject.defaultVoiceId || settings.elevenLabsAccounts[accountIndex]?.voices?.[0]?.id);
+  
+  // 활성화된 ElevenLabs 계정 찾기
+  const activeAccountIndex = useMemo(() => {
+    return settings.elevenLabsAccounts.findIndex(acc => acc.isActive && acc.apiKey);
+  }, [settings.elevenLabsAccounts]);
+  
+  const hasVoiceApiKey = activeAccountIndex !== -1;
+  const hasDefaultVoice = !!(
+    currentProject.defaultVoiceId || 
+    (activeAccountIndex !== -1 && settings.elevenLabsAccounts[activeAccountIndex]?.voices?.[0]?.id)
+  );
 
   // 일괄 이미지 업로드 처리
   const handleBatchImageUpload = useCallback((images: Array<{ imageUrl: string; sceneNumber: number | null }>) => {
-    // 씬 번호가 있는 이미지들을 해당 씬에 적용
     images.forEach(({ imageUrl, sceneNumber }) => {
       if (sceneNumber !== null && sceneNumber >= 1 && sceneNumber <= scenes.length) {
         const targetScene = scenes.find(s => s.order === sceneNumber - 1);
@@ -137,6 +211,7 @@ const BatchActions: React.FC = () => {
           updateScene(targetScene.id, {
             imageUrl,
             imageSource: 'uploaded',
+            error: undefined,
           });
         }
       }
@@ -145,7 +220,217 @@ const BatchActions: React.FC = () => {
     alert(`${images.length}개의 이미지가 씬에 적용되었습니다.`);
   }, [scenes, updateScene]);
 
-  // 일괄 이미지 생성
+  // ========== 실패한 씬만 재시도 기능 ==========
+  
+  // 이미지 생성 실패한 씬만 재시도
+  const handleRetryFailedImages = useCallback(async () => {
+    if (!hasImageApiKey) {
+      alert('설정에서 이미지 생성 API 키를 입력하세요.');
+      return;
+    }
+
+    const failedScenes = stats.failedScenes.image;
+    if (failedScenes.length === 0) {
+      alert('재시도할 이미지가 없습니다.');
+      return;
+    }
+
+    // 에러 초기화
+    failedScenes.forEach(scene => {
+      updateScene(scene.id, { error: undefined });
+    });
+
+    setProcessingState(prev => ({
+      ...prev,
+      isRunning: true,
+      currentStage: 'image',
+      progress: null,
+      errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
+    }));
+
+    try {
+      // 실패한 씬만 포함한 임시 프로젝트 생성
+      const tempProject = {
+        ...currentProject,
+        scenes: failedScenes,
+      };
+
+      const result = await generateAllImages(
+        tempProject,
+        settings.kieApiKey,
+        (progress) => {
+          setProcessingState(prev => ({
+            ...prev,
+            progress,
+            errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
+          }));
+        },
+        updateScene
+      );
+
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        completed: { ...prev.completed, image: prev.completed.image + result.completed },
+        errors: result.errors,
+        startTime: null,
+      }));
+
+      alert(`이미지 재시도 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
+    } catch (error) {
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
+      }));
+    }
+  }, [currentProject, settings.kieApiKey, hasImageApiKey, stats.failedScenes.image, updateScene]);
+
+  // 음성 생성 실패한 씬만 재시도
+  const handleRetryFailedVoices = useCallback(async () => {
+    if (!hasVoiceApiKey) {
+      alert('설정에서 ElevenLabs API 키를 입력하고 계정을 활성화하세요.');
+      return;
+    }
+
+    const failedScenes = stats.failedScenes.voice;
+    if (failedScenes.length === 0) {
+      alert('재시도할 음성이 없습니다.');
+      return;
+    }
+
+    // 에러 초기화
+    failedScenes.forEach(scene => {
+      updateScene(scene.id, { error: undefined });
+    });
+
+    const apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
+    const defaultVoiceId = currentProject.defaultVoiceId || 
+      settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id;
+
+    setProcessingState(prev => ({
+      ...prev,
+      isRunning: true,
+      currentStage: 'voice',
+      progress: null,
+      errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
+    }));
+
+    try {
+      const tempProject = {
+        ...currentProject,
+        scenes: failedScenes,
+      };
+
+      const result = await generateAllVoices(
+        tempProject,
+        apiKey,
+        defaultVoiceId,
+        (progress) => {
+          setProcessingState(prev => ({
+            ...prev,
+            progress,
+            errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
+          }));
+        },
+        updateScene
+      );
+
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        completed: { ...prev.completed, voice: prev.completed.voice + result.completed },
+        errors: result.errors,
+        startTime: null,
+      }));
+
+      alert(`음성 재시도 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
+    } catch (error) {
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
+      }));
+    }
+  }, [currentProject, settings.elevenLabsAccounts, activeAccountIndex, hasVoiceApiKey, stats.failedScenes.voice, updateScene]);
+
+  // 렌더링 실패한 씬만 재시도
+  const handleRetryFailedRenders = useCallback(async () => {
+    const failedScenes = stats.failedScenes.render;
+    if (failedScenes.length === 0) {
+      alert('재시도할 렌더링이 없습니다.');
+      return;
+    }
+
+    // 에러 초기화
+    failedScenes.forEach(scene => {
+      updateScene(scene.id, { error: undefined });
+    });
+
+    setProcessingState(prev => ({
+      ...prev,
+      isRunning: true,
+      currentStage: 'render',
+      progress: null,
+      errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
+    }));
+
+    try {
+      const tempProject = {
+        ...currentProject,
+        scenes: failedScenes,
+      };
+
+      const result = await renderAllScenes(
+        tempProject,
+        (progress) => {
+          setProcessingState(prev => ({
+            ...prev,
+            progress,
+            errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
+          }));
+        },
+        updateScene
+      );
+
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        completed: { ...prev.completed, render: prev.completed.render + result.completed },
+        errors: result.errors,
+        startTime: null,
+      }));
+
+      alert(`렌더링 재시도 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
+    } catch (error) {
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
+      }));
+    }
+  }, [currentProject, stats.failedScenes.render, updateScene]);
+
+  // ========== 기존 일괄 처리 함수 (시간 추적 추가) ==========
+
   const handleGenerateAllImages = useCallback(async () => {
     if (!hasImageApiKey) {
       alert('설정에서 이미지 생성 API 키를 입력하세요.');
@@ -158,6 +443,8 @@ const BatchActions: React.FC = () => {
       currentStage: 'image',
       progress: null,
       errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
     }));
 
     try {
@@ -169,6 +456,7 @@ const BatchActions: React.FC = () => {
             ...prev,
             progress,
             errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
           }));
         },
         updateScene
@@ -180,6 +468,7 @@ const BatchActions: React.FC = () => {
         currentStage: 'idle',
         completed: { ...prev.completed, image: result.completed },
         errors: result.errors,
+        startTime: null,
       }));
 
       if (result.errors.length > 0) {
@@ -191,14 +480,14 @@ const BatchActions: React.FC = () => {
         isRunning: false,
         currentStage: 'idle',
         errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
       }));
     }
   }, [currentProject, settings.kieApiKey, hasImageApiKey, updateScene]);
 
-  // 일괄 음성 생성
   const handleGenerateAllAudio = useCallback(async () => {
     if (!hasVoiceApiKey) {
-      alert('설정에서 ElevenLabs API 키를 입력하세요.');
+      alert('설정에서 ElevenLabs API 키를 입력하고 계정을 활성화하세요.');
       return;
     }
 
@@ -207,9 +496,9 @@ const BatchActions: React.FC = () => {
       return;
     }
 
-    const apiKey = settings.elevenLabsAccounts[accountIndex].apiKey;
+    const apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
     const defaultVoiceId = currentProject.defaultVoiceId || 
-      settings.elevenLabsAccounts[accountIndex].voices[0]?.id;
+      settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id;
 
     setProcessingState(prev => ({
       ...prev,
@@ -217,6 +506,8 @@ const BatchActions: React.FC = () => {
       currentStage: 'voice',
       progress: null,
       errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
     }));
 
     try {
@@ -229,6 +520,7 @@ const BatchActions: React.FC = () => {
             ...prev,
             progress,
             errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
           }));
         },
         updateScene
@@ -240,6 +532,7 @@ const BatchActions: React.FC = () => {
         currentStage: 'idle',
         completed: { ...prev.completed, voice: result.completed },
         errors: result.errors,
+        startTime: null,
       }));
 
       if (result.errors.length > 0) {
@@ -251,11 +544,11 @@ const BatchActions: React.FC = () => {
         isRunning: false,
         currentStage: 'idle',
         errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
       }));
     }
-  }, [currentProject, settings.elevenLabsAccounts, accountIndex, hasVoiceApiKey, hasDefaultVoice, updateScene]);
+  }, [currentProject, settings.elevenLabsAccounts, activeAccountIndex, hasVoiceApiKey, hasDefaultVoice, updateScene]);
 
-  // 일괄 렌더링
   const handleRenderAllScenes = useCallback(async () => {
     setProcessingState(prev => ({
       ...prev,
@@ -263,6 +556,8 @@ const BatchActions: React.FC = () => {
       currentStage: 'render',
       progress: null,
       errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
     }));
 
     try {
@@ -273,6 +568,7 @@ const BatchActions: React.FC = () => {
             ...prev,
             progress,
             errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
           }));
         },
         updateScene
@@ -284,6 +580,7 @@ const BatchActions: React.FC = () => {
         currentStage: 'idle',
         completed: { ...prev.completed, render: result.completed },
         errors: result.errors,
+        startTime: null,
       }));
 
       if (result.errors.length > 0) {
@@ -295,20 +592,20 @@ const BatchActions: React.FC = () => {
         isRunning: false,
         currentStage: 'idle',
         errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
       }));
     }
   }, [currentProject, updateScene]);
 
-  // 전체 파이프라인 실행
   const handleRunFullPipeline = useCallback(async () => {
     if (!hasImageApiKey || !hasVoiceApiKey || !hasDefaultVoice) {
       alert('모든 API 키와 기본 보이스 설정이 필요합니다.');
       return;
     }
 
-    const voiceApiKey = settings.elevenLabsAccounts[accountIndex].apiKey;
+    const voiceApiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
     const defaultVoiceId = currentProject.defaultVoiceId ||
-      settings.elevenLabsAccounts[accountIndex].voices[0]?.id;
+      settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id;
 
     setProcessingState(prev => ({
       ...prev,
@@ -316,6 +613,8 @@ const BatchActions: React.FC = () => {
       currentStage: 'image',
       progress: null,
       errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
     }));
 
     try {
@@ -330,6 +629,7 @@ const BatchActions: React.FC = () => {
             currentStage: stage as 'image' | 'voice' | 'render',
             progress,
             errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
           }));
         },
         updateScene
@@ -349,6 +649,7 @@ const BatchActions: React.FC = () => {
           ...result.voiceResult.errors,
           ...result.renderResult.errors,
         ],
+        startTime: null,
       }));
 
       const totalErrors = result.imageResult.errors.length + 
@@ -356,7 +657,7 @@ const BatchActions: React.FC = () => {
         result.renderResult.errors.length;
 
       if (totalErrors > 0) {
-        alert(`처리 완료 - 이미지: ${result.imageResult.completed}, 음성: ${result.voiceResult.completed}, 렌더링: ${result.renderResult.completed}\n오류: ${totalErrors}건`);
+        alert(`처리 완료\n이미지: ${result.imageResult.completed}개\n음성: ${result.voiceResult.completed}개\n렌더링: ${result.renderResult.completed}개\n오류: ${totalErrors}건`);
       } else {
         alert('모든 처리가 완료되었습니다!');
       }
@@ -366,17 +667,16 @@ const BatchActions: React.FC = () => {
         isRunning: false,
         currentStage: 'idle',
         errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
       }));
     }
-  }, [currentProject, settings, accountIndex, hasImageApiKey, hasVoiceApiKey, hasDefaultVoice, updateScene]);
+  }, [currentProject, settings, activeAccountIndex, hasImageApiKey, hasVoiceApiKey, hasDefaultVoice, updateScene]);
 
-  // 일괄 설정 적용
   const handleApplyBulkSettings = () => {
     applyToAllScenes(bulkSettings);
     alert('모든 씬에 설정이 적용되었습니다.');
   };
 
-  // 오류 초기화
   const handleClearErrors = () => {
     scenes.forEach((scene) => {
       if (scene.error) {
@@ -386,7 +686,6 @@ const BatchActions: React.FC = () => {
     setProcessingState(prev => ({ ...prev, errors: [] }));
   };
 
-  // 다운로드 핸들러
   const handleDownloadAll = async (type: 'video' | 'audio' | 'image') => {
     const targets = scenes.filter(s => {
       if (type === 'video') return s.rendered && s.videoUrl;
@@ -406,14 +705,9 @@ const BatchActions: React.FC = () => {
       const url = type === 'video' ? scene.videoUrl! : type === 'audio' ? scene.audioUrl! : scene.imageUrl!;
 
       try {
-        if (type === 'video') {
-          await downloadVideo(url, filename);
-        } else if (type === 'audio') {
-          await downloadAudio(url, filename);
-        } else {
-          await downloadImage(url, filename);
-        }
-        // 다운로드 간 딜레이
+        if (type === 'video') await downloadVideo(url, filename);
+        else if (type === 'audio') await downloadAudio(url, filename);
+        else await downloadImage(url, filename);
         await new Promise(resolve => setTimeout(resolve, 500));
       } catch (error) {
         console.error(`Failed to download ${filename}:`, error);
@@ -467,62 +761,167 @@ const BatchActions: React.FC = () => {
           </div>
         </div>
 
-        {/* Error Count */}
+        {/* Error Summary with Details Toggle */}
         {stats.errors > 0 && (
-          <div className="flex items-center justify-between mt-3 p-2 bg-error/10 rounded-lg">
-            <div className="flex items-center gap-2 text-error text-sm">
-              <AlertCircle className="w-4 h-4" />
-              <span>{stats.errors}개의 오류</span>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleClearErrors}
-              className="text-xs"
+          <div className="mt-3">
+            <button
+              onClick={() => setShowErrorDetails(!showErrorDetails)}
+              className="w-full flex items-center justify-between p-2 bg-error/10 rounded-lg hover:bg-error/20 transition-colors"
             >
-              초기화
-            </Button>
+              <div className="flex items-center gap-2 text-error text-sm">
+                <AlertCircle className="w-4 h-4" />
+                <span>{stats.errors}개의 오류 발생</span>
+              </div>
+              <div className="flex items-center gap-2">
+                {showErrorDetails ? (
+                  <EyeOff className="w-4 h-4 text-muted" />
+                ) : (
+                  <Eye className="w-4 h-4 text-muted" />
+                )}
+              </div>
+            </button>
+            
+            {/* Error Details */}
+            <AnimatePresence>
+              {showErrorDetails && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="overflow-hidden"
+                >
+                  <div className="mt-2 p-3 bg-card-hover rounded-lg space-y-2 max-h-40 overflow-y-auto">
+                    {stats.errorMessages.map((item, idx) => (
+                      <div key={idx} className="flex items-start gap-2 text-xs">
+                        <span className="text-error font-medium whitespace-nowrap">
+                          씬 {item.sceneNumber}:
+                        </span>
+                        <span className="text-muted">{item.error}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleClearErrors}
+                    className="mt-2 w-full text-xs"
+                    icon={<Trash2 className="w-3 h-3" />}
+                  >
+                    오류 기록 초기화
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </Card>
 
-      {/* Processing Progress */}
+      {/* Processing Progress (Enhanced) */}
       {processingState.isRunning && (
-        <Card className="border-primary/50">
+        <Card className="border-primary/50 bg-primary/5">
           <div className="flex items-center gap-3 mb-3">
             <Loader2 className="w-5 h-5 text-primary animate-spin" />
             <div className="flex-1">
               <h4 className="font-medium text-foreground">
-                {processingState.currentStage === 'image' && '이미지 생성 중'}
-                {processingState.currentStage === 'voice' && '음성 생성 중'}
-                {processingState.currentStage === 'render' && '렌더링 중'}
+                {processingState.currentStage === 'image' && '🖼️ 이미지 생성 중'}
+                {processingState.currentStage === 'voice' && '🔊 음성 생성 중'}
+                {processingState.currentStage === 'render' && '🎬 렌더링 중'}
               </h4>
               {processingState.progress && (
-                <p className="text-sm text-muted">{processingState.progress.current}</p>
+                <p className="text-sm text-muted">
+                  씬 {processingState.currentSceneNumber}/{processingState.progress.total} 처리 중
+                </p>
               )}
             </div>
-            <span className="text-lg font-bold text-primary">{progressPercent}%</span>
+            <span className="text-lg font-bold text-primary">{progressInfo.percent}%</span>
           </div>
 
           {/* Progress Bar */}
-          <div className="h-2 bg-card-hover rounded-full overflow-hidden">
+          <div className="h-3 bg-card-hover rounded-full overflow-hidden mb-2">
             <motion.div
-              className="h-full bg-primary"
+              className="h-full bg-gradient-to-r from-primary to-secondary"
               initial={{ width: 0 }}
-              animate={{ width: `${progressPercent}%` }}
+              animate={{ width: `${progressInfo.percent}%` }}
             />
           </div>
 
-          {/* Errors during processing */}
+          {/* Time Info */}
+          <div className="flex justify-between text-xs text-muted">
+            <span className="flex items-center gap-1">
+              <Clock className="w-3 h-3" />
+              경과: {formatTime(progressInfo.elapsed / 1000)}
+            </span>
+            {progressInfo.remaining && (
+              <span>예상 남은 시간: {progressInfo.remaining}</span>
+            )}
+          </div>
+
+          {/* Live Errors */}
           {processingState.errors.length > 0 && (
-            <div className="mt-3 max-h-24 overflow-y-auto">
+            <div className="mt-3 p-2 bg-error/10 rounded-lg max-h-20 overflow-y-auto">
               {processingState.errors.slice(-3).map((err, idx) => (
-                <div key={idx} className="text-xs text-error py-1 border-t border-border first:border-0">
-                  {err}
+                <div key={idx} className="text-xs text-error py-0.5 flex items-start gap-1">
+                  <AlertTriangle className="w-3 h-3 flex-shrink-0 mt-0.5" />
+                  <span>{err}</span>
                 </div>
               ))}
             </div>
           )}
+        </Card>
+      )}
+
+      {/* Retry Failed Section */}
+      {(stats.failedScenes.image.length > 0 || 
+        stats.failedScenes.voice.length > 0 || 
+        stats.failedScenes.render.length > 0) && !processingState.isRunning && (
+        <Card className="border-warning/50 bg-warning/5">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <RefreshCw className="w-4 h-4 text-warning" />
+            실패한 씬 재시도
+          </h3>
+          
+          <div className="space-y-2">
+            {stats.failedScenes.image.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between bg-card-hover"
+                onClick={handleRetryFailedImages}
+                disabled={!hasImageApiKey}
+                icon={<ImageIcon className="w-4 h-4 text-error" />}
+              >
+                <span>이미지 없는 씬 재생성</span>
+                <span className="text-xs text-error">{stats.failedScenes.image.length}개</span>
+              </Button>
+            )}
+            
+            {stats.failedScenes.voice.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between bg-card-hover"
+                onClick={handleRetryFailedVoices}
+                disabled={!hasVoiceApiKey}
+                icon={<Volume2 className="w-4 h-4 text-error" />}
+              >
+                <span>음성 없는 씬 재생성</span>
+                <span className="text-xs text-error">{stats.failedScenes.voice.length}개</span>
+              </Button>
+            )}
+            
+            {stats.failedScenes.render.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full justify-between bg-card-hover"
+                onClick={handleRetryFailedRenders}
+                icon={<Video className="w-4 h-4 text-error" />}
+              >
+                <span>렌더링 안된 씬 재시도</span>
+                <span className="text-xs text-error">{stats.failedScenes.render.length}개</span>
+              </Button>
+            )}
+          </div>
         </Card>
       )}
 
@@ -534,7 +933,6 @@ const BatchActions: React.FC = () => {
         </h3>
 
         <div className="space-y-2">
-          {/* Full Pipeline */}
           <Button
             variant="primary"
             className="w-full"
@@ -546,7 +944,6 @@ const BatchActions: React.FC = () => {
             전체 자동 처리
           </Button>
 
-          {/* Individual Actions */}
           <div className="grid grid-cols-3 gap-2">
             <Button
               variant="ghost"
@@ -580,15 +977,13 @@ const BatchActions: React.FC = () => {
             </Button>
           </div>
 
-          {/* API Key Warnings */}
           {(!hasImageApiKey || !hasVoiceApiKey) && (
             <div className="text-xs text-warning bg-warning/10 p-2 rounded">
               {!hasImageApiKey && '⚠️ 이미지 API 키 필요 '}
-              {!hasVoiceApiKey && '⚠️ 음성 API 키 필요'}
+              {!hasVoiceApiKey && '⚠️ 음성 API 키 필요 (계정 활성화 필요)'}
             </div>
           )}
 
-          {/* 일괄 이미지 업로드 */}
           <div className="pt-2 border-t border-border">
             <Button
               variant="ghost"
@@ -779,7 +1174,7 @@ const BatchActions: React.FC = () => {
             size="sm"
             onClick={() => {
               if (confirm('모든 씬의 이미지를 초기화하시겠습니까?')) {
-                applyToAllScenes({ imageUrl: undefined, imageSource: 'none' });
+                applyToAllScenes({ imageUrl: undefined, imageSource: 'none', error: undefined });
               }
             }}
             icon={<ImageIcon className="w-4 h-4" />}
@@ -791,7 +1186,7 @@ const BatchActions: React.FC = () => {
             size="sm"
             onClick={() => {
               if (confirm('모든 씬의 음성을 초기화하시겠습니까?')) {
-                applyToAllScenes({ audioUrl: undefined, audioGenerated: false });
+                applyToAllScenes({ audioUrl: undefined, audioGenerated: false, error: undefined });
               }
             }}
             icon={<Volume2 className="w-4 h-4" />}
@@ -803,7 +1198,7 @@ const BatchActions: React.FC = () => {
             size="sm"
             onClick={() => {
               if (confirm('모든 씬의 렌더링을 초기화하시겠습니까?')) {
-                applyToAllScenes({ videoUrl: undefined, rendered: false });
+                applyToAllScenes({ videoUrl: undefined, rendered: false, error: undefined });
               }
             }}
             icon={<Video className="w-4 h-4" />}
@@ -833,7 +1228,7 @@ const BatchActions: React.FC = () => {
         </div>
       </Card>
 
-      {/* 일괄 이미지 업로드 모달 */}
+      {/* Batch Image Upload Modal */}
       <Modal
         isOpen={showBatchImageUploader}
         onClose={() => setShowBatchImageUploader(false)}

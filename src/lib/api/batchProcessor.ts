@@ -299,6 +299,16 @@ export async function generateAllImages(
 }
 
 /**
+ * ElevenLabs 계정 정보 타입
+ */
+interface ElevenLabsAccountInfo {
+  apiKey: string;
+  isActive: boolean;
+  remainingQuota?: number;
+  voices: { id: string; name: string }[];
+}
+
+/**
  * 모든 씬의 음성 일괄 생성 (최적화)
  */
 export async function generateAllVoices(
@@ -356,6 +366,169 @@ export async function generateAllVoices(
 
   queue.addItems(scenes.map((s) => ({ id: `씬 ${s.order + 1}`, data: s })));
   return queue.process();
+}
+
+/**
+ * 다중 계정 지원 음성 일괄 생성 (계정 자동 전환)
+ * 할당량 소진 시 다음 활성화된 계정으로 자동 전환
+ */
+export async function generateAllVoicesWithAutoSwitch(
+  project: Project,
+  accounts: ElevenLabsAccountInfo[],
+  defaultVoiceId: string,
+  onProgress?: ProgressCallback,
+  updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
+  onAccountSwitch?: (fromIndex: number, toIndex: number, reason: string) => void,
+  options?: Partial<BatchOptions>
+): Promise<BatchProcessingResult & { accountsUsed: number[] }> {
+  const scenes = project.scenes.filter((s) => !s.audioGenerated && s.script.trim());
+  
+  if (scenes.length === 0) {
+    return { success: true, completed: 0, failed: 0, errors: [], duration: 0, accountsUsed: [] };
+  }
+
+  // 활성화된 계정만 필터링
+  const activeAccounts = accounts
+    .map((acc, idx) => ({ ...acc, index: idx }))
+    .filter((acc) => acc.isActive && acc.apiKey);
+
+  if (activeAccounts.length === 0) {
+    return {
+      success: false,
+      completed: 0,
+      failed: scenes.length,
+      errors: ['활성화된 ElevenLabs 계정이 없습니다.'],
+      duration: 0,
+      accountsUsed: [],
+    };
+  }
+
+  let currentAccountIndex = 0;
+  const accountsUsed: Set<number> = new Set();
+  const errors: string[] = [];
+  let completed = 0;
+  let failed = 0;
+  const startTime = Date.now();
+
+  // 할당량 관련 에러 감지
+  const isQuotaError = (error: string): boolean => {
+    const quotaPatterns = [
+      'quota', 'limit', 'exceeded', 'rate',
+      '할당량', '한도', 'insufficient', 'balance',
+      '429', 'too many requests'
+    ];
+    const lowerError = error.toLowerCase();
+    return quotaPatterns.some(pattern => lowerError.includes(pattern));
+  };
+
+  // 다음 사용 가능한 계정 찾기
+  const findNextAccount = (currentIdx: number): number | null => {
+    for (let i = 1; i <= activeAccounts.length; i++) {
+      const nextIdx = (currentIdx + i) % activeAccounts.length;
+      if (nextIdx !== currentIdx && !accountsUsed.has(nextIdx)) {
+        return nextIdx;
+      }
+    }
+    // 모든 계정 시도해봄, 다시 첫 번째부터
+    return currentIdx < activeAccounts.length - 1 ? currentIdx + 1 : null;
+  };
+
+  // 씬 하나씩 처리 (계정 전환 가능)
+  for (let i = 0; i < scenes.length; i++) {
+    const scene = scenes[i];
+    let success = false;
+    let lastError = '';
+
+    updateScene?.(scene.id, { isProcessing: true, error: undefined });
+
+    // 현재 계정으로 시도
+    while (!success && currentAccountIndex !== null) {
+      const account = activeAccounts[currentAccountIndex];
+      accountsUsed.add(account.index);
+
+      try {
+        const result = await generateVoice(account.apiKey, {
+          text: scene.script,
+          voiceId: scene.voiceId || defaultVoiceId,
+          speed: scene.voiceSpeed,
+          emotion: scene.emotion,
+        });
+
+        if (result.success && result.audioUrl) {
+          updateScene?.(scene.id, {
+            audioUrl: result.audioUrl,
+            audioGenerated: true,
+            isProcessing: false,
+            error: undefined,
+          });
+          completed++;
+          success = true;
+        } else {
+          lastError = result.error || '음성 생성 실패';
+          
+          // 할당량 오류인지 확인
+          if (isQuotaError(lastError)) {
+            const nextAccount = findNextAccount(currentAccountIndex);
+            if (nextAccount !== null) {
+              onAccountSwitch?.(currentAccountIndex, nextAccount, `할당량 소진: ${lastError}`);
+              currentAccountIndex = nextAccount;
+              continue; // 다음 계정으로 재시도
+            }
+          }
+          throw new Error(lastError);
+        }
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+        
+        // 할당량 오류면 계정 전환 시도
+        if (isQuotaError(lastError)) {
+          const nextAccount = findNextAccount(currentAccountIndex);
+          if (nextAccount !== null) {
+            onAccountSwitch?.(currentAccountIndex, nextAccount, `오류 발생: ${lastError}`);
+            currentAccountIndex = nextAccount;
+            await delay(1000); // 계정 전환 후 잠시 대기
+            continue;
+          }
+        }
+        
+        // 더 이상 전환할 계정 없음
+        break;
+      }
+    }
+
+    if (!success) {
+      updateScene?.(scene.id, {
+        isProcessing: false,
+        error: lastError || '모든 계정 할당량 소진',
+      });
+      errors.push(`씬 ${scene.order + 1}: ${lastError}`);
+      failed++;
+    }
+
+    // 진행 상황 보고
+    onProgress?.({
+      type: 'voice',
+      total: scenes.length,
+      completed,
+      failed,
+      current: `씬 ${scene.order + 1} 처리 완료 (계정 ${currentAccountIndex + 1} 사용 중)`,
+      errors,
+    });
+
+    // 항목 간 딜레이
+    if (i < scenes.length - 1) {
+      await delay(options?.delayBetweenItems || 500);
+    }
+  }
+
+  return {
+    success: failed === 0,
+    completed,
+    failed,
+    errors,
+    duration: Date.now() - startTime,
+    accountsUsed: Array.from(accountsUsed),
+  };
 }
 
 /**

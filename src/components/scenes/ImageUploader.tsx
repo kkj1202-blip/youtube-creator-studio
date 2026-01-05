@@ -89,8 +89,9 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
   }, [totalScenes, existingSceneImages]);
 
   // 이미지 자동 매칭 실행
+  // 핵심: 파일명 번호가 낮은 순으로 정렬 후, 빈 씬 번호가 낮은 순으로 매칭
   const autoMatchImages = useCallback((imagesToMatch: UploadedImage[]) => {
-    // 파일명에서 추출한 숫자 기준으로 정렬
+    // 파일명에서 추출한 숫자 기준으로 정렬 (낮은 숫자 우선)
     const sortedImages = [...imagesToMatch].sort((a, b) => {
       // 숫자가 있는 것 우선
       if (a.extractedNumber === null && b.extractedNumber === null) return 0;
@@ -99,51 +100,67 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
       return a.extractedNumber - b.extractedNumber;
     });
 
-    // 사용 가능한 씬 번호를 순서대로 할당
+    // 이미 수동으로 설정된 씬 번호 수집
     const usedSceneNumbers = new Set<number>();
-    
-    // 현재 할당된 씬 번호 수집 (이미 수동으로 설정된 것)
     sortedImages.forEach(img => {
       if (img.sceneNumber !== null) {
         usedSceneNumbers.add(img.sceneNumber);
       }
     });
 
-    // 낮은 씬 번호부터 순서대로 할당
-    let availableIndex = 0;
-    const matchedImages = sortedImages.map(img => {
-      // 이미 씬 번호가 수동으로 설정된 경우 유지
-      if (img.sceneNumber !== null) {
+    // 매칭 방식에 따라 처리
+    if (autoMatchMode === 'number') {
+      // === 파일명 번호순 매칭 ===
+      // 파일명 숫자가 낮은 이미지부터 빈 씬 번호가 낮은 곳에 순서대로 할당
+      // 예: 1.png, 3.png, 5.png → 빈 씬 2, 4, 6 순으로 매칭
+      let availableIndex = 0;
+      
+      const matchedImages = sortedImages.map(img => {
+        // 이미 씬 번호가 수동으로 설정된 경우 유지
+        if (img.sceneNumber !== null) {
+          return img;
+        }
+
+        // 다음 사용 가능한 빈 씬 찾기 (낮은 번호부터)
+        while (availableIndex < availableSceneNumbers.length) {
+          const nextAvailable = availableSceneNumbers[availableIndex];
+          availableIndex++;
+          if (!usedSceneNumbers.has(nextAvailable)) {
+            usedSceneNumbers.add(nextAvailable);
+            return { ...img, sceneNumber: nextAvailable };
+          }
+        }
+
+        // 할당 가능한 씬이 없으면 null 유지
         return img;
-      }
+      });
 
-      // 파일명에 숫자가 있고 그 씬이 사용 가능한 경우
-      if (autoMatchMode === 'number' && img.extractedNumber !== null) {
-        const targetScene = img.extractedNumber;
-        if (targetScene >= 1 && targetScene <= totalScenes && 
-            !existingSceneImages.get(targetScene) && 
-            !usedSceneNumbers.has(targetScene)) {
-          usedSceneNumbers.add(targetScene);
-          return { ...img, sceneNumber: targetScene };
+      return matchedImages;
+    } else {
+      // === 업로드 순서대로 매칭 ===
+      // 원래 업로드 순서를 유지하면서 빈 씬에 순서대로 할당
+      let availableIndex = 0;
+      
+      const matchedImages = imagesToMatch.map(img => {
+        if (img.sceneNumber !== null) {
+          return img;
         }
-      }
 
-      // 순서대로 다음 사용 가능한 씬에 할당
-      while (availableIndex < availableSceneNumbers.length) {
-        const nextAvailable = availableSceneNumbers[availableIndex];
-        availableIndex++;
-        if (!usedSceneNumbers.has(nextAvailable)) {
-          usedSceneNumbers.add(nextAvailable);
-          return { ...img, sceneNumber: nextAvailable };
+        while (availableIndex < availableSceneNumbers.length) {
+          const nextAvailable = availableSceneNumbers[availableIndex];
+          availableIndex++;
+          if (!usedSceneNumbers.has(nextAvailable)) {
+            usedSceneNumbers.add(nextAvailable);
+            return { ...img, sceneNumber: nextAvailable };
+          }
         }
-      }
 
-      // 할당 가능한 씬이 없으면 null 유지
-      return img;
-    });
+        return img;
+      });
 
-    return matchedImages;
-  }, [autoMatchMode, totalScenes, availableSceneNumbers, existingSceneImages]);
+      return matchedImages;
+    }
+  }, [autoMatchMode, availableSceneNumbers]);
 
   const handleFiles = useCallback((files: FileList | File[]) => {
     const fileArray = Array.from(files);
@@ -327,9 +344,17 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           <div>
             <p className="font-medium text-foreground">자동 씬 매칭</p>
             <p className="text-muted text-xs mt-1">
-              파일명에 포함된 숫자를 기준으로 낮은 번호의 이미지가 낮은 씬에 자동 매칭됩니다.
+              {autoMatchMode === 'number' 
+                ? '파일명 숫자가 낮은 이미지부터 빈 씬 번호가 낮은 곳에 순서대로 매칭됩니다.'
+                : '업로드된 순서대로 빈 씬에 차례로 매칭됩니다.'
+              }
               <br />
-              예: 1.png → 씬 1, 2.jpg → 씬 2, scene_03.png → 씬 3
+              <span className="text-primary">
+                {autoMatchMode === 'number'
+                  ? '예: 1.png, 5.png, 10.png → 빈 씬 1, 2, 3 순서로 할당'
+                  : '예: 첫 번째 이미지 → 첫 번째 빈 씬'
+                }
+              </span>
             </p>
           </div>
         </div>
@@ -387,7 +412,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
             JPG, PNG, WebP, GIF (최대 10MB)
           </p>
           <p className="text-xs text-primary mt-2 font-medium">
-            💡 파일명에 숫자가 있으면 자동으로 해당 씬에 매칭됩니다
+            💡 파일명 숫자가 낮은 이미지부터 빈 씬에 순서대로 매칭됩니다
           </p>
         </div>
       </div>
