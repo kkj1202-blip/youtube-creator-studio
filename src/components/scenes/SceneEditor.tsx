@@ -155,23 +155,11 @@ const SceneEditor: React.FC = () => {
     updateScene(activeScene.id, updates);
   };
 
-  // Voice options from settings
-  const voiceOptions = settings.elevenLabsAccounts
-    .flatMap((account) => account.voices)
-    .map((voice) => ({ value: voice.id, label: voice.name }));
-
-  // 즐겨찾기 보이스 (커스텀 등록 + 계정 보이스)
+  // 즐겨찾기 보이스만 표시 (설정에서 직접 등록한 보이스)
   const favoriteVoiceOptions = (settings.favoriteVoices || []).map((voice) => ({
     value: voice.id,
-    label: `⭐ ${voice.name}${voice.description ? ` (${voice.description})` : ''}`,
+    label: `⭐ ${voice.name}${voice.description ? ` - ${voice.description}` : ''}`,
   }));
-
-  // ElevenLabs 보이스 통합 (즐겨찾기 상단, 그 다음 계정 보이스)
-  const allElevenLabsVoices = [
-    ...favoriteVoiceOptions,
-    ...(voiceOptions.length > 0 ? [{ value: '', label: '── 계정 보이스 ──', disabled: true }] : []),
-    ...voiceOptions.filter(v => !favoriteVoiceOptions.some(f => f.value === v.value)),
-  ].filter(v => v.value !== '' || v.label.includes('──'));
 
   // 이미지 프롬프트 자동 생성
   const handleGeneratePrompt = () => {
@@ -822,24 +810,22 @@ const SceneEditor: React.FC = () => {
                     />
                   )}
 
-                  {/* ElevenLabs 보이스 선택 (즐겨찾기 포함) */}
+                  {/* ElevenLabs 보이스 선택 (즐겨찾기만 표시) */}
                   {activeScene.ttsEngine === 'elevenlabs' && (
                     <div className="space-y-2">
                       <Select
                         label="ElevenLabs 목소리"
                         options={
-                          allElevenLabsVoices.length > 0 
-                            ? allElevenLabsVoices 
-                            : [{ value: '', label: '설정에서 보이스를 등록하세요' }]
+                          favoriteVoiceOptions.length > 0 
+                            ? favoriteVoiceOptions 
+                            : [{ value: '', label: '설정에서 즐겨찾기 보이스를 추가하세요' }]
                         }
                         value={activeScene.voiceId || currentProject?.defaultVoiceId || ''}
                         onChange={(value) => handleUpdate({ voiceId: value })}
                       />
-                      {favoriteVoiceOptions.length > 0 && (
-                        <p className="text-xs text-muted">
-                          ⭐ 즐겨찾기 {favoriteVoiceOptions.length}개 | 설정에서 보이스 ID 직접 추가 가능
-                        </p>
-                      )}
+                      <p className="text-xs text-muted">
+                        ⭐ 즐겨찾기 {favoriteVoiceOptions.length}개 | 설정 → API 키 설정에서 보이스 추가
+                      </p>
                     </div>
                   )}
 
