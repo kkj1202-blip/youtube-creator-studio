@@ -323,12 +323,13 @@ export default function Home() {
                   <div className="h-6 w-px bg-border hidden md:block" />
 
                   <Button
-                    variant="ghost"
+                    variant="secondary"
                     size="sm"
                     onClick={() => setView('input')}
                     icon={<FileText className="w-4 h-4" />}
+                    className="bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30"
                   >
-                    대본 다시 입력
+                    📝 대본 입력/씬 분리
                   </Button>
                   <Button
                     variant="primary"
@@ -345,7 +346,7 @@ export default function Home() {
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Scene List */}
                   <div className="lg:col-span-1 space-y-4">
-                    <SceneList />
+                    <SceneList onShowScriptInput={() => setView('input')} />
                   </div>
 
                   {/* Scene Editor */}

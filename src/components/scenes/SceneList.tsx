@@ -29,6 +29,7 @@ import {
   Loader2,
   List,
   LayoutGrid,
+  FileText,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import SceneCard from './SceneCard';
@@ -44,9 +45,10 @@ type FilterType = 'all' | 'no-image' | 'no-audio' | 'no-video' | 'completed' | '
 
 interface SceneListProps {
   compact?: boolean;
+  onShowScriptInput?: () => void;  // 대본 입력 화면으로 이동
 }
 
-const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false }) => {
+const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, onShowScriptInput }) => {
   const {
     currentProject,
     activeSceneId,
@@ -356,6 +358,18 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false }
 
   return (
     <div className="space-y-3" ref={containerRef}>
+      {/* 대본으로 씬 추가 버튼 */}
+      {onShowScriptInput && (
+        <Button
+          variant="ghost"
+          className="w-full border-2 border-dashed border-primary/30 hover:border-primary hover:bg-primary/10"
+          onClick={onShowScriptInput}
+          icon={<FileText className="w-4 h-4" />}
+        >
+          📝 대본으로 씬 자동 분리
+        </Button>
+      )}
+
       {/* 통계 바 */}
       <div className="flex flex-wrap items-center gap-2 p-2 bg-card-hover rounded-lg text-xs">
         <Badge variant="secondary">
