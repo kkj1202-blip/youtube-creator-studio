@@ -686,30 +686,69 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'youtube-creator-studio',
-      partialize: (state) => ({
-        // 프로젝트 저장 시 base64 이미지/오디오 제외 (용량 문제 방지)
-        projects: state.projects.map(project => ({
+      partialize: (state) => {
+        // 프로젝트 저장 시 용량 최적화
+        const optimizeScene = (scene: Scene) => ({
+          // 필수 필드만 저장
+          id: scene.id,
+          order: scene.order,
+          script: scene.script,
+          imagePrompt: scene.imagePrompt,
+          // URL은 외부 URL만 저장 (base64 제외)
+          imageUrl: scene.imageUrl?.startsWith('data:') ? undefined : 
+                   scene.imageUrl?.startsWith('blob:') ? undefined : scene.imageUrl,
+          imageSource: scene.imageSource,
+          // 음성/비디오 URL은 저장하지 않음 (재생성 필요)
+          audioUrl: undefined,
+          audioGenerated: false,
+          videoUrl: undefined,
+          rendered: false,
+          // 설정값들
+          voiceId: scene.voiceId,
+          voiceSpeed: scene.voiceSpeed,
+          emotion: scene.emotion,
+          ttsEngine: scene.ttsEngine,
+          postAudioGap: scene.postAudioGap,
+          transition: scene.transition,
+          transitionDuration: scene.transitionDuration,
+          kenBurns: scene.kenBurns,
+          kenBurnsSpeed: scene.kenBurnsSpeed,
+          kenBurnsZoom: scene.kenBurnsZoom,
+          motionEffect: scene.motionEffect,
+          motionIntensity: scene.motionIntensity,
+          combineEffects: scene.combineEffects,
+          subtitleEnabled: scene.subtitleEnabled,
+          subtitleText: scene.subtitleText,
+          isProcessing: false,
+          error: undefined,
+        });
+
+        const optimizeProject = (project: Project) => ({
           ...project,
-          scenes: project.scenes.map(scene => ({
-            ...scene,
-            // base64 데이터는 저장하지 않음 (5MB 이상 가능)
-            imageUrl: scene.imageUrl?.startsWith('data:') ? undefined : scene.imageUrl,
-            audioUrl: scene.audioUrl?.startsWith('data:') ? undefined : scene.audioUrl,
-            videoUrl: scene.videoUrl?.startsWith('data:') ? undefined : scene.videoUrl,
-            // 생성 상태도 리셋
-            audioGenerated: scene.audioUrl?.startsWith('data:') ? false : scene.audioGenerated,
-            rendered: scene.videoUrl?.startsWith('data:') ? false : scene.rendered,
+          scenes: project.scenes.map(optimizeScene),
+        });
+
+        // 프로젝트가 너무 많으면 최근 10개만 저장
+        const recentProjects = state.projects.slice(-10).map(optimizeProject);
+
+        return {
+          projects: recentProjects,
+          templates: state.templates.slice(-20), // 템플릿도 최근 20개만
+          settings: state.settings,
+          // 버전 히스토리는 최근 2개만 저장 (대용량 프로젝트 고려)
+          versionHistory: state.versionHistory.slice(-2).map(v => ({
+            ...v,
+            data: optimizeProject(v.data),
           })),
-        })),
-        templates: state.templates,
-        settings: state.settings,
-        // 버전 히스토리는 최근 3개만 저장
-        versionHistory: state.versionHistory.slice(-3),
-      }),
+        };
+      },
       // 저장 전 용량 체크
       onRehydrateStorage: () => (state) => {
         if (state) {
-          console.log('Store rehydrated');
+          console.log('Store rehydrated:', {
+            projects: state.projects?.length || 0,
+            templates: state.templates?.length || 0,
+          });
         }
       },
     }

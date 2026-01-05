@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -15,14 +15,38 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { AnimatePresence } from 'framer-motion';
-import { Plus } from 'lucide-react';
+import { 
+  Plus, 
+  Search, 
+  Image as ImageIcon, 
+  Volume2, 
+  Video,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  XCircle,
+  Loader2,
+  List,
+  LayoutGrid,
+} from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import SceneCard from './SceneCard';
-import { Button } from '@/components/ui';
+import { Button, Input, Badge } from '@/components/ui';
 import { generateImagePrompt } from '@/lib/api/imageGeneration';
+import type { Scene } from '@/types';
 
-const SceneList: React.FC = () => {
+// 페이지당 씬 수
+const SCENES_PER_PAGE = 20;
+
+// 필터 타입
+type FilterType = 'all' | 'no-image' | 'no-audio' | 'no-video' | 'completed' | 'error';
+
+interface SceneListProps {
+  compact?: boolean;
+}
+
+const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false }) => {
   const {
     currentProject,
     activeSceneId,
@@ -35,6 +59,13 @@ const SceneList: React.FC = () => {
     updateScene,
   } = useStore();
 
+  // 상태
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filter, setFilter] = useState<FilterType>('all');
+  const [compact, setCompact] = useState(defaultCompact);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: { distance: 8 },
@@ -44,24 +75,87 @@ const SceneList: React.FC = () => {
     })
   );
 
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
+  const scenes = currentProject?.scenes || [];
+  const totalScenes = scenes.length;
 
+  // 50씬 이상이면 자동 컴팩트 모드
+  useEffect(() => {
+    if (totalScenes > 50 && !compact) {
+      setCompact(true);
+    }
+  }, [totalScenes, compact]);
+
+  // 필터링된 씬 목록 (메모이제이션)
+  const filteredScenes = useMemo(() => {
+    let result = scenes;
+
+    // 검색 필터
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      result = result.filter((scene) =>
+        scene.script.toLowerCase().includes(query) ||
+        scene.imagePrompt?.toLowerCase().includes(query) ||
+        `씬 ${scene.order + 1}`.includes(query)
+      );
+    }
+
+    // 상태 필터
+    switch (filter) {
+      case 'no-image':
+        result = result.filter((s) => !s.imageUrl);
+        break;
+      case 'no-audio':
+        result = result.filter((s) => !s.audioGenerated);
+        break;
+      case 'no-video':
+        result = result.filter((s) => !s.rendered);
+        break;
+      case 'completed':
+        result = result.filter((s) => s.imageUrl && s.audioGenerated && s.rendered);
+        break;
+      case 'error':
+        result = result.filter((s) => s.error);
+        break;
+    }
+
+    return result;
+  }, [scenes, searchQuery, filter]);
+
+  // 페이지네이션 계산
+  const totalPages = Math.ceil(filteredScenes.length / SCENES_PER_PAGE);
+  const paginatedScenes = useMemo(() => {
+    const start = (currentPage - 1) * SCENES_PER_PAGE;
+    return filteredScenes.slice(start, start + SCENES_PER_PAGE);
+  }, [filteredScenes, currentPage]);
+
+  // 통계 계산
+  const stats = useMemo(() => ({
+    total: totalScenes,
+    withImage: scenes.filter((s) => s.imageUrl).length,
+    withAudio: scenes.filter((s) => s.audioGenerated).length,
+    rendered: scenes.filter((s) => s.rendered).length,
+    errors: scenes.filter((s) => s.error).length,
+    processing: scenes.filter((s) => s.isProcessing).length,
+  }), [scenes, totalScenes]);
+
+  // 드래그 앤 드롭 핸들러
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
     if (over && active.id !== over.id) {
-      const scenes = currentProject?.scenes || [];
       const oldIndex = scenes.findIndex((s) => s.id === active.id);
       const newIndex = scenes.findIndex((s) => s.id === over.id);
       reorderScenes(oldIndex, newIndex);
     }
-  };
+  }, [scenes, reorderScenes]);
 
-  const handleGenerateImage = async (sceneId: string) => {
+  // 이미지 생성 핸들러
+  const handleGenerateImage = useCallback(async (sceneId: string) => {
     if (!currentProject || !settings.kieApiKey) {
       alert('설정에서 이미지 생성 API 키를 입력하세요.');
       return;
     }
 
-    const scene = currentProject.scenes.find(s => s.id === sceneId);
+    const scene = currentProject.scenes.find((s) => s.id === sceneId);
     if (!scene) return;
 
     updateScene(sceneId, { isProcessing: true, error: undefined });
@@ -101,20 +195,24 @@ const SceneList: React.FC = () => {
         error: error instanceof Error ? error.message : '이미지 생성 중 오류',
       });
     }
-  };
+  }, [currentProject, settings.kieApiKey, updateScene]);
 
-  const handleGenerateAudio = async (sceneId: string) => {
+  // 음성 생성 핸들러
+  const handleGenerateAudio = useCallback(async (sceneId: string) => {
     if (!currentProject) return;
 
-    const accountIndex = currentProject.elevenLabsAccountIndex;
-    const apiKey = settings.elevenLabsAccounts[accountIndex]?.apiKey;
+    // 활성화된 계정 찾기
+    const activeAccountIndex = settings.elevenLabsAccounts.findIndex(
+      (acc) => acc.isActive && acc.apiKey
+    );
     
-    if (!apiKey) {
-      alert('설정에서 ElevenLabs API 키를 입력하세요.');
+    if (activeAccountIndex === -1) {
+      alert('설정에서 ElevenLabs 계정을 활성화하고 API 키를 입력하세요.');
       return;
     }
 
-    const scene = currentProject.scenes.find(s => s.id === sceneId);
+    const apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
+    const scene = currentProject.scenes.find((s) => s.id === sceneId);
     if (!scene) return;
 
     const voiceId = scene.voiceId || currentProject.defaultVoiceId;
@@ -155,12 +253,13 @@ const SceneList: React.FC = () => {
         error: error instanceof Error ? error.message : '음성 생성 중 오류',
       });
     }
-  };
+  }, [currentProject, settings.elevenLabsAccounts, updateScene]);
 
-  const handleRender = async (sceneId: string) => {
+  // 렌더링 핸들러
+  const handleRender = useCallback(async (sceneId: string) => {
     if (!currentProject) return;
 
-    const scene = currentProject.scenes.find(s => s.id === sceneId);
+    const scene = currentProject.scenes.find((s) => s.id === sceneId);
     if (!scene || !scene.imageUrl || !scene.audioUrl) {
       alert('이미지와 음성이 필요합니다.');
       return;
@@ -204,10 +303,11 @@ const SceneList: React.FC = () => {
         error: error instanceof Error ? error.message : '렌더링 중 오류',
       });
     }
-  };
+  }, [currentProject, updateScene]);
 
-  const handleDownload = async (sceneId: string) => {
-    const scene = currentProject?.scenes.find(s => s.id === sceneId);
+  // 다운로드 핸들러
+  const handleDownload = useCallback(async (sceneId: string) => {
+    const scene = currentProject?.scenes.find((s) => s.id === sceneId);
     if (!scene?.videoUrl) return;
 
     if (scene.videoUrl.startsWith('/api/demo-video')) {
@@ -227,10 +327,14 @@ const SceneList: React.FC = () => {
     } catch (error) {
       alert('다운로드 중 오류가 발생했습니다.');
     }
-  };
+  }, [currentProject]);
 
-  const scenes = currentProject?.scenes || [];
+  // 페이지 변경
+  const changePage = useCallback((page: number) => {
+    setCurrentPage(Math.max(1, Math.min(page, totalPages)));
+  }, [totalPages]);
 
+  // 빈 상태
   if (scenes.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -251,18 +355,87 @@ const SceneList: React.FC = () => {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" ref={containerRef}>
+      {/* 통계 바 */}
+      <div className="flex flex-wrap items-center gap-2 p-2 bg-card-hover rounded-lg text-xs">
+        <Badge variant="secondary">
+          총 {stats.total}씬
+        </Badge>
+        <Badge variant="secondary" className="bg-primary/20 text-primary">
+          <ImageIcon className="w-3 h-3 mr-1" />
+          {stats.withImage}
+        </Badge>
+        <Badge variant="secondary" className="bg-secondary/20 text-secondary">
+          <Volume2 className="w-3 h-3 mr-1" />
+          {stats.withAudio}
+        </Badge>
+        <Badge variant="secondary" className="bg-success/20 text-success">
+          <Video className="w-3 h-3 mr-1" />
+          {stats.rendered}
+        </Badge>
+        {stats.errors > 0 && (
+          <Badge variant="secondary" className="bg-error/20 text-error">
+            <XCircle className="w-3 h-3 mr-1" />
+            {stats.errors}
+          </Badge>
+        )}
+        {stats.processing > 0 && (
+          <Badge variant="secondary" className="bg-warning/20 text-warning">
+            <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+            {stats.processing}
+          </Badge>
+        )}
+      </div>
+
+      {/* 검색 및 필터 */}
+      <div className="flex flex-wrap gap-2">
+        <div className="flex-1 min-w-[150px]">
+          <Input
+            placeholder="씬 검색..."
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setCurrentPage(1);
+            }}
+            icon={<Search className="w-4 h-4" />}
+          />
+        </div>
+        <select
+          value={filter}
+          onChange={(e) => {
+            setFilter(e.target.value as FilterType);
+            setCurrentPage(1);
+          }}
+          className="px-3 py-2 bg-card-hover border border-border rounded-lg text-sm"
+        >
+          <option value="all">전체</option>
+          <option value="no-image">이미지 없음</option>
+          <option value="no-audio">음성 없음</option>
+          <option value="no-video">렌더링 안됨</option>
+          <option value="completed">완료됨</option>
+          <option value="error">오류</option>
+        </select>
+        <Button
+          variant={compact ? 'primary' : 'ghost'}
+          size="sm"
+          onClick={() => setCompact(!compact)}
+          icon={compact ? <List className="w-4 h-4" /> : <LayoutGrid className="w-4 h-4" />}
+          title={compact ? '상세 보기' : '컴팩트 보기'}
+        />
+      </div>
+
+      {/* 씬 목록 */}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragEnd={handleDragEnd}
       >
         <SortableContext
-          items={scenes.map((s) => s.id)}
+          items={paginatedScenes.map((s) => s.id)}
           strategy={verticalListSortingStrategy}
         >
-          <AnimatePresence>
-            {scenes.map((scene) => (
+          <div className={`space-y-2 max-h-[calc(100vh-350px)] overflow-y-auto scrollbar-thin pr-1 ${compact ? 'space-y-1' : ''}`}>
+            {paginatedScenes.map((scene) => (
               <SceneCard
                 key={scene.id}
                 scene={scene}
@@ -279,13 +452,66 @@ const SceneList: React.FC = () => {
                 onGenerateAudio={() => handleGenerateAudio(scene.id)}
                 onRender={() => handleRender(scene.id)}
                 onDownload={() => handleDownload(scene.id)}
+                compact={compact}
               />
             ))}
-          </AnimatePresence>
+          </div>
         </SortableContext>
       </DndContext>
 
-      {/* Add Scene Button */}
+      {/* 페이지네이션 */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => changePage(1)}
+            disabled={currentPage === 1}
+            icon={<ChevronsLeft className="w-4 h-4" />}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => changePage(currentPage - 1)}
+            disabled={currentPage === 1}
+            icon={<ChevronLeft className="w-4 h-4" />}
+          />
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={currentPage}
+              onChange={(e) => changePage(Number(e.target.value))}
+              className="w-12 px-2 py-1 text-center bg-card-hover border border-border rounded text-sm"
+              min={1}
+              max={totalPages}
+            />
+            <span className="text-sm text-muted">/ {totalPages}</span>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => changePage(currentPage + 1)}
+            disabled={currentPage === totalPages}
+            icon={<ChevronRight className="w-4 h-4" />}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => changePage(totalPages)}
+            disabled={currentPage === totalPages}
+            icon={<ChevronsRight className="w-4 h-4" />}
+          />
+        </div>
+      )}
+
+      {/* 필터 결과 */}
+      {(searchQuery || filter !== 'all') && (
+        <div className="text-center text-sm text-muted py-2">
+          {filteredScenes.length}개의 씬 표시 중 (전체 {totalScenes}개)
+        </div>
+      )}
+
+      {/* 씬 추가 버튼 */}
       <Button
         variant="ghost"
         className="w-full border-dashed"

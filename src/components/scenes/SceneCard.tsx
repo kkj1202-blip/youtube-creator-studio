@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { memo } from 'react';
 import { motion } from 'framer-motion';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -9,7 +9,6 @@ import {
   Image as ImageIcon,
   Volume2,
   Video,
-  Play,
   Trash2,
   Copy,
   Check,
@@ -31,9 +30,11 @@ interface SceneCardProps {
   onGenerateAudio: () => void;
   onRender: () => void;
   onDownload: () => void;
+  compact?: boolean; // 컴팩트 모드 (대량 씬용)
 }
 
-const SceneCard: React.FC<SceneCardProps> = ({
+// 메모이제이션된 SceneCard
+const SceneCard: React.FC<SceneCardProps> = memo(({
   scene,
   isActive,
   aspectRatio,
@@ -44,9 +45,8 @@ const SceneCard: React.FC<SceneCardProps> = ({
   onGenerateAudio,
   onRender,
   onDownload,
+  compact = false,
 }) => {
-  const [showPreview, setShowPreview] = useState(false);
-  
   const {
     attributes,
     listeners,
@@ -74,9 +74,88 @@ const SceneCard: React.FC<SceneCardProps> = ({
     if (scene.audioGenerated && scene.imageUrl) {
       return <Badge variant="primary">렌더링 대기</Badge>;
     }
-    return <Badge variant="default">준비중</Badge>;
+    return null;
   };
 
+  // 컴팩트 모드 렌더링
+  if (compact) {
+    return (
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`
+          flex items-center gap-2 px-3 py-2 bg-card border rounded-lg transition-all cursor-pointer
+          ${isActive ? 'border-primary ring-1 ring-primary/50' : 'border-border hover:border-primary/50'}
+          ${isDragging ? 'opacity-50' : ''}
+        `}
+        onClick={onClick}
+      >
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-0.5 text-muted cursor-grab active:cursor-grabbing"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <GripVertical className="w-3 h-3" />
+        </button>
+
+        {/* Scene Number */}
+        <span className="w-6 h-6 rounded bg-primary/20 text-primary font-bold text-xs flex items-center justify-center flex-shrink-0">
+          {scene.order + 1}
+        </span>
+
+        {/* Status Icons */}
+        <div className="flex items-center gap-0.5">
+          <span className={`w-2 h-2 rounded-full ${scene.imageUrl ? 'bg-success' : 'bg-muted'}`} />
+          <span className={`w-2 h-2 rounded-full ${scene.audioGenerated ? 'bg-success' : 'bg-muted'}`} />
+          <span className={`w-2 h-2 rounded-full ${scene.rendered ? 'bg-success' : 'bg-muted'}`} />
+        </div>
+
+        {/* Script Preview */}
+        <span className="flex-1 text-xs text-muted truncate">
+          {scene.script?.slice(0, 40) || '대본 없음'}
+          {scene.script && scene.script.length > 40 ? '...' : ''}
+        </span>
+
+        {/* Processing */}
+        {scene.isProcessing && (
+          <Loader2 className="w-3 h-3 text-primary animate-spin" />
+        )}
+
+        {/* Error */}
+        {scene.error && (
+          <AlertCircle className="w-3 h-3 text-error" />
+        )}
+
+        {/* Quick Actions */}
+        <div className="flex items-center gap-0.5">
+          <button
+            onClick={(e) => { e.stopPropagation(); onGenerateImage(); }}
+            disabled={scene.isProcessing}
+            className="p-1 hover:bg-card-hover rounded disabled:opacity-50"
+          >
+            <ImageIcon className="w-3 h-3" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onGenerateAudio(); }}
+            disabled={scene.isProcessing || !scene.script}
+            className="p-1 hover:bg-card-hover rounded disabled:opacity-50"
+          >
+            <Volume2 className="w-3 h-3" />
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            className="p-1 hover:bg-error/20 rounded text-muted hover:text-error"
+          >
+            <Trash2 className="w-3 h-3" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 일반 모드 렌더링
   const aspectRatioClass = aspectRatio === '9:16' 
     ? 'aspect-[9/16] max-h-24' 
     : 'aspect-video';
@@ -88,6 +167,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: isDragging ? 0.5 : 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
+      layout={false} // 대량 씬에서 레이아웃 애니메이션 비활성화
       className={`
         bg-card border rounded-xl transition-all duration-200 overflow-hidden
         ${isActive ? 'border-primary ring-1 ring-primary/50' : 'border-border hover:border-primary/50'}
@@ -160,6 +240,7 @@ const SceneCard: React.FC<SceneCardProps> = ({
                 src={scene.imageUrl}
                 alt={`씬 ${scene.order + 1}`}
                 className="w-full h-full object-cover"
+                loading="lazy" // 지연 로딩
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center">
@@ -253,6 +334,25 @@ const SceneCard: React.FC<SceneCardProps> = ({
       </div>
     </motion.div>
   );
-};
+}, (prevProps, nextProps) => {
+  // 커스텀 비교 함수로 불필요한 리렌더링 방지
+  return (
+    prevProps.scene.id === nextProps.scene.id &&
+    prevProps.scene.script === nextProps.scene.script &&
+    prevProps.scene.imageUrl === nextProps.scene.imageUrl &&
+    prevProps.scene.audioUrl === nextProps.scene.audioUrl &&
+    prevProps.scene.audioGenerated === nextProps.scene.audioGenerated &&
+    prevProps.scene.videoUrl === nextProps.scene.videoUrl &&
+    prevProps.scene.rendered === nextProps.scene.rendered &&
+    prevProps.scene.isProcessing === nextProps.scene.isProcessing &&
+    prevProps.scene.error === nextProps.scene.error &&
+    prevProps.scene.order === nextProps.scene.order &&
+    prevProps.isActive === nextProps.isActive &&
+    prevProps.aspectRatio === nextProps.aspectRatio &&
+    prevProps.compact === nextProps.compact
+  );
+});
+
+SceneCard.displayName = 'SceneCard';
 
 export default SceneCard;

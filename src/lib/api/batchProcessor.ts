@@ -1,6 +1,10 @@
 /**
- * 일괄 처리 서비스
+ * 일괄 처리 서비스 (최적화 버전)
  * 이미지/음성/렌더링 일괄 처리 관리
+ * - 병렬 처리 지원
+ * - 큐 시스템
+ * - 재시도 로직
+ * - 일시정지/재개 기능
  */
 
 import type { Scene, Project } from '@/types';
@@ -8,12 +12,17 @@ import { generateImage, generateImagePrompt } from './imageGeneration';
 import { generateVoice } from './voiceGeneration';
 import { renderScene } from './renderService';
 
+// ==================== 타입 정의 ====================
+
 export interface BatchProcessingProgress {
   type: 'image' | 'voice' | 'render';
   total: number;
   completed: number;
+  failed: number;
   current: string;
   errors: string[];
+  eta?: number; // 예상 남은 시간 (초)
+  speed?: number; // 처리 속도 (개/분)
 }
 
 export interface BatchProcessingResult {
@@ -21,261 +30,423 @@ export interface BatchProcessingResult {
   completed: number;
   failed: number;
   errors: string[];
+  duration: number; // 총 소요 시간 (ms)
+}
+
+export interface BatchOptions {
+  concurrency: number; // 동시 처리 수 (1~5)
+  retryCount: number; // 재시도 횟수
+  retryDelay: number; // 재시도 간격 (ms)
+  delayBetweenItems: number; // 항목 간 딜레이 (ms)
+  stopOnError: boolean; // 에러 시 중지 여부
 }
 
 export type ProgressCallback = (progress: BatchProcessingProgress) => void;
 
+// 기본 옵션
+const defaultOptions: BatchOptions = {
+  concurrency: 2, // 동시 2개 처리
+  retryCount: 2,
+  retryDelay: 2000,
+  delayBetweenItems: 500,
+  stopOnError: false,
+};
+
+// ==================== 유틸리티 함수 ====================
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 청크로 나누기
+function chunkArray<T>(array: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < array.length; i += size) {
+    chunks.push(array.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// 재시도 래퍼
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  retries: number,
+  delayMs: number
+): Promise<T> {
+  let lastError: Error | null = null;
+  
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      if (i < retries) {
+        await delay(delayMs);
+      }
+    }
+  }
+  
+  throw lastError;
+}
+
+// ==================== 큐 시스템 ====================
+
+interface QueueItem<T> {
+  id: string;
+  data: T;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  error?: string;
+  retries: number;
+}
+
+class ProcessingQueue<T, R> {
+  private items: QueueItem<T>[] = [];
+  private isRunning = false;
+  private isPaused = false;
+  private processor: (item: T) => Promise<R>;
+  private onItemComplete?: (item: T, result: R | null, error?: string) => void;
+  private onProgress?: ProgressCallback;
+  private options: BatchOptions;
+  private startTime: number = 0;
+  private type: 'image' | 'voice' | 'render';
+
+  constructor(
+    processor: (item: T) => Promise<R>,
+    type: 'image' | 'voice' | 'render',
+    options: Partial<BatchOptions> = {},
+    onProgress?: ProgressCallback,
+    onItemComplete?: (item: T, result: R | null, error?: string) => void
+  ) {
+    this.processor = processor;
+    this.type = type;
+    this.options = { ...defaultOptions, ...options };
+    this.onProgress = onProgress;
+    this.onItemComplete = onItemComplete;
+  }
+
+  addItems(items: { id: string; data: T }[]) {
+    this.items = items.map((item) => ({
+      ...item,
+      status: 'pending' as const,
+      retries: 0,
+    }));
+  }
+
+  pause() {
+    this.isPaused = true;
+  }
+
+  resume() {
+    this.isPaused = false;
+  }
+
+  async process(): Promise<BatchProcessingResult> {
+    this.isRunning = true;
+    this.startTime = Date.now();
+    const errors: string[] = [];
+
+    // 병렬 처리를 위한 청크 생성
+    const pendingItems = this.items.filter((i) => i.status === 'pending');
+    const chunks = chunkArray(pendingItems, this.options.concurrency);
+
+    for (const chunk of chunks) {
+      // 일시정지 체크
+      while (this.isPaused) {
+        await delay(100);
+      }
+
+      // 병렬 처리
+      const results = await Promise.allSettled(
+        chunk.map(async (item) => {
+          item.status = 'processing';
+          this.reportProgress();
+
+          try {
+            const result = await withRetry(
+              () => this.processor(item.data),
+              this.options.retryCount,
+              this.options.retryDelay
+            );
+            
+            item.status = 'completed';
+            this.onItemComplete?.(item.data, result);
+            return { success: true, id: item.id };
+          } catch (error) {
+            const errorMsg = error instanceof Error ? error.message : '알 수 없는 오류';
+            item.status = 'failed';
+            item.error = errorMsg;
+            errors.push(`${item.id}: ${errorMsg}`);
+            this.onItemComplete?.(item.data, null, errorMsg);
+            
+            if (this.options.stopOnError) {
+              throw error;
+            }
+            return { success: false, id: item.id, error: errorMsg };
+          }
+        })
+      );
+
+      this.reportProgress();
+
+      // 항목 간 딜레이
+      await delay(this.options.delayBetweenItems);
+    }
+
+    this.isRunning = false;
+
+    const completed = this.items.filter((i) => i.status === 'completed').length;
+    const failed = this.items.filter((i) => i.status === 'failed').length;
+
+    return {
+      success: failed === 0,
+      completed,
+      failed,
+      errors,
+      duration: Date.now() - this.startTime,
+    };
+  }
+
+  private reportProgress() {
+    const total = this.items.length;
+    const completed = this.items.filter((i) => i.status === 'completed').length;
+    const failed = this.items.filter((i) => i.status === 'failed').length;
+    const processing = this.items.filter((i) => i.status === 'processing');
+    
+    const elapsed = Date.now() - this.startTime;
+    const itemsProcessed = completed + failed;
+    const speed = itemsProcessed > 0 ? (itemsProcessed / elapsed) * 60000 : 0; // 개/분
+    const remaining = total - itemsProcessed;
+    const eta = speed > 0 ? Math.round((remaining / speed) * 60) : 0; // 초
+
+    this.onProgress?.({
+      type: this.type,
+      total,
+      completed,
+      failed,
+      current: processing.length > 0 
+        ? `처리 중: ${processing.map((p) => p.id).join(', ')}` 
+        : completed === total ? '완료' : '대기 중',
+      errors: this.items.filter((i) => i.error).map((i) => i.error!),
+      eta,
+      speed: Math.round(speed * 10) / 10,
+    });
+  }
+}
+
+// ==================== 일괄 처리 함수 ====================
+
 /**
- * 모든 씬의 이미지 일괄 생성
+ * 모든 씬의 이미지 일괄 생성 (최적화)
  */
 export async function generateAllImages(
   project: Project,
   apiKey: string,
   onProgress?: ProgressCallback,
-  updateScene?: (sceneId: string, updates: Partial<Scene>) => void
+  updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
+  options?: Partial<BatchOptions>
 ): Promise<BatchProcessingResult> {
-  const scenes = project.scenes.filter(s => !s.imageUrl || s.imageSource === 'none');
-  const errors: string[] = [];
-  let completed = 0;
+  const scenes = project.scenes.filter((s) => !s.imageUrl || s.imageSource === 'none');
+  
+  if (scenes.length === 0) {
+    return { success: true, completed: 0, failed: 0, errors: [], duration: 0 };
+  }
 
-  for (let i = 0; i < scenes.length; i++) {
-    const scene = scenes[i];
-    
-    onProgress?.({
-      type: 'image',
-      total: scenes.length,
-      completed,
-      current: `씬 ${scene.order + 1} 이미지 생성 중...`,
-      errors,
-    });
-
-    // 처리 중 상태 업데이트
+  const processor = async (scene: Scene) => {
     updateScene?.(scene.id, { isProcessing: true, error: undefined });
 
-    try {
-      // 프롬프트 생성
-      const prompt = scene.imagePrompt || generateImagePrompt(
-        scene.script,
-        project.imageStyle,
-        project.customStylePrompt
-      );
+    const prompt = scene.imagePrompt || generateImagePrompt(
+      scene.script,
+      project.imageStyle,
+      project.customStylePrompt
+    );
 
-      // 이미지 생성
-      const result = await generateImage(apiKey, {
-        prompt,
-        style: project.imageStyle,
-        aspectRatio: project.aspectRatio,
-      });
+    const result = await generateImage(apiKey, {
+      prompt,
+      style: project.imageStyle,
+      aspectRatio: project.aspectRatio,
+    });
 
-      if (result.success && result.imageUrl) {
+    if (!result.success || !result.imageUrl) {
+      throw new Error(result.error || '이미지 생성 실패');
+    }
+
+    return { imageUrl: result.imageUrl, prompt };
+  };
+
+  const queue = new ProcessingQueue(
+    processor,
+    'image',
+    { ...options, delayBetweenItems: 1000 }, // 이미지 API rate limit
+    onProgress,
+    (scene, result, error) => {
+      if (result) {
         updateScene?.(scene.id, {
           imageUrl: result.imageUrl,
           imageSource: 'generated',
-          imagePrompt: prompt,
+          imagePrompt: result.prompt,
           isProcessing: false,
           error: undefined,
         });
-        completed++;
       } else {
-        const errorMsg = `씬 ${scene.order + 1}: ${result.error || '알 수 없는 오류'}`;
-        errors.push(errorMsg);
         updateScene?.(scene.id, {
           isProcessing: false,
-          error: result.error,
+          error: error || '알 수 없는 오류',
         });
       }
-    } catch (error) {
-      const errorMsg = `씬 ${scene.order + 1}: ${error instanceof Error ? error.message : '알 수 없는 오류'}`;
-      errors.push(errorMsg);
-      updateScene?.(scene.id, {
-        isProcessing: false,
-        error: errorMsg,
-      });
     }
+  );
 
-    // API 호출 간격 (rate limiting 방지)
-    await new Promise(resolve => setTimeout(resolve, 1000));
-  }
-
-  onProgress?.({
-    type: 'image',
-    total: scenes.length,
-    completed,
-    current: '완료',
-    errors,
-  });
-
-  return {
-    success: errors.length === 0,
-    completed,
-    failed: scenes.length - completed,
-    errors,
-  };
+  queue.addItems(scenes.map((s) => ({ id: `씬 ${s.order + 1}`, data: s })));
+  return queue.process();
 }
 
 /**
- * 모든 씬의 음성 일괄 생성
+ * 모든 씬의 음성 일괄 생성 (최적화)
  */
 export async function generateAllVoices(
   project: Project,
   apiKey: string,
   defaultVoiceId: string,
   onProgress?: ProgressCallback,
-  updateScene?: (sceneId: string, updates: Partial<Scene>) => void
+  updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
+  options?: Partial<BatchOptions>
 ): Promise<BatchProcessingResult> {
-  const scenes = project.scenes.filter(s => !s.audioGenerated && s.script.trim());
-  const errors: string[] = [];
-  let completed = 0;
+  const scenes = project.scenes.filter((s) => !s.audioGenerated && s.script.trim());
+  
+  if (scenes.length === 0) {
+    return { success: true, completed: 0, failed: 0, errors: [], duration: 0 };
+  }
 
-  for (let i = 0; i < scenes.length; i++) {
-    const scene = scenes[i];
-    
-    onProgress?.({
-      type: 'voice',
-      total: scenes.length,
-      completed,
-      current: `씬 ${scene.order + 1} 음성 생성 중...`,
-      errors,
-    });
-
+  const processor = async (scene: Scene) => {
     updateScene?.(scene.id, { isProcessing: true, error: undefined });
 
-    try {
-      const result = await generateVoice(apiKey, {
-        text: scene.script,
-        voiceId: scene.voiceId || defaultVoiceId,
-        speed: scene.voiceSpeed,
-        emotion: scene.emotion,
-      });
+    const result = await generateVoice(apiKey, {
+      text: scene.script,
+      voiceId: scene.voiceId || defaultVoiceId,
+      speed: scene.voiceSpeed,
+      emotion: scene.emotion,
+    });
 
-      if (result.success && result.audioUrl) {
+    if (!result.success || !result.audioUrl) {
+      throw new Error(result.error || '음성 생성 실패');
+    }
+
+    return { audioUrl: result.audioUrl, duration: result.audioDuration };
+  };
+
+  const queue = new ProcessingQueue(
+    processor,
+    'voice',
+    { ...options, concurrency: 3, delayBetweenItems: 500 }, // 음성 API는 더 빠름
+    onProgress,
+    (scene, result, error) => {
+      if (result) {
         updateScene?.(scene.id, {
           audioUrl: result.audioUrl,
           audioGenerated: true,
           isProcessing: false,
           error: undefined,
         });
-        completed++;
       } else {
-        const errorMsg = `씬 ${scene.order + 1}: ${result.error || '알 수 없는 오류'}`;
-        errors.push(errorMsg);
         updateScene?.(scene.id, {
           isProcessing: false,
-          error: result.error,
+          error: error || '알 수 없는 오류',
         });
       }
-    } catch (error) {
-      const errorMsg = `씬 ${scene.order + 1}: ${error instanceof Error ? error.message : '알 수 없는 오류'}`;
-      errors.push(errorMsg);
-      updateScene?.(scene.id, {
-        isProcessing: false,
-        error: errorMsg,
-      });
     }
+  );
 
-    // API 호출 간격
-    await new Promise(resolve => setTimeout(resolve, 500));
-  }
-
-  onProgress?.({
-    type: 'voice',
-    total: scenes.length,
-    completed,
-    current: '완료',
-    errors,
-  });
-
-  return {
-    success: errors.length === 0,
-    completed,
-    failed: scenes.length - completed,
-    errors,
-  };
+  queue.addItems(scenes.map((s) => ({ id: `씬 ${s.order + 1}`, data: s })));
+  return queue.process();
 }
 
 /**
- * 모든 씬 일괄 렌더링
+ * 모든 씬 일괄 렌더링 (최적화)
  */
 export async function renderAllScenes(
   project: Project,
   onProgress?: ProgressCallback,
-  updateScene?: (sceneId: string, updates: Partial<Scene>) => void
+  updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
+  options?: Partial<BatchOptions>
 ): Promise<BatchProcessingResult> {
-  const scenes = project.scenes.filter(s => s.imageUrl && s.audioGenerated && !s.rendered);
-  const errors: string[] = [];
-  let completed = 0;
+  const scenes = project.scenes.filter((s) => s.imageUrl && s.audioGenerated && !s.rendered);
+  
+  if (scenes.length === 0) {
+    return { success: true, completed: 0, failed: 0, errors: [], duration: 0 };
+  }
 
-  for (let i = 0; i < scenes.length; i++) {
-    const scene = scenes[i];
-    
-    onProgress?.({
-      type: 'render',
-      total: scenes.length,
-      completed,
-      current: `씬 ${scene.order + 1} 렌더링 중...`,
-      errors,
-    });
-
+  const processor = async (scene: Scene) => {
     updateScene?.(scene.id, { isProcessing: true, error: undefined });
 
-    try {
-      const result = await renderScene({
-        sceneId: scene.id,
-        imageUrl: scene.imageUrl!,
-        audioUrl: scene.audioUrl!,
-        aspectRatio: project.aspectRatio,
-        transition: scene.transition,
-        kenBurns: scene.kenBurns,
-        subtitle: {
-          enabled: scene.subtitleEnabled,
-          text: scene.script,
-          style: project.subtitleStyle,
-        },
-      });
+    const result = await renderScene({
+      sceneId: scene.id,
+      imageUrl: scene.imageUrl!,
+      audioUrl: scene.audioUrl!,
+      aspectRatio: project.aspectRatio,
+      transition: scene.transition,
+      kenBurns: scene.kenBurns,
+      subtitle: {
+        enabled: scene.subtitleEnabled,
+        text: scene.script,
+        style: project.subtitleStyle,
+      },
+    });
 
-      if (result.success && result.videoUrl) {
+    if (!result.success || !result.videoUrl) {
+      throw new Error(result.error || '렌더링 실패');
+    }
+
+    return { videoUrl: result.videoUrl, duration: result.duration };
+  };
+
+  const queue = new ProcessingQueue(
+    processor,
+    'render',
+    { ...options, concurrency: 2, delayBetweenItems: 1500 }, // 렌더링은 리소스 집약적
+    onProgress,
+    (scene, result, error) => {
+      if (result) {
         updateScene?.(scene.id, {
           videoUrl: result.videoUrl,
           rendered: true,
           isProcessing: false,
           error: undefined,
         });
-        completed++;
       } else {
-        const errorMsg = `씬 ${scene.order + 1}: ${result.error || '알 수 없는 오류'}`;
-        errors.push(errorMsg);
         updateScene?.(scene.id, {
           isProcessing: false,
-          error: result.error,
+          error: error || '알 수 없는 오류',
         });
       }
-    } catch (error) {
-      const errorMsg = `씬 ${scene.order + 1}: ${error instanceof Error ? error.message : '알 수 없는 오류'}`;
-      errors.push(errorMsg);
-      updateScene?.(scene.id, {
-        isProcessing: false,
-        error: errorMsg,
-      });
     }
+  );
 
-    // 렌더링 간격
-    await new Promise(resolve => setTimeout(resolve, 2000));
+  queue.addItems(scenes.map((s) => ({ id: `씬 ${s.order + 1}`, data: s })));
+  return queue.process();
+}
+
+/**
+ * 특정 범위의 씬만 처리 (대용량 지원)
+ */
+export async function processSceneRange(
+  project: Project,
+  startIndex: number,
+  endIndex: number,
+  type: 'image' | 'voice' | 'render',
+  apiKey: string,
+  defaultVoiceId: string,
+  onProgress?: ProgressCallback,
+  updateScene?: (sceneId: string, updates: Partial<Scene>) => void
+): Promise<BatchProcessingResult> {
+  const scenesToProcess = project.scenes.slice(startIndex, endIndex + 1);
+  const tempProject = { ...project, scenes: scenesToProcess };
+
+  switch (type) {
+    case 'image':
+      return generateAllImages(tempProject, apiKey, onProgress, updateScene);
+    case 'voice':
+      return generateAllVoices(tempProject, apiKey, defaultVoiceId, onProgress, updateScene);
+    case 'render':
+      return renderAllScenes(tempProject, onProgress, updateScene);
   }
-
-  onProgress?.({
-    type: 'render',
-    total: scenes.length,
-    completed,
-    current: '완료',
-    errors,
-  });
-
-  return {
-    success: errors.length === 0,
-    completed,
-    failed: scenes.length - completed,
-    errors,
-  };
 }
 
 /**
@@ -287,17 +458,22 @@ export async function runFullPipeline(
   voiceApiKey: string,
   defaultVoiceId: string,
   onProgress?: (stage: string, progress: BatchProcessingProgress) => void,
-  updateScene?: (sceneId: string, updates: Partial<Scene>) => void
+  updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
+  options?: Partial<BatchOptions>
 ): Promise<{
   imageResult: BatchProcessingResult;
   voiceResult: BatchProcessingResult;
   renderResult: BatchProcessingResult;
+  totalDuration: number;
 }> {
+  const startTime = Date.now();
+
   // 1. 이미지 생성
   onProgress?.('image', {
     type: 'image',
     total: project.scenes.length,
     completed: 0,
+    failed: 0,
     current: '이미지 생성 시작...',
     errors: [],
   });
@@ -306,7 +482,8 @@ export async function runFullPipeline(
     project,
     imageApiKey,
     (p) => onProgress?.('image', p),
-    updateScene
+    updateScene,
+    options
   );
 
   // 2. 음성 생성
@@ -314,6 +491,7 @@ export async function runFullPipeline(
     type: 'voice',
     total: project.scenes.length,
     completed: 0,
+    failed: 0,
     current: '음성 생성 시작...',
     errors: [],
   });
@@ -323,7 +501,8 @@ export async function runFullPipeline(
     voiceApiKey,
     defaultVoiceId,
     (p) => onProgress?.('voice', p),
-    updateScene
+    updateScene,
+    options
   );
 
   // 3. 렌더링
@@ -331,6 +510,7 @@ export async function runFullPipeline(
     type: 'render',
     total: project.scenes.length,
     completed: 0,
+    failed: 0,
     current: '렌더링 시작...',
     errors: [],
   });
@@ -338,8 +518,19 @@ export async function runFullPipeline(
   const renderResult = await renderAllScenes(
     project,
     (p) => onProgress?.('render', p),
-    updateScene
+    updateScene,
+    options
   );
 
-  return { imageResult, voiceResult, renderResult };
+  return {
+    imageResult,
+    voiceResult,
+    renderResult,
+    totalDuration: Date.now() - startTime,
+  };
 }
+
+// ==================== 유틸리티 내보내기 ====================
+
+export { delay, chunkArray, withRetry };
+// Types already exported above
