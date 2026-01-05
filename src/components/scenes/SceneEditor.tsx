@@ -457,17 +457,45 @@ const SceneEditor: React.FC = () => {
     }
   };
 
-  // 이미지 업로드 처리
+  // 이미지 업로드 처리 (모든 이미지를 각 씬에 적용)
   const handleImageUpload = (images: Array<{ imageUrl: string; sceneNumber: number | null }>) => {
-    // 현재 씬에 첫 번째 이미지 적용
-    if (images.length > 0) {
-      const matchedImage = images.find(img => img.sceneNumber === activeScene.order + 1) || images[0];
+    if (images.length === 0) {
+      setShowImageUploader(false);
+      return;
+    }
+
+    // 모든 이미지를 해당 씬에 적용
+    let appliedCount = 0;
+    images.forEach(({ imageUrl, sceneNumber }) => {
+      if (sceneNumber !== null && currentProject) {
+        // sceneNumber는 1부터 시작, order는 0부터 시작
+        const targetScene = currentProject.scenes.find(s => s.order === sceneNumber - 1);
+        if (targetScene) {
+          updateScene(targetScene.id, {
+            imageUrl,
+            imageSource: 'uploaded',
+            error: undefined,
+          });
+          appliedCount++;
+        }
+      }
+    });
+
+    // 씬 번호가 없는 이미지는 현재 씬에 적용 (첫 번째만)
+    const unmatchedImage = images.find(img => img.sceneNumber === null);
+    if (unmatchedImage && appliedCount === 0) {
       handleUpdate({
-        imageUrl: matchedImage.imageUrl,
+        imageUrl: unmatchedImage.imageUrl,
         imageSource: 'uploaded',
       });
+      appliedCount = 1;
     }
+
     setShowImageUploader(false);
+    
+    if (appliedCount > 0) {
+      console.log(`${appliedCount}개의 이미지가 씬에 적용되었습니다.`);
+    }
   };
 
   const estimatedDuration = estimateAudioDuration(activeScene.script, activeScene.voiceSpeed);
