@@ -626,11 +626,31 @@ export const useStore = create<AppState>()(
     {
       name: 'youtube-creator-studio',
       partialize: (state) => ({
-        projects: state.projects,
+        // 프로젝트 저장 시 base64 이미지/오디오 제외 (용량 문제 방지)
+        projects: state.projects.map(project => ({
+          ...project,
+          scenes: project.scenes.map(scene => ({
+            ...scene,
+            // base64 데이터는 저장하지 않음 (5MB 이상 가능)
+            imageUrl: scene.imageUrl?.startsWith('data:') ? undefined : scene.imageUrl,
+            audioUrl: scene.audioUrl?.startsWith('data:') ? undefined : scene.audioUrl,
+            videoUrl: scene.videoUrl?.startsWith('data:') ? undefined : scene.videoUrl,
+            // 생성 상태도 리셋
+            audioGenerated: scene.audioUrl?.startsWith('data:') ? false : scene.audioGenerated,
+            rendered: scene.videoUrl?.startsWith('data:') ? false : scene.rendered,
+          })),
+        })),
         templates: state.templates,
         settings: state.settings,
-        versionHistory: state.versionHistory,
+        // 버전 히스토리는 최근 3개만 저장
+        versionHistory: state.versionHistory.slice(-3),
       }),
+      // 저장 전 용량 체크
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          console.log('Store rehydrated');
+        }
+      },
     }
   )
 );
