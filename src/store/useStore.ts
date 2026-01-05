@@ -46,6 +46,12 @@ const defaultSettings: Settings = {
   defaultAspectRatio: '16:9',
   defaultImageStyle: 'realistic',
   defaultVoiceId: undefined,
+  // 기본 즐겨찾기 보이스 3개 (사용자 제공)
+  favoriteVoices: [
+    { id: '8jHHF8rMqMlg8if2mOUe', name: '한 여성', description: '여성 보이스' },
+    { id: 'CxErO97xpQgQXYmapDKX', name: '테오 남성', description: '남성 보이스' },
+    { id: 'uyVNoMrnUku1dZyVEXwD', name: '안나킴 여성', description: '여성 보이스' },
+  ],
   autoSaveInterval: 30,
   maxVersionHistory: 10,
 };
@@ -174,6 +180,11 @@ interface AppState {
   updateVoiceCategory: (accountIndex: number, voiceId: string, category: string) => void;
   getFavoriteVoices: () => { accountIndex: number; voice: import('@/types').VoiceOption }[];
   getActiveAccount: () => { index: number; account: ElevenLabsAccount } | null;
+  
+  // 커스텀 즐겨찾기 보이스 관리
+  addFavoriteVoice: (voice: import('@/types').FavoriteVoice) => void;
+  removeFavoriteVoice: (voiceId: string) => void;
+  updateFavoriteVoice: (voiceId: string, updates: Partial<import('@/types').FavoriteVoice>) => void;
   
   // ==================== 버전 히스토리 액션 ====================
   saveVersion: () => void;
@@ -605,6 +616,44 @@ export const useStore = create<AppState>()(
         const index = settings.elevenLabsAccounts.findIndex((acc) => acc.isActive && acc.apiKey);
         if (index === -1) return null;
         return { index, account: settings.elevenLabsAccounts[index] };
+      },
+
+      // 커스텀 즐겨찾기 보이스 추가
+      addFavoriteVoice: (voice) => {
+        set((state) => {
+          // 중복 체크
+          if (state.settings.favoriteVoices?.some(v => v.id === voice.id)) {
+            return state;
+          }
+          return {
+            settings: {
+              ...state.settings,
+              favoriteVoices: [...(state.settings.favoriteVoices || []), voice],
+            },
+          };
+        });
+      },
+
+      // 커스텀 즐겨찾기 보이스 삭제
+      removeFavoriteVoice: (voiceId) => {
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            favoriteVoices: (state.settings.favoriteVoices || []).filter(v => v.id !== voiceId),
+          },
+        }));
+      },
+
+      // 커스텀 즐겨찾기 보이스 수정
+      updateFavoriteVoice: (voiceId, updates) => {
+        set((state) => ({
+          settings: {
+            ...state.settings,
+            favoriteVoices: (state.settings.favoriteVoices || []).map(v =>
+              v.id === voiceId ? { ...v, ...updates } : v
+            ),
+          },
+        }));
       },
 
       // ==================== 버전 히스토리 액션 ====================

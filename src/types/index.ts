@@ -170,6 +170,13 @@ export interface ElevenLabsAccount {
   usagePercent?: number; // 사용량 퍼센트 (선택)
 }
 
+// 커스텀 즐겨찾기 보이스 (계정 무관하게 직접 등록)
+export interface FavoriteVoice {
+  id: string;           // ElevenLabs Voice ID
+  name: string;         // 표시 이름
+  description?: string; // 설명 (예: 남성, 여성, 톤 등)
+}
+
 export interface Settings {
   // API 키
   kieApiKey: string;
@@ -180,6 +187,9 @@ export interface Settings {
   defaultAspectRatio: AspectRatio;
   defaultImageStyle: ImageStyle;
   defaultVoiceId?: string;
+  
+  // 즐겨찾기 보이스 (커스텀 등록)
+  favoriteVoices: FavoriteVoice[];
   
   // 자동 저장
   autoSaveInterval: number; // 초

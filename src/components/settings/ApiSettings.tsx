@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, Input, Card, Badge } from '@/components/ui';
-import type { VoiceOption } from '@/types';
+import type { VoiceOption, FavoriteVoice } from '@/types';
 
 // 카테고리 옵션
 const categoryOptions = [
@@ -50,6 +50,9 @@ const ApiSettings: React.FC = () => {
     toggleVoiceFavorite,
     updateVoiceCategory,
     getFavoriteVoices,
+    addFavoriteVoice,
+    removeFavoriteVoice,
+    updateFavoriteVoice,
   } = useStore();
   
   const [showKeys, setShowKeys] = useState<Record<string, boolean>>({});
@@ -60,6 +63,12 @@ const ApiSettings: React.FC = () => {
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [filterFavorites, setFilterFavorites] = useState<Record<number, boolean>>({});
   const [filterCategory, setFilterCategory] = useState<Record<number, string>>({});
+  
+  // 커스텀 보이스 추가 폼
+  const [newVoiceId, setNewVoiceId] = useState('');
+  const [newVoiceName, setNewVoiceName] = useState('');
+  const [newVoiceDesc, setNewVoiceDesc] = useState('');
+  const [showAddVoiceForm, setShowAddVoiceForm] = useState(false);
 
   const toggleShowKey = (key: string) => {
     setShowKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -314,12 +323,125 @@ const ApiSettings: React.FC = () => {
         </div>
       </Card>
 
-      {/* 즐겨찾기 음성 빠른 접근 */}
+      {/* ⭐ 커스텀 즐겨찾기 보이스 (Voice ID 직접 등록) */}
+      <Card className="border-yellow-500/30 bg-yellow-500/5">
+        <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
+          즐겨찾기 보이스 (Voice ID 직접 등록)
+          <Badge variant="secondary" className="bg-yellow-500/20 text-yellow-600">
+            {(settings.favoriteVoices || []).length}개
+          </Badge>
+        </h3>
+        
+        <p className="text-sm text-muted mb-4">
+          ElevenLabs 보이스 ID를 직접 입력하여 즐겨찾기로 등록할 수 있습니다.
+          등록된 보이스는 음성 선택 시 상단에 표시됩니다.
+        </p>
+        
+        {/* 등록된 커스텀 보이스 목록 */}
+        {(settings.favoriteVoices || []).length > 0 && (
+          <div className="space-y-2 mb-4">
+            {(settings.favoriteVoices || []).map((voice) => (
+              <div
+                key={voice.id}
+                className="flex items-center justify-between p-3 bg-card-hover rounded-lg border border-border"
+              >
+                <div className="flex items-center gap-3">
+                  <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                  <div>
+                    <span className="font-medium">{voice.name}</span>
+                    {voice.description && (
+                      <span className="text-xs text-muted ml-2">({voice.description})</span>
+                    )}
+                    <p className="text-xs text-muted">ID: {voice.id}</p>
+                  </div>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => removeFavoriteVoice(voice.id)}
+                  className="text-error hover:bg-error/10"
+                >
+                  <XCircle className="w-4 h-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {/* 새 보이스 추가 폼 */}
+        {showAddVoiceForm ? (
+          <div className="space-y-3 p-4 bg-card rounded-lg border border-border">
+            <Input
+              label="Voice ID *"
+              value={newVoiceId}
+              onChange={(e) => setNewVoiceId(e.target.value)}
+              placeholder="예: 8jHHF8rMqMlg8if2mOUe"
+            />
+            <Input
+              label="이름 *"
+              value={newVoiceName}
+              onChange={(e) => setNewVoiceName(e.target.value)}
+              placeholder="예: 한 여성"
+            />
+            <Input
+              label="설명 (선택)"
+              value={newVoiceDesc}
+              onChange={(e) => setNewVoiceDesc(e.target.value)}
+              placeholder="예: 여성 보이스"
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => {
+                  if (newVoiceId && newVoiceName) {
+                    addFavoriteVoice({
+                      id: newVoiceId.trim(),
+                      name: newVoiceName.trim(),
+                      description: newVoiceDesc.trim() || undefined,
+                    });
+                    setNewVoiceId('');
+                    setNewVoiceName('');
+                    setNewVoiceDesc('');
+                    setShowAddVoiceForm(false);
+                  }
+                }}
+                disabled={!newVoiceId || !newVoiceName}
+              >
+                추가
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setShowAddVoiceForm(false);
+                  setNewVoiceId('');
+                  setNewVoiceName('');
+                  setNewVoiceDesc('');
+                }}
+              >
+                취소
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <Button
+            variant="ghost"
+            onClick={() => setShowAddVoiceForm(true)}
+            icon={<Star className="w-4 h-4" />}
+          >
+            새 보이스 ID 추가
+          </Button>
+        )}
+      </Card>
+
+      {/* 계정 보이스 즐겨찾기 (기존) */}
       {favoriteVoices.length > 0 && (
         <Card>
           <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-            <Star className="w-5 h-5 text-yellow-500 fill-yellow-500" />
-            즐겨찾기 음성
+            <Volume2 className="w-5 h-5 text-secondary" />
+            계정 보이스 즐겨찾기
             <Badge variant="secondary">{favoriteVoices.length}개</Badge>
           </h3>
           <div className="flex flex-wrap gap-2">
