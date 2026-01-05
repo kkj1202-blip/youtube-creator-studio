@@ -55,13 +55,23 @@ const ProjectSettings: React.FC = () => {
 
   if (!currentProject) return null;
 
-  const voiceOptions = settings.elevenLabsAccounts
+  // 즐겨찾기 보이스 (설정에서 직접 등록한 Voice ID)
+  const favoriteVoiceOptions = (settings.favoriteVoices || []).map((voice) => ({
+    value: voice.id,
+    label: `⭐ ${voice.name}${voice.description ? ` - ${voice.description}` : ''}`,
+  }));
+
+  // 계정에서 가져온 보이스
+  const accountVoiceOptions = settings.elevenLabsAccounts
     .flatMap((account, idx) => 
       account.voices.map((voice) => ({
         value: voice.id,
         label: `${voice.name} (계정 ${idx + 1})`,
       }))
     );
+
+  // 즐겨찾기 보이스를 먼저 표시
+  const voiceOptions = [...favoriteVoiceOptions, ...accountVoiceOptions];
 
   const accountOptions = settings.elevenLabsAccounts.map((account, idx) => ({
     value: String(idx),
@@ -138,12 +148,17 @@ const ProjectSettings: React.FC = () => {
             value={String(currentProject.elevenLabsAccountIndex)}
             onChange={(value) => updateProject({ elevenLabsAccountIndex: Number(value) })}
           />
-          <Select
-            label="기본 목소리"
-            options={voiceOptions.length > 0 ? voiceOptions : [{ value: '', label: '설정에서 보이스를 등록하세요' }]}
-            value={currentProject.defaultVoiceId || ''}
-            onChange={(value) => updateProject({ defaultVoiceId: value })}
-          />
+          <div className="space-y-2">
+            <Select
+              label="ElevenLabs 목소리"
+              options={voiceOptions.length > 0 ? voiceOptions : [{ value: '', label: '설정에서 즐겨찾기 보이스를 추가하세요' }]}
+              value={currentProject.defaultVoiceId || ''}
+              onChange={(value) => updateProject({ defaultVoiceId: value })}
+            />
+            <p className="text-xs text-muted">
+              ⭐ 즐겨찾기 {favoriteVoiceOptions.length}개 | 설정 → API 키 설정에서 보이스 추가
+            </p>
+          </div>
           <div className="grid grid-cols-2 gap-4">
             <Select
               label="기본 감정"

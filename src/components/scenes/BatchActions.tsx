@@ -36,7 +36,14 @@ import {
   runFullPipeline,
   type BatchProcessingProgress,
 } from '@/lib/api/batchProcessor';
-import { downloadVideo, downloadAudio, downloadImage } from '@/lib/api/renderService';
+import { 
+  downloadVideo, 
+  downloadAudio, 
+  downloadImage,
+  downloadAllToDirectory,
+  isDirectoryPickerSupported,
+  isFileSavePickerSupported,
+} from '@/lib/api/renderService';
 
 const emotionOptions = [
   { value: 'normal', label: '일반' },
@@ -686,7 +693,7 @@ const BatchActions: React.FC = () => {
     setProcessingState(prev => ({ ...prev, errors: [] }));
   };
 
-  const handleDownloadAll = async (type: 'video' | 'audio' | 'image') => {
+  const handleDownloadAll = async (type: 'video' | 'audio' | 'image', pickLocation: boolean = false) => {
     const targets = scenes.filter(s => {
       if (type === 'video') return s.rendered && s.videoUrl;
       if (type === 'audio') return s.audioGenerated && s.audioUrl;
@@ -699,8 +706,36 @@ const BatchActions: React.FC = () => {
       return;
     }
 
+    const typeLabel = type === 'video' ? '영상' : type === 'audio' ? '음성' : '이미지';
+    const ext = type === 'video' ? 'mp4' : type === 'audio' ? 'mp3' : 'png';
+
+    // 저장 위치 선택 (디렉토리 피커 지원 시)
+    if (pickLocation && isDirectoryPickerSupported()) {
+      const files = targets.map(scene => ({
+        url: type === 'video' ? scene.videoUrl! : type === 'audio' ? scene.audioUrl! : scene.imageUrl!,
+        filename: `scene_${scene.order + 1}.${ext}`,
+      }));
+
+      const result = await downloadAllToDirectory(files, (completed, total, filename) => {
+        console.log(`Saving ${filename} (${completed}/${total})`);
+      });
+
+      if (result.error === 'cancelled') {
+        return;
+      }
+
+      if (result.success) {
+        alert(
+          `✅ ${result.savedCount}개의 ${typeLabel} 저장 완료!\n\n` +
+          `📁 저장 위치: ${result.savedPath}`
+        );
+        return;
+      }
+      // 실패 시 기본 방식으로 폴백
+    }
+    
+    // 기본 다운로드 방식
     for (const scene of targets) {
-      const ext = type === 'video' ? 'mp4' : type === 'audio' ? 'mp3' : 'png';
       const filename = `scene_${scene.order + 1}.${ext}`;
       const url = type === 'video' ? scene.videoUrl! : type === 'audio' ? scene.audioUrl! : scene.imageUrl!;
 
@@ -714,7 +749,7 @@ const BatchActions: React.FC = () => {
       }
     }
 
-    alert(`${targets.length}개의 ${type === 'video' ? '영상' : type === 'audio' ? '음성' : '이미지'}을 다운로드했습니다.`);
+    alert(`✅ ${targets.length}개의 ${typeLabel} 다운로드 완료!\n\n📁 저장 위치: 브라우저 다운로드 폴더`);
   };
 
   return (
@@ -1010,44 +1045,58 @@ const BatchActions: React.FC = () => {
         </h3>
 
         <div className="space-y-2">
-          <Button
-            variant="ghost"
-            className="w-full justify-between"
-            onClick={() => handleDownloadAll('video')}
-            disabled={stats.rendered === 0}
-          >
-            <span className="flex items-center gap-2">
-              <Video className="w-4 h-4" />
-              영상 파일 다운로드
-            </span>
-            <span className="text-sm text-muted">{stats.rendered}개</span>
-          </Button>
+          {/* 영상 다운로드 */}
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              className="flex-1 justify-between"
+              onClick={() => handleDownloadAll('video', true)}
+              disabled={stats.rendered === 0}
+            >
+              <span className="flex items-center gap-2">
+                <Video className="w-4 h-4" />
+                영상 다운로드
+              </span>
+              <span className="text-sm text-muted">{stats.rendered}개</span>
+            </Button>
+          </div>
 
-          <Button
-            variant="ghost"
-            className="w-full justify-between"
-            onClick={() => handleDownloadAll('audio')}
-            disabled={stats.withAudio === 0}
-          >
-            <span className="flex items-center gap-2">
-              <Volume2 className="w-4 h-4" />
-              음성 파일 다운로드
-            </span>
-            <span className="text-sm text-muted">{stats.withAudio}개</span>
-          </Button>
+          {/* 음성 다운로드 */}
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              className="flex-1 justify-between"
+              onClick={() => handleDownloadAll('audio', true)}
+              disabled={stats.withAudio === 0}
+            >
+              <span className="flex items-center gap-2">
+                <Volume2 className="w-4 h-4" />
+                음성 다운로드
+              </span>
+              <span className="text-sm text-muted">{stats.withAudio}개</span>
+            </Button>
+          </div>
 
-          <Button
-            variant="ghost"
-            className="w-full justify-between"
-            onClick={() => handleDownloadAll('image')}
-            disabled={stats.withImage === 0}
-          >
-            <span className="flex items-center gap-2">
-              <ImageIcon className="w-4 h-4" />
-              이미지 파일 다운로드
-            </span>
-            <span className="text-sm text-muted">{stats.withImage}개</span>
-          </Button>
+          {/* 이미지 다운로드 */}
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              className="flex-1 justify-between"
+              onClick={() => handleDownloadAll('image', true)}
+              disabled={stats.withImage === 0}
+            >
+              <span className="flex items-center gap-2">
+                <ImageIcon className="w-4 h-4" />
+                이미지 다운로드
+              </span>
+              <span className="text-sm text-muted">{stats.withImage}개</span>
+            </Button>
+          </div>
+
+          {/* 안내 메시지 */}
+          <p className="text-xs text-muted mt-2 p-2 bg-card-hover rounded">
+            💡 다운로드 클릭 시 저장할 폴더를 선택할 수 있습니다
+          </p>
         </div>
       </Card>
 

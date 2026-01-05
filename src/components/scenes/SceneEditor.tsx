@@ -421,7 +421,7 @@ const SceneEditor: React.FC = () => {
     }
   };
 
-  // 다운로드
+  // 다운로드 (저장 위치 선택 가능)
   const handleDownload = async () => {
     if (!activeScene.videoUrl) return;
 
@@ -432,12 +432,39 @@ const SceneEditor: React.FC = () => {
         return;
       }
 
+      const filename = `scene_${activeScene.order + 1}.mp4`;
       const response = await fetch(activeScene.videoUrl);
       const blob = await response.blob();
+
+      // File System Access API 지원 시 저장 위치 선택
+      if ('showSaveFilePicker' in window) {
+        try {
+          const handle = await (window as any).showSaveFilePicker({
+            suggestedName: filename,
+            types: [{
+              description: '비디오 파일',
+              accept: { 'video/mp4': ['.mp4'] },
+            }],
+          });
+          const writable = await handle.createWritable();
+          await writable.write(blob);
+          await writable.close();
+          alert(`✅ 저장 완료: ${handle.name}`);
+          return;
+        } catch (err) {
+          // 사용자가 취소한 경우
+          if (err instanceof Error && err.name === 'AbortError') {
+            return;
+          }
+          // 다른 오류는 기본 방식으로 폴백
+        }
+      }
+
+      // 기본 방식 폴백
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `scene_${activeScene.order + 1}.mp4`;
+      a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
     } catch (error) {
