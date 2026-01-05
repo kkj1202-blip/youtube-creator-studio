@@ -5,11 +5,11 @@ import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
 
 interface ButtonProps {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
   icon?: React.ReactNode;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   className?: string;
   disabled?: boolean;
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
@@ -34,6 +34,7 @@ const Button: React.FC<ButtonProps> = ({
     secondary: 'bg-secondary hover:bg-secondary/80 text-white',
     ghost: 'bg-transparent hover:bg-card-hover text-foreground border border-border hover:border-primary/50',
     danger: 'bg-error hover:bg-error/80 text-white',
+    outline: 'bg-transparent hover:bg-card-hover text-foreground border border-border hover:border-primary/50',
   };
 
   const sizes = {

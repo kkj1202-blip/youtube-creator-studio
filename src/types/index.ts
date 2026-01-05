@@ -281,7 +281,7 @@ export interface CalendarEvent {
   date: string;
   type: 'shorts' | 'longform' | 'idea' | 'deadline';
   description?: string;
-  completed: boolean;
+  completed?: boolean;
 }
 
 // ==================== BGM 라이브러리 타입 ====================
@@ -291,10 +291,14 @@ export interface BGMTrack {
   name: string;
   artist?: string;
   duration: number;
-  mood: string[];
+  mood: string;
   genre: string;
+  bpm?: number;
   url: string;
-  isFavorite: boolean;
+  previewUrl?: string;
+  license?: string;
+  tags: string[];
+  isFavorite?: boolean;
 }
 
 // ==================== 소스 파일 관리 타입 ====================
@@ -303,10 +307,68 @@ export interface SourceFile {
   id: string;
   name: string;
   path: string;
-  type: 'image' | 'video' | 'audio';
+  type: 'image' | 'video' | 'audio' | 'other';
   size: number;
   createdAt: string;
   tags: string[];
   projectId?: string;
   used: boolean;
+}
+
+// ==================== 자막 생성 타입 ====================
+
+export interface SubtitleWord {
+  text: string;
+  start: number; // ms
+  end: number; // ms
+  confidence: number;
+  isHighlight?: boolean;
+  emoji?: string;
+}
+
+export interface SubtitleSegment {
+  id: string;
+  text: string;
+  start: number; // ms
+  end: number; // ms
+  words: SubtitleWord[];
+  speaker?: string;
+}
+
+export interface SubtitleProject {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  audioUrl?: string;
+  videoUrl?: string;
+  segments: SubtitleSegment[];
+  style: SubtitleStyle;
+  aspectRatio: AspectRatio;
+  highlightWords: string[]; // 강조할 단어 목록
+  autoEmoji: boolean;
+}
+
+export type SubtitleFormat = 'srt' | 'vtt' | 'ass' | 'json';
+
+// ==================== 클립 추출 타입 (롱폼→쇼츠) ====================
+
+export interface VideoClip {
+  id: string;
+  start: number; // ms
+  end: number; // ms
+  duration: number; // ms
+  score: number; // 하이라이트 점수 0-100
+  reason: string; // 추출 이유
+  transcript?: string;
+  thumbnailUrl?: string;
+}
+
+export interface ClipProject {
+  id: string;
+  name: string;
+  sourceVideoUrl: string;
+  sourceDuration: number;
+  clips: VideoClip[];
+  createdAt: string;
 }
