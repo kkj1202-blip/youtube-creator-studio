@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload,
@@ -9,15 +9,17 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  FolderOpen,
+  ArrowUpDown,
+  Zap,
 } from 'lucide-react';
 import { Button, Card } from '@/components/ui';
-import { validateImageFile, extractSceneNumber } from '@/lib/api/imageGeneration';
+import { validateImageFile } from '@/lib/api/imageGeneration';
 
 interface UploadedImage {
   file: File;
   preview: string;
   sceneNumber: number | null;
+  extractedNumber: number | null;  // 파일명에서 추출한 숫자 (정렬용)
   status: 'pending' | 'uploading' | 'success' | 'error';
   error?: string;
 }
@@ -26,16 +28,122 @@ interface ImageUploaderProps {
   onUpload: (images: Array<{ imageUrl: string; sceneNumber: number | null }>) => void;
   onClose: () => void;
   totalScenes: number;
+  existingSceneImages?: Map<number, boolean>;  // 이미 이미지가 있는 씬 번호
+}
+
+/**
+ * 파일명에서 숫자 추출 (정렬 및 매칭용)
+ * 예: 1.png → 1, scene_02.jpg → 2, img003.png → 3, my_image.jpg → null
+ */
+function extractNumberFromFilename(filename: string): number | null {
+  // 확장자 제거
+  const nameWithoutExt = filename.replace(/\.[^/.]+$/, '');
+  
+  // 패턴 1: 파일명이 숫자로 시작 (1.png, 001.jpg)
+  const startMatch = nameWithoutExt.match(/^(\d+)/);
+  if (startMatch) {
+    return parseInt(startMatch[1], 10);
+  }
+  
+  // 패턴 2: 파일명이 숫자로 끝남 (scene1.png, img_02.jpg)
+  const endMatch = nameWithoutExt.match(/(\d+)$/);
+  if (endMatch) {
+    return parseInt(endMatch[1], 10);
+  }
+  
+  // 패턴 3: 구분자 뒤의 숫자 (scene_1.png, 씬-02.jpg)
+  const separatorMatch = nameWithoutExt.match(/[_\-\s](\d+)/);
+  if (separatorMatch) {
+    return parseInt(separatorMatch[1], 10);
+  }
+  
+  // 패턴 4: 파일명 내 어떤 숫자라도 찾기
+  const anyNumberMatch = nameWithoutExt.match(/(\d+)/);
+  if (anyNumberMatch) {
+    return parseInt(anyNumberMatch[1], 10);
+  }
+  
+  return null;
 }
 
 const ImageUploader: React.FC<ImageUploaderProps> = ({
   onUpload,
   onClose,
   totalScenes,
+  existingSceneImages = new Map(),
 }) => {
   const [images, setImages] = useState<UploadedImage[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [autoMatchMode, setAutoMatchMode] = useState<'number' | 'order'>('number');
+
+  // 이미지가 없는 씬 번호 목록 (오름차순)
+  const availableSceneNumbers = useMemo(() => {
+    const available: number[] = [];
+    for (let i = 1; i <= totalScenes; i++) {
+      if (!existingSceneImages.get(i)) {
+        available.push(i);
+      }
+    }
+    return available;
+  }, [totalScenes, existingSceneImages]);
+
+  // 이미지 자동 매칭 실행
+  const autoMatchImages = useCallback((imagesToMatch: UploadedImage[]) => {
+    // 파일명에서 추출한 숫자 기준으로 정렬
+    const sortedImages = [...imagesToMatch].sort((a, b) => {
+      // 숫자가 있는 것 우선
+      if (a.extractedNumber === null && b.extractedNumber === null) return 0;
+      if (a.extractedNumber === null) return 1;
+      if (b.extractedNumber === null) return -1;
+      return a.extractedNumber - b.extractedNumber;
+    });
+
+    // 사용 가능한 씬 번호를 순서대로 할당
+    const usedSceneNumbers = new Set<number>();
+    
+    // 현재 할당된 씬 번호 수집 (이미 수동으로 설정된 것)
+    sortedImages.forEach(img => {
+      if (img.sceneNumber !== null) {
+        usedSceneNumbers.add(img.sceneNumber);
+      }
+    });
+
+    // 낮은 씬 번호부터 순서대로 할당
+    let availableIndex = 0;
+    const matchedImages = sortedImages.map(img => {
+      // 이미 씬 번호가 수동으로 설정된 경우 유지
+      if (img.sceneNumber !== null) {
+        return img;
+      }
+
+      // 파일명에 숫자가 있고 그 씬이 사용 가능한 경우
+      if (autoMatchMode === 'number' && img.extractedNumber !== null) {
+        const targetScene = img.extractedNumber;
+        if (targetScene >= 1 && targetScene <= totalScenes && 
+            !existingSceneImages.get(targetScene) && 
+            !usedSceneNumbers.has(targetScene)) {
+          usedSceneNumbers.add(targetScene);
+          return { ...img, sceneNumber: targetScene };
+        }
+      }
+
+      // 순서대로 다음 사용 가능한 씬에 할당
+      while (availableIndex < availableSceneNumbers.length) {
+        const nextAvailable = availableSceneNumbers[availableIndex];
+        availableIndex++;
+        if (!usedSceneNumbers.has(nextAvailable)) {
+          usedSceneNumbers.add(nextAvailable);
+          return { ...img, sceneNumber: nextAvailable };
+        }
+      }
+
+      // 할당 가능한 씬이 없으면 null 유지
+      return img;
+    });
+
+    return matchedImages;
+  }, [autoMatchMode, totalScenes, availableSceneNumbers, existingSceneImages]);
 
   const handleFiles = useCallback((files: FileList | File[]) => {
     const fileArray = Array.from(files);
@@ -48,6 +156,7 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           file,
           preview: '',
           sceneNumber: null,
+          extractedNumber: null,
           status: 'error',
           error: validation.error,
         });
@@ -55,25 +164,23 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
       }
 
       const preview = URL.createObjectURL(file);
-      const sceneNumber = extractSceneNumber(file.name);
+      const extractedNumber = extractNumberFromFilename(file.name);
 
       newImages.push({
         file,
         preview,
-        sceneNumber,
+        sceneNumber: null,
+        extractedNumber,
         status: 'pending',
       });
     }
 
-    // 씬 번호로 정렬
-    newImages.sort((a, b) => {
-      if (a.sceneNumber === null) return 1;
-      if (b.sceneNumber === null) return -1;
-      return a.sceneNumber - b.sceneNumber;
+    // 기존 이미지와 합치고 자동 매칭 실행
+    setImages(prev => {
+      const combined = [...prev, ...newImages];
+      return autoMatchImages(combined);
     });
-
-    setImages((prev) => [...prev, ...newImages]);
-  }, []);
+  }, [autoMatchImages]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -116,17 +223,47 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
     });
   }, []);
 
+  // 전체 재매칭 실행
+  const handleReMatch = useCallback(() => {
+    setImages(prev => {
+      // 모든 씬 번호 초기화 후 재매칭
+      const resetImages = prev.map(img => ({ ...img, sceneNumber: null }));
+      return autoMatchImages(resetImages);
+    });
+  }, [autoMatchImages]);
+
+  // 숫자순 정렬 토글
+  const handleSortByNumber = useCallback(() => {
+    setImages(prev => {
+      return [...prev].sort((a, b) => {
+        if (a.extractedNumber === null && b.extractedNumber === null) return 0;
+        if (a.extractedNumber === null) return 1;
+        if (b.extractedNumber === null) return -1;
+        return a.extractedNumber - b.extractedNumber;
+      });
+    });
+  }, []);
+
   const handleUpload = async () => {
     setIsUploading(true);
     const results: Array<{ imageUrl: string; sceneNumber: number | null }> = [];
 
-    for (let i = 0; i < images.length; i++) {
-      const image = images[i];
+    // 씬 번호순으로 정렬하여 업로드
+    const sortedImages = [...images].sort((a, b) => {
+      if (a.sceneNumber === null && b.sceneNumber === null) return 0;
+      if (a.sceneNumber === null) return 1;
+      if (b.sceneNumber === null) return -1;
+      return a.sceneNumber - b.sceneNumber;
+    });
+
+    for (let i = 0; i < sortedImages.length; i++) {
+      const image = sortedImages[i];
+      const originalIndex = images.findIndex(img => img.file === image.file);
       if (image.status === 'error') continue;
 
       setImages((prev) => {
         const newImages = [...prev];
-        newImages[i] = { ...newImages[i], status: 'uploading' };
+        newImages[originalIndex] = { ...newImages[originalIndex], status: 'uploading' };
         return newImages;
       });
 
@@ -149,19 +286,19 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
         const data = await response.json();
         results.push({
           imageUrl: data.imageUrl,
-          sceneNumber: data.sceneNumber,
+          sceneNumber: image.sceneNumber,
         });
 
         setImages((prev) => {
           const newImages = [...prev];
-          newImages[i] = { ...newImages[i], status: 'success' };
+          newImages[originalIndex] = { ...newImages[originalIndex], status: 'success' };
           return newImages;
         });
       } catch (error) {
         setImages((prev) => {
           const newImages = [...prev];
-          newImages[i] = { 
-            ...newImages[i], 
+          newImages[originalIndex] = { 
+            ...newImages[originalIndex], 
             status: 'error',
             error: '업로드 중 오류가 발생했습니다.',
           };
@@ -179,9 +316,48 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
 
   const pendingCount = images.filter((img) => img.status === 'pending').length;
   const successCount = images.filter((img) => img.status === 'success').length;
+  const matchedCount = images.filter((img) => img.sceneNumber !== null && img.status === 'pending').length;
 
   return (
     <div className="space-y-4">
+      {/* 설명 및 자동 매칭 옵션 */}
+      <div className="bg-card-hover rounded-lg p-3">
+        <div className="flex items-start gap-2 text-sm">
+          <Zap className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+          <div>
+            <p className="font-medium text-foreground">자동 씬 매칭</p>
+            <p className="text-muted text-xs mt-1">
+              파일명에 포함된 숫자를 기준으로 낮은 번호의 이미지가 낮은 씬에 자동 매칭됩니다.
+              <br />
+              예: 1.png → 씬 1, 2.jpg → 씬 2, scene_03.png → 씬 3
+            </p>
+          </div>
+        </div>
+        
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={() => setAutoMatchMode('number')}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+              autoMatchMode === 'number' 
+                ? 'bg-primary text-white' 
+                : 'bg-card text-muted hover:text-foreground'
+            }`}
+          >
+            파일명 번호순 매칭
+          </button>
+          <button
+            onClick={() => setAutoMatchMode('order')}
+            className={`px-3 py-1.5 text-xs rounded-md transition-colors ${
+              autoMatchMode === 'order' 
+                ? 'bg-primary text-white' 
+                : 'bg-card text-muted hover:text-foreground'
+            }`}
+          >
+            업로드 순서대로 매칭
+          </button>
+        </div>
+      </div>
+
       {/* 드래그 앤 드롭 영역 */}
       <div
         onDrop={handleDrop}
@@ -210,8 +386,8 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           <p className="text-sm text-muted">
             JPG, PNG, WebP, GIF (최대 10MB)
           </p>
-          <p className="text-xs text-muted mt-2">
-            파일명에 숫자가 있으면 자동으로 씬 번호를 매칭합니다 (예: 1.png, scene_2.jpg)
+          <p className="text-xs text-primary mt-2 font-medium">
+            💡 파일명에 숫자가 있으면 자동으로 해당 씬에 매칭됩니다
           </p>
         </div>
       </div>
@@ -222,14 +398,39 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-medium text-foreground">
               업로드할 이미지 ({images.length}개)
+              {matchedCount > 0 && (
+                <span className="ml-2 text-xs text-success">
+                  {matchedCount}개 자동 매칭됨
+                </span>
+              )}
             </h4>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setImages([])}
-            >
-              전체 삭제
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleSortByNumber}
+                title="파일 번호순 정렬"
+              >
+                <ArrowUpDown className="w-3 h-3 mr-1" />
+                정렬
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleReMatch}
+                title="전체 재매칭"
+              >
+                <Zap className="w-3 h-3 mr-1" />
+                재매칭
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setImages([])}
+              >
+                전체 삭제
+              </Button>
+            </div>
           </div>
           
           <div className="max-h-[300px] overflow-y-auto space-y-2">
@@ -240,7 +441,11 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, x: -10 }}
-                  className="flex items-center gap-3 p-2 bg-card-hover rounded-lg"
+                  className={`flex items-center gap-3 p-2 rounded-lg ${
+                    image.sceneNumber !== null 
+                      ? 'bg-success/10 border border-success/20' 
+                      : 'bg-card-hover'
+                  }`}
                 >
                   {/* 이미지 미리보기 */}
                   <div className="w-16 h-10 rounded overflow-hidden bg-card flex-shrink-0">
@@ -264,6 +469,11 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
                     </p>
                     <p className="text-xs text-muted">
                       {(image.file.size / 1024).toFixed(1)} KB
+                      {image.extractedNumber !== null && (
+                        <span className="ml-2 text-primary">
+                          추출: #{image.extractedNumber}
+                        </span>
+                      )}
                     </p>
                   </div>
 
@@ -274,15 +484,30 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
                       index, 
                       e.target.value ? parseInt(e.target.value, 10) : null
                     )}
-                    className="w-20 bg-card border border-border rounded px-2 py-1 text-sm"
+                    className={`w-24 border rounded px-2 py-1 text-sm ${
+                      image.sceneNumber !== null
+                        ? 'bg-success/20 border-success/50 text-foreground'
+                        : 'bg-card border-border'
+                    }`}
                     disabled={image.status !== 'pending'}
                   >
-                    <option value="">자동</option>
-                    {Array.from({ length: totalScenes }, (_, i) => (
-                      <option key={i + 1} value={i + 1}>
-                        씬 {i + 1}
-                      </option>
-                    ))}
+                    <option value="">미지정</option>
+                    {Array.from({ length: totalScenes }, (_, i) => {
+                      const sceneNum = i + 1;
+                      const isUsed = existingSceneImages.get(sceneNum);
+                      const isAssigned = images.some(
+                        (img, imgIdx) => imgIdx !== index && img.sceneNumber === sceneNum
+                      );
+                      return (
+                        <option 
+                          key={sceneNum} 
+                          value={sceneNum}
+                          disabled={isUsed || isAssigned}
+                        >
+                          씬 {sceneNum}{isUsed ? ' (있음)' : isAssigned ? ' (할당됨)' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
 
                   {/* 상태 아이콘 */}
@@ -311,6 +536,14 @@ const ImageUploader: React.FC<ImageUploaderProps> = ({
               ))}
             </AnimatePresence>
           </div>
+
+          {/* 매칭 안내 */}
+          {pendingCount > 0 && matchedCount < pendingCount && (
+            <p className="text-xs text-warning">
+              ⚠️ {pendingCount - matchedCount}개 이미지가 씬에 매칭되지 않았습니다. 
+              수동으로 씬 번호를 선택하거나, &apos;재매칭&apos; 버튼을 눌러주세요.
+            </p>
+          )}
         </div>
       )}
 

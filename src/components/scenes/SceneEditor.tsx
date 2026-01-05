@@ -1148,6 +1148,11 @@ const SceneEditor: React.FC = () => {
           onUpload={handleImageUpload}
           onClose={() => setShowImageUploader(false)}
           totalScenes={currentProject?.scenes.length || 0}
+          existingSceneImages={new Map(
+            (currentProject?.scenes || [])
+              .filter(s => s.imageUrl)
+              .map(s => [s.order + 1, true])
+          )}
         />
       </Modal>
 

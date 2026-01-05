@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Play,
@@ -20,9 +20,11 @@ import {
   Trash2,
   Pause,
   FolderDown,
+  Upload,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, Card, Select, Toggle, Slider, Modal } from '@/components/ui';
+import ImageUploader from './ImageUploader';
 import type { Scene, EmotionTag, TransitionType, KenBurnsEffect } from '@/types';
 import {
   generateAllImages,
@@ -76,6 +78,7 @@ const BatchActions: React.FC = () => {
 
   const [showBulkSettings, setShowBulkSettings] = useState(false);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
+  const [showBatchImageUploader, setShowBatchImageUploader] = useState(false);
   const [processingState, setProcessingState] = useState<ProgressState>({
     isRunning: false,
     currentStage: 'idle',
@@ -104,6 +107,15 @@ const BatchActions: React.FC = () => {
     errors: scenes.filter((s) => s.error).length,
   };
 
+  // 기존 이미지가 있는 씬 맵
+  const existingSceneImages = useMemo(() => {
+    return new Map(
+      scenes
+        .filter(s => s.imageUrl)
+        .map(s => [s.order + 1, true])
+    );
+  }, [scenes]);
+
   // 진행률 계산
   const progressPercent = processingState.progress
     ? Math.round((processingState.progress.completed / processingState.progress.total) * 100)
@@ -114,6 +126,24 @@ const BatchActions: React.FC = () => {
   const accountIndex = currentProject.elevenLabsAccountIndex || 0;
   const hasVoiceApiKey = !!settings.elevenLabsAccounts[accountIndex]?.apiKey;
   const hasDefaultVoice = !!(currentProject.defaultVoiceId || settings.elevenLabsAccounts[accountIndex]?.voices?.[0]?.id);
+
+  // 일괄 이미지 업로드 처리
+  const handleBatchImageUpload = useCallback((images: Array<{ imageUrl: string; sceneNumber: number | null }>) => {
+    // 씬 번호가 있는 이미지들을 해당 씬에 적용
+    images.forEach(({ imageUrl, sceneNumber }) => {
+      if (sceneNumber !== null && sceneNumber >= 1 && sceneNumber <= scenes.length) {
+        const targetScene = scenes.find(s => s.order === sceneNumber - 1);
+        if (targetScene) {
+          updateScene(targetScene.id, {
+            imageUrl,
+            imageSource: 'uploaded',
+          });
+        }
+      }
+    });
+    setShowBatchImageUploader(false);
+    alert(`${images.length}개의 이미지가 씬에 적용되었습니다.`);
+  }, [scenes, updateScene]);
 
   // 일괄 이미지 생성
   const handleGenerateAllImages = useCallback(async () => {
@@ -557,6 +587,23 @@ const BatchActions: React.FC = () => {
               {!hasVoiceApiKey && '⚠️ 음성 API 키 필요'}
             </div>
           )}
+
+          {/* 일괄 이미지 업로드 */}
+          <div className="pt-2 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full"
+              onClick={() => setShowBatchImageUploader(true)}
+              disabled={processingState.isRunning}
+              icon={<Upload className="w-4 h-4" />}
+            >
+              이미지 일괄 업로드
+            </Button>
+            <p className="text-xs text-muted mt-1">
+              파일명 번호순으로 자동 매칭됩니다
+            </p>
+          </div>
         </div>
       </Card>
 
@@ -785,6 +832,21 @@ const BatchActions: React.FC = () => {
           </Button>
         </div>
       </Card>
+
+      {/* 일괄 이미지 업로드 모달 */}
+      <Modal
+        isOpen={showBatchImageUploader}
+        onClose={() => setShowBatchImageUploader(false)}
+        title="이미지 일괄 업로드"
+        size="lg"
+      >
+        <ImageUploader
+          onUpload={handleBatchImageUpload}
+          onClose={() => setShowBatchImageUploader(false)}
+          totalScenes={stats.total}
+          existingSceneImages={existingSceneImages}
+        />
+      </Modal>
     </div>
   );
 };
