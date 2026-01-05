@@ -157,12 +157,17 @@ export interface VoiceOption {
   id: string;
   name: string;
   description?: string;
+  isFavorite?: boolean; // 즐겨찾기 여부
+  category?: string; // 카테고리 (예: 남성, 여성, 캐릭터 등)
+  previewUrl?: string; // 미리듣기 URL
 }
 
 export interface ElevenLabsAccount {
   name: string;
   apiKey: string;
   voices: VoiceOption[];
+  isActive: boolean; // 계정 활성화 여부
+  usagePercent?: number; // 사용량 퍼센트 (선택)
 }
 
 export interface Settings {

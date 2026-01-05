@@ -39,8 +39,8 @@ const defaultSubtitleStyle: SubtitleStyle = {
 const defaultSettings: Settings = {
   kieApiKey: '',
   elevenLabsAccounts: [
-    { name: '계정 1', apiKey: '', voices: [] },
-    { name: '계정 2', apiKey: '', voices: [] },
+    { name: '계정 1', apiKey: '', voices: [], isActive: true },
+    { name: '계정 2', apiKey: '', voices: [], isActive: false },
   ],
   youtubeApiKey: '',
   defaultAspectRatio: '16:9',
@@ -169,6 +169,11 @@ interface AppState {
   // ==================== 설정 액션 ====================
   updateSettings: (updates: Partial<Settings>) => void;
   updateElevenLabsAccount: (index: number, account: Partial<ElevenLabsAccount>) => void;
+  toggleAccountActive: (index: number) => void;
+  toggleVoiceFavorite: (accountIndex: number, voiceId: string) => void;
+  updateVoiceCategory: (accountIndex: number, voiceId: string, category: string) => void;
+  getFavoriteVoices: () => { accountIndex: number; voice: import('@/types').VoiceOption }[];
+  getActiveAccount: () => { index: number; account: ElevenLabsAccount } | null;
   
   // ==================== 버전 히스토리 액션 ====================
   saveVersion: () => void;
@@ -544,6 +549,62 @@ export const useStore = create<AppState>()(
             settings: { ...state.settings, elevenLabsAccounts: accounts },
           };
         });
+      },
+
+      toggleAccountActive: (index) => {
+        set((state) => {
+          const accounts = state.settings.elevenLabsAccounts.map((acc, i) => ({
+            ...acc,
+            isActive: i === index ? !acc.isActive : acc.isActive,
+          }));
+          return {
+            settings: { ...state.settings, elevenLabsAccounts: accounts },
+          };
+        });
+      },
+
+      toggleVoiceFavorite: (accountIndex, voiceId) => {
+        set((state) => {
+          const accounts = [...state.settings.elevenLabsAccounts];
+          const voices = accounts[accountIndex].voices.map((v) =>
+            v.id === voiceId ? { ...v, isFavorite: !v.isFavorite } : v
+          );
+          accounts[accountIndex] = { ...accounts[accountIndex], voices };
+          return {
+            settings: { ...state.settings, elevenLabsAccounts: accounts },
+          };
+        });
+      },
+
+      updateVoiceCategory: (accountIndex, voiceId, category) => {
+        set((state) => {
+          const accounts = [...state.settings.elevenLabsAccounts];
+          const voices = accounts[accountIndex].voices.map((v) =>
+            v.id === voiceId ? { ...v, category } : v
+          );
+          accounts[accountIndex] = { ...accounts[accountIndex], voices };
+          return {
+            settings: { ...state.settings, elevenLabsAccounts: accounts },
+          };
+        });
+      },
+
+      getFavoriteVoices: () => {
+        const { settings } = get();
+        const favorites: { accountIndex: number; voice: import('@/types').VoiceOption }[] = [];
+        settings.elevenLabsAccounts.forEach((account, accountIndex) => {
+          account.voices
+            .filter((v) => v.isFavorite)
+            .forEach((voice) => favorites.push({ accountIndex, voice }));
+        });
+        return favorites;
+      },
+
+      getActiveAccount: () => {
+        const { settings } = get();
+        const index = settings.elevenLabsAccounts.findIndex((acc) => acc.isActive && acc.apiKey);
+        if (index === -1) return null;
+        return { index, account: settings.elevenLabsAccounts[index] };
       },
 
       // ==================== 버전 히스토리 액션 ====================

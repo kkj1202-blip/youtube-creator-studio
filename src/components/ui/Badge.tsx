@@ -4,18 +4,21 @@ import React from 'react';
 
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: 'default' | 'primary' | 'success' | 'warning' | 'error';
+  variant?: 'default' | 'primary' | 'secondary' | 'success' | 'warning' | 'error';
   size?: 'sm' | 'md';
+  className?: string;
 }
 
 const Badge: React.FC<BadgeProps> = ({
   children,
   variant = 'default',
   size = 'md',
+  className = '',
 }) => {
   const variants = {
     default: 'bg-border text-foreground',
     primary: 'bg-primary/20 text-primary',
+    secondary: 'bg-card-hover text-muted-foreground',
     success: 'bg-success/20 text-success',
     warning: 'bg-warning/20 text-warning',
     error: 'bg-error/20 text-error',
@@ -27,7 +30,7 @@ const Badge: React.FC<BadgeProps> = ({
   };
 
   return (
-    <span className={`inline-flex items-center rounded-full font-medium ${variants[variant]} ${sizes[size]}`}>
+    <span className={`inline-flex items-center rounded-full font-medium ${variants[variant]} ${sizes[size]} ${className}`}>
       {children}
     </span>
   );
