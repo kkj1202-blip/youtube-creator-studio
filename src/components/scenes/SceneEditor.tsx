@@ -363,7 +363,10 @@ const SceneEditor: React.FC = () => {
     setIsPreviewingVoice(false);
   };
 
-  // 렌더링
+  // 렌더링 진행률 상태
+  const [renderProgress, setRenderProgress] = useState<{ percent: number; message: string } | null>(null);
+
+  // 렌더링 (브라우저 FFmpeg WASM 사용)
   const handleRender = async () => {
     if (!activeScene.imageUrl) {
       setGenerationError('이미지가 필요합니다.');
@@ -377,45 +380,42 @@ const SceneEditor: React.FC = () => {
 
     setIsRendering(true);
     setGenerationError(null);
+    setRenderProgress({ percent: 0, message: '렌더링 준비 중...' });
 
     try {
-      const response = await fetch('/api/render-scene', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sceneId: activeScene.id,
-          imageUrl: activeScene.imageUrl,
-          audioUrl: activeScene.audioUrl,
-          aspectRatio: currentProject?.aspectRatio,
-          transition: activeScene.transition,
-          kenBurns: activeScene.kenBurns,
-          subtitle: {
-            enabled: activeScene.subtitleEnabled,
-            text: activeScene.script,
-            style: currentProject?.subtitleStyle,
-          },
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || '렌더링에 실패했습니다.');
+      // 브라우저에서 FFmpeg WASM 사용
+      const { renderVideo, isFFmpegSupported } = await import('@/lib/ffmpeg/ffmpegClient');
+      
+      if (!isFFmpegSupported()) {
+        throw new Error('이 브라우저는 FFmpeg를 지원하지 않습니다. Chrome 또는 Edge 브라우저를 사용하세요.');
       }
 
+      const result = await renderVideo({
+        imageUrl: activeScene.imageUrl,
+        audioUrl: activeScene.audioUrl,
+        aspectRatio: currentProject?.aspectRatio || '16:9',
+        kenBurns: activeScene.kenBurns,
+        kenBurnsSpeed: activeScene.kenBurnsSpeed,
+        kenBurnsZoom: activeScene.kenBurnsZoom,
+        subtitleText: activeScene.script,
+        subtitleEnabled: activeScene.subtitleEnabled,
+        onProgress: (percent, message) => {
+          setRenderProgress({ percent, message });
+        },
+      });
+
       handleUpdate({
-        videoUrl: data.videoUrl,
+        videoUrl: result.videoUrl,
         rendered: true,
         error: undefined,
       });
 
-      if (data.demo) {
-        setGenerationError('데모 모드: FFmpeg 서버 구성 후 실제 렌더링이 가능합니다.');
-      }
+      setRenderProgress(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : '렌더링 중 오류가 발생했습니다.';
       setGenerationError(message);
       handleUpdate({ error: message });
+      setRenderProgress(null);
     } finally {
       setIsRendering(false);
     }
@@ -985,6 +985,22 @@ const SceneEditor: React.FC = () => {
                   <span className="text-sm text-muted">렌더링</span>
                 </div>
 
+                {/* 렌더링 진행률 */}
+                {renderProgress && (
+                  <div className="mb-3 p-3 bg-primary/10 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-foreground">{renderProgress.message}</span>
+                      <span className="text-sm font-medium text-primary">{renderProgress.percent}%</span>
+                    </div>
+                    <div className="h-2 bg-card-hover rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-primary transition-all duration-300"
+                        style={{ width: `${renderProgress.percent}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex gap-2">
                   <Button
                     variant="primary"
@@ -1008,6 +1024,11 @@ const SceneEditor: React.FC = () => {
                     </Button>
                   )}
                 </div>
+                
+                {/* FFmpeg 브라우저 안내 */}
+                <p className="text-xs text-muted mt-2">
+                  💡 브라우저에서 직접 렌더링됩니다 (Chrome/Edge 권장)
+                </p>
               </Card>
 
               {/* Video Settings */}
