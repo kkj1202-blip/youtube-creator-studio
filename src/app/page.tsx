@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -10,6 +10,14 @@ import {
   Play,
   FileText,
   Sparkles,
+  Search,
+  Palette,
+  BarChart3,
+  Wand2,
+  Download,
+  Keyboard,
+  Eye,
+  Save,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import {
@@ -18,9 +26,19 @@ import {
   ScriptInput,
   ProjectSettings,
   BatchActions,
+  FullPreviewPlayer,
 } from '@/components/scenes';
 import { Button, Card, Modal, Input, Tabs } from '@/components/ui';
+import {
+  SEOOptimizer,
+  BrandingPresets,
+  PerformancePredictor,
+  ScriptAssistant,
+  MultiPlatformExport,
+  KeyboardShortcutsHelp,
+} from '@/components/tools';
 import { useStore } from '@/store/useStore';
+import { useKeyboardShortcuts, ShortcutConfig } from '@/hooks/useKeyboardShortcuts';
 
 type EditorView = 'input' | 'editor';
 type EditorTab = 'scenes' | 'settings';
@@ -32,6 +50,7 @@ export default function Home() {
     createProject,
     loadProject,
     deleteProject,
+    saveProject,
   } = useStore();
 
   const [view, setView] = useState<EditorView>('input');
@@ -40,6 +59,48 @@ export default function Home() {
   const [showNewProjectModal, setShowNewProjectModal] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [mounted, setMounted] = useState(false);
+
+  // 새 도구 모달 상태
+  const [showPreviewPlayer, setShowPreviewPlayer] = useState(false);
+  const [showSEOOptimizer, setShowSEOOptimizer] = useState(false);
+  const [showBrandingPresets, setShowBrandingPresets] = useState(false);
+  const [showPerformancePredictor, setShowPerformancePredictor] = useState(false);
+  const [showScriptAssistant, setShowScriptAssistant] = useState(false);
+  const [showMultiPlatformExport, setShowMultiPlatformExport] = useState(false);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+
+  // 저장 알림
+  const [showSaveNotification, setShowSaveNotification] = useState(false);
+
+  // 저장 함수
+  const handleSave = useCallback(() => {
+    if (currentProject) {
+      saveProject();
+      setShowSaveNotification(true);
+      setTimeout(() => setShowSaveNotification(false), 2000);
+    }
+  }, [currentProject, saveProject]);
+
+  // 키보드 단축키 설정
+  const shortcuts: ShortcutConfig[] = [
+    // 파일
+    { key: 's', ctrl: true, action: handleSave, description: '프로젝트 저장', category: 'file' },
+    { key: 'o', ctrl: true, action: () => setShowProjectsModal(true), description: '프로젝트 열기', category: 'file' },
+    { key: 'n', ctrl: true, action: () => setShowNewProjectModal(true), description: '새 프로젝트', category: 'file' },
+    { key: 'e', ctrl: true, action: () => setShowMultiPlatformExport(true), description: '내보내기', category: 'file' },
+    
+    // 보기
+    { key: 'p', ctrl: true, action: () => setShowPreviewPlayer(true), description: '미리보기', category: 'view' },
+    
+    // 탐색
+    { key: '1', ctrl: true, action: () => setActiveTab('scenes'), description: '씬 탭으로 이동', category: 'navigation' },
+    { key: '2', ctrl: true, action: () => setActiveTab('settings'), description: '설정 탭으로 이동', category: 'navigation' },
+    
+    // 도구
+    { key: '/', ctrl: true, action: () => setShowKeyboardHelp(true), description: '단축키 도움말', category: 'tools' },
+  ];
+
+  useKeyboardShortcuts({ enabled: mounted && !!currentProject, shortcuts });
 
   useEffect(() => {
     setMounted(true);
@@ -69,6 +130,17 @@ export default function Home() {
     { id: 'settings', label: '프로젝트 설정', icon: <Settings2 className="w-4 h-4" /> },
   ];
 
+  // 도구 메뉴
+  const toolsMenu = [
+    { icon: <Eye className="w-4 h-4" />, label: '전체 미리보기', onClick: () => setShowPreviewPlayer(true), shortcut: 'Ctrl+P' },
+    { icon: <Download className="w-4 h-4" />, label: '다중 플랫폼 내보내기', onClick: () => setShowMultiPlatformExport(true), shortcut: 'Ctrl+E' },
+    { icon: <Search className="w-4 h-4" />, label: 'SEO 최적화', onClick: () => setShowSEOOptimizer(true) },
+    { icon: <BarChart3 className="w-4 h-4" />, label: '성과 예측', onClick: () => setShowPerformancePredictor(true) },
+    { icon: <Wand2 className="w-4 h-4" />, label: 'AI 스크립트 도우미', onClick: () => setShowScriptAssistant(true) },
+    { icon: <Palette className="w-4 h-4" />, label: '브랜딩 프리셋', onClick: () => setShowBrandingPresets(true) },
+    { icon: <Keyboard className="w-4 h-4" />, label: '단축키 도움말', onClick: () => setShowKeyboardHelp(true), shortcut: 'Ctrl+/' },
+  ];
+
   if (!mounted) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -82,6 +154,21 @@ export default function Home() {
 
   return (
     <MainLayout>
+      {/* 저장 알림 */}
+      <AnimatePresence>
+        {showSaveNotification && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-4 right-4 z-50 px-4 py-2 bg-success text-white rounded-lg shadow-lg flex items-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            저장되었습니다
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* No Project Selected */}
       {!currentProject && (
         <motion.div
@@ -188,21 +275,70 @@ export default function Home() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
             >
-              {/* Tabs */}
+              {/* Tabs & Tools */}
               <div className="flex items-center justify-between mb-6">
                 <Tabs
                   tabs={tabs}
                   activeTab={activeTab}
                   onChange={(id) => setActiveTab(id as EditorTab)}
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setView('input')}
-                  icon={<FileText className="w-4 h-4" />}
-                >
-                  대본 다시 입력
-                </Button>
+                <div className="flex items-center gap-2">
+                  {/* 도구 버튼들 */}
+                  <div className="hidden md:flex items-center gap-1 mr-2">
+                    {toolsMenu.slice(0, 4).map((tool, i) => (
+                      <Button
+                        key={i}
+                        variant="ghost"
+                        size="sm"
+                        onClick={tool.onClick}
+                        icon={tool.icon}
+                        title={`${tool.label}${tool.shortcut ? ` (${tool.shortcut})` : ''}`}
+                      />
+                    ))}
+                    <div className="relative group">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        icon={<Plus className="w-4 h-4" />}
+                        title="더 보기"
+                      />
+                      <div className="absolute right-0 top-full mt-1 w-48 bg-card border border-border rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
+                        {toolsMenu.slice(4).map((tool, i) => (
+                          <button
+                            key={i}
+                            onClick={tool.onClick}
+                            className="w-full px-4 py-2 text-left text-sm hover:bg-card-hover flex items-center gap-2 first:rounded-t-lg last:rounded-b-lg"
+                          >
+                            {tool.icon}
+                            <span>{tool.label}</span>
+                            {tool.shortcut && (
+                              <span className="ml-auto text-xs text-muted">{tool.shortcut}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="h-6 w-px bg-border hidden md:block" />
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setView('input')}
+                    icon={<FileText className="w-4 h-4" />}
+                  >
+                    대본 다시 입력
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSave}
+                    icon={<Save className="w-4 h-4" />}
+                  >
+                    저장
+                  </Button>
+                </div>
               </div>
 
               {activeTab === 'scenes' ? (
@@ -318,6 +454,36 @@ export default function Home() {
           </div>
         )}
       </Modal>
+
+      {/* Tool Modals */}
+      <FullPreviewPlayer
+        isOpen={showPreviewPlayer}
+        onClose={() => setShowPreviewPlayer(false)}
+      />
+      <SEOOptimizer
+        isOpen={showSEOOptimizer}
+        onClose={() => setShowSEOOptimizer(false)}
+      />
+      <BrandingPresets
+        isOpen={showBrandingPresets}
+        onClose={() => setShowBrandingPresets(false)}
+      />
+      <PerformancePredictor
+        isOpen={showPerformancePredictor}
+        onClose={() => setShowPerformancePredictor(false)}
+      />
+      <ScriptAssistant
+        isOpen={showScriptAssistant}
+        onClose={() => setShowScriptAssistant(false)}
+      />
+      <MultiPlatformExport
+        isOpen={showMultiPlatformExport}
+        onClose={() => setShowMultiPlatformExport(false)}
+      />
+      <KeyboardShortcutsHelp
+        isOpen={showKeyboardHelp}
+        onClose={() => setShowKeyboardHelp(false)}
+      />
     </MainLayout>
   );
 }

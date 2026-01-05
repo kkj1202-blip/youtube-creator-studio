@@ -8,3 +8,4 @@ export { default as ImageUploader } from './ImageUploader';
 export { default as AudioPlayer } from './AudioPlayer';
 export { default as ScenePreview } from './ScenePreview';
 export { default as MotionEffects } from './MotionEffects';
+export { default as FullPreviewPlayer } from './FullPreviewPlayer';
