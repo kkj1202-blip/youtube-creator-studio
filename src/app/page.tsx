@@ -106,11 +106,16 @@ export default function Home() {
     setMounted(true);
   }, []);
 
+  // 프로젝트 로드 시에만 editor 뷰로 전환 (새 프로젝트 생성 시에는 input 유지)
+  const [initialLoad, setInitialLoad] = useState(true);
+  
   useEffect(() => {
-    if (currentProject && currentProject.scenes.length > 0) {
+    // 처음 마운트 시에만 체크 (이후에는 수동으로만 전환)
+    if (initialLoad && currentProject && currentProject.scenes.length > 0) {
       setView('editor');
+      setInitialLoad(false);
     }
-  }, [currentProject]);
+  }, [currentProject, initialLoad]);
 
   const handleCreateProject = () => {
     createProject(newProjectName || '새 프로젝트');
@@ -122,6 +127,7 @@ export default function Home() {
   const handleLoadProject = (projectId: string) => {
     loadProject(projectId);
     setShowProjectsModal(false);
+    setInitialLoad(false);  // 로드 시에는 초기 로드 완료 처리
     setView('editor');
   };
 
