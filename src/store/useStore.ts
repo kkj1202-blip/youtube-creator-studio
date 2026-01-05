@@ -52,6 +52,16 @@ const defaultSettings: Settings = {
     { id: 'CxErO97xpQgQXYmapDKX', name: '테오 남성', description: '남성 보이스' },
     { id: 'uyVNoMrnUku1dZyVEXwD', name: '안나킴 여성', description: '여성 보이스' },
   ],
+  // 마지막 사용 설정 (자동 저장)
+  lastUsedSettings: {
+    ttsEngine: 'elevenlabs',
+    voiceId: '8jHHF8rMqMlg8if2mOUe', // 한 여성 기본
+    voiceSpeed: 1.0,
+    emotion: 'normal',
+    transition: 'fade',
+    kenBurns: 'zoom-in',
+    subtitleEnabled: true,
+  },
   autoSaveInterval: 30,
   maxVersionHistory: 10,
 };
@@ -67,26 +77,28 @@ const defaultRenderSettings: RenderSettings = {
   bitrate: 'high',
 };
 
-const createDefaultScene = (order: number, script: string = ''): Scene => ({
+// 마지막 사용 설정을 적용한 씬 생성
+const createDefaultScene = (order: number, script: string = '', lastUsed?: Settings['lastUsedSettings']): Scene => ({
   id: uuidv4(),
   order,
   script,
   imageSource: 'none',
   audioGenerated: false,
   rendered: false,
-  voiceSpeed: 1.0,
-  emotion: 'normal',
-  ttsEngine: 'edge-tts', // 기본값: 무료 Edge TTS
+  voiceId: lastUsed?.voiceId,
+  voiceSpeed: lastUsed?.voiceSpeed ?? 1.0,
+  emotion: lastUsed?.emotion ?? 'normal',
+  ttsEngine: lastUsed?.ttsEngine ?? 'elevenlabs',
   postAudioGap: 0.5,
-  transition: 'fade',
+  transition: lastUsed?.transition ?? 'fade',
   transitionDuration: 0.5,
-  kenBurns: 'zoom-in',
+  kenBurns: lastUsed?.kenBurns ?? 'zoom-in',
   kenBurnsSpeed: 1.0,
   kenBurnsZoom: 20,
   motionEffect: 'none',
   motionIntensity: 1.0,
-  combineEffects: true, // 기본: 효과 조합 사용
-  subtitleEnabled: true,
+  combineEffects: true,
+  subtitleEnabled: lastUsed?.subtitleEnabled ?? true,
   isProcessing: false,
 });
 
@@ -296,9 +308,10 @@ export const useStore = create<AppState>()(
       // ==================== 씬 액션 ====================
 
       parseScriptToScenes: (script) => {
+        const { settings } = get();
         const lines = script.split('\n\n').filter((line) => line.trim());
         const scenes = lines.map((line, index) =>
-          createDefaultScene(index, line.trim())
+          createDefaultScene(index, line.trim(), settings.lastUsedSettings)
         );
 
         set((state) => ({
@@ -327,7 +340,7 @@ export const useStore = create<AppState>()(
             }
           }
 
-          const newScene = createDefaultScene(insertIndex);
+          const newScene = createDefaultScene(insertIndex, '', state.settings.lastUsedSettings);
           scenes.splice(insertIndex, 0, newScene);
 
           // 순서 재정렬
@@ -352,12 +365,33 @@ export const useStore = create<AppState>()(
             s.id === sceneId ? { ...s, ...updates } : s
           );
 
+          // 마지막 사용 설정 업데이트 (음성/영상 관련 설정만)
+          const lastUsedUpdates: Partial<Settings['lastUsedSettings']> = {};
+          if (updates.ttsEngine !== undefined) lastUsedUpdates.ttsEngine = updates.ttsEngine;
+          if (updates.voiceId !== undefined) lastUsedUpdates.voiceId = updates.voiceId;
+          if (updates.voiceSpeed !== undefined) lastUsedUpdates.voiceSpeed = updates.voiceSpeed;
+          if (updates.emotion !== undefined) lastUsedUpdates.emotion = updates.emotion;
+          if (updates.transition !== undefined) lastUsedUpdates.transition = updates.transition;
+          if (updates.kenBurns !== undefined) lastUsedUpdates.kenBurns = updates.kenBurns;
+          if (updates.subtitleEnabled !== undefined) lastUsedUpdates.subtitleEnabled = updates.subtitleEnabled;
+
+          const newSettings = Object.keys(lastUsedUpdates).length > 0
+            ? {
+                ...state.settings,
+                lastUsedSettings: {
+                  ...state.settings.lastUsedSettings,
+                  ...lastUsedUpdates,
+                },
+              }
+            : state.settings;
+
           return {
             currentProject: {
               ...state.currentProject,
               scenes,
               updatedAt: new Date().toISOString(),
             },
+            settings: newSettings,
           };
         });
       },

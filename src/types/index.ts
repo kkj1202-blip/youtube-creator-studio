@@ -191,6 +191,17 @@ export interface Settings {
   // 즐겨찾기 보이스 (커스텀 등록)
   favoriteVoices: FavoriteVoice[];
   
+  // 마지막 사용 설정 (자동 저장)
+  lastUsedSettings: {
+    ttsEngine: TTSEngine;
+    voiceId?: string;
+    voiceSpeed: number;
+    emotion: EmotionTag;
+    transition: TransitionType;
+    kenBurns: KenBurnsEffect;
+    subtitleEnabled: boolean;
+  };
+  
   // 자동 저장
   autoSaveInterval: number; // 초
   maxVersionHistory: number;
