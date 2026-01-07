@@ -5,11 +5,13 @@ let ffmpegInstance: any = null;
 let isLoaded = false;
 let loadingPromise: Promise<any> | null = null;
 
+// CDN URL (WASM 파일은 CDN에서 직접 - 더 빠름)
+const CDN_BASE = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+
 /**
- * 프록시 URL 생성 (same-origin Worker 문제 해결)
+ * 프록시 URL (JS 파일만)
  */
 function getProxyURL(file: string): string {
-  // 현재 호스트 기반으로 프록시 URL 생성
   if (typeof window !== 'undefined') {
     return `${window.location.origin}/api/ffmpeg-proxy?file=${file}`;
   }
@@ -46,6 +48,21 @@ function loadScript(src: string): Promise<void> {
 }
 
 /**
+ * Blob URL 생성 (CORS 우회)
+ */
+async function toBlobURL(url: string, mimeType: string): Promise<string> {
+  console.log('[FFmpeg] Fetching for blob:', url);
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+  const blob = await response.blob();
+  const blobUrl = URL.createObjectURL(new Blob([blob], { type: mimeType }));
+  console.log('[FFmpeg] Blob URL created for:', url);
+  return blobUrl;
+}
+
+/**
  * FFmpeg WASM 인스턴스 로드
  */
 export async function loadFFmpeg(
@@ -64,50 +81,53 @@ export async function loadFFmpeg(
       onProgress?.(0, 'FFmpeg 스크립트 로딩 중...');
       console.log('[FFmpeg] Starting load process...');
 
-      // 1. FFmpeg 스크립트 로드 (프록시 사용)
+      // 1. FFmpeg 스크립트 로드 (프록시)
       await loadScript(getProxyURL('ffmpeg.js'));
       onProgress?.(3, 'FFmpeg 스크립트 로드 완료');
 
-      // 2. FFmpeg 모듈 확인 (UMD 빌드는 FFmpegWASM으로 노출됨)
+      // 2. FFmpeg 모듈 확인
       const FFmpegModule = (window as any).FFmpegWASM;
       
       if (!FFmpegModule) {
-        const availableGlobals = Object.keys(window).filter(k => 
-          k.toLowerCase().includes('ffmpeg')
-        );
-        console.log('[FFmpeg] Available globals:', availableGlobals);
-        throw new Error('FFmpeg 모듈을 찾을 수 없습니다. 브라우저를 새로고침 해주세요.');
+        throw new Error('FFmpeg 모듈을 찾을 수 없습니다.');
       }
 
-      console.log('[FFmpeg] FFmpegModule found:', Object.keys(FFmpegModule));
+      console.log('[FFmpeg] FFmpegModule found');
       onProgress?.(5, 'FFmpeg 인스턴스 생성 중...');
 
-      // FFmpegWASM.FFmpeg 클래스 사용
       const FFmpegClass = FFmpegModule.FFmpeg;
       if (!FFmpegClass) {
         throw new Error('FFmpeg 클래스를 찾을 수 없습니다.');
       }
+      
       ffmpegInstance = new FFmpegClass();
 
-      // 로그 이벤트
+      // 이벤트 핸들러
       ffmpegInstance.on('log', ({ message }: { message: string }) => {
         console.log('[FFmpeg Log]', message);
       });
 
-      // 진행률 이벤트
       ffmpegInstance.on('progress', ({ progress }: { progress: number }) => {
         const percent = Math.round(progress * 100);
         onProgress?.(15 + percent * 0.75, `인코딩 중... ${percent}%`);
       });
 
-      onProgress?.(8, 'WASM 코어 로딩 중...');
-      console.log('[FFmpeg] Loading WASM core via proxy...');
+      onProgress?.(6, 'WASM 코어 다운로드 중...');
+      console.log('[FFmpeg] Creating blob URLs for WASM core...');
 
-      // WASM 코어 로드 (프록시 URL 사용 - same-origin)
+      // 3. WASM 코어 파일을 Blob URL로 변환 (CORS 우회)
+      const [coreURL, wasmURL] = await Promise.all([
+        toBlobURL(`${CDN_BASE}/ffmpeg-core.js`, 'text/javascript'),
+        toBlobURL(`${CDN_BASE}/ffmpeg-core.wasm`, 'application/wasm'),
+      ]);
+
+      onProgress?.(8, 'FFmpeg 초기화 중...');
+      console.log('[FFmpeg] Loading FFmpeg with blob URLs...');
+
+      // 4. FFmpeg 로드
       await ffmpegInstance.load({
-        coreURL: getProxyURL('ffmpeg-core.js'),
-        wasmURL: getProxyURL('ffmpeg-core.wasm'),
-        workerURL: getProxyURL('ffmpeg-core.worker.js'),
+        coreURL,
+        wasmURL,
       });
 
       isLoaded = true;
@@ -131,7 +151,6 @@ export async function loadFFmpeg(
  */
 async function fetchFileData(url: string): Promise<Uint8Array> {
   try {
-    // Data URL
     if (url.startsWith('data:')) {
       const base64 = url.split(',')[1];
       const binaryString = atob(base64);
@@ -142,14 +161,12 @@ async function fetchFileData(url: string): Promise<Uint8Array> {
       return bytes;
     }
 
-    // Blob URL
     if (url.startsWith('blob:')) {
       const response = await fetch(url);
       const buffer = await response.arrayBuffer();
       return new Uint8Array(buffer);
     }
 
-    // HTTP URL
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -157,7 +174,7 @@ async function fetchFileData(url: string): Promise<Uint8Array> {
     const buffer = await response.arrayBuffer();
     return new Uint8Array(buffer);
   } catch (error) {
-    console.error('[FFmpeg] fetchFileData error:', error, 'URL:', url.substring(0, 100));
+    console.error('[FFmpeg] fetchFileData error:', error);
     throw error;
   }
 }
@@ -176,40 +193,27 @@ export async function renderVideo(options: {
   subtitleEnabled?: boolean;
   onProgress?: (progress: number, message: string) => void;
 }): Promise<{ videoUrl: string; duration: number }> {
-  const {
-    imageUrl,
-    audioUrl,
-    aspectRatio,
-    onProgress,
-  } = options;
+  const { imageUrl, audioUrl, aspectRatio, onProgress } = options;
 
   try {
     const ff = await loadFFmpeg(onProgress);
 
     onProgress?.(12, '파일 준비 중...');
-    console.log('[FFmpeg] Preparing files...');
 
-    // 이미지 로드
     const imageData = await fetchFileData(imageUrl);
-    console.log('[FFmpeg] Image data size:', imageData.length);
+    console.log('[FFmpeg] Image size:', imageData.length);
     await ff.writeFile('input.png', imageData);
 
-    // 오디오 로드
     const audioData = await fetchFileData(audioUrl);
-    console.log('[FFmpeg] Audio data size:', audioData.length);
+    console.log('[FFmpeg] Audio size:', audioData.length);
     await ff.writeFile('input.mp3', audioData);
 
     onProgress?.(15, '렌더링 시작...');
-    console.log('[FFmpeg] Starting render...');
 
-    // 해상도 설정
     const [width, height] = aspectRatio === '9:16' ? ['720', '1280'] : ['1280', '720'];
-    
-    // 비디오 필터
     const videoFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p`;
 
-    // FFmpeg 실행
-    console.log('[FFmpeg] Running FFmpeg command...');
+    console.log('[FFmpeg] Running FFmpeg...');
     await ff.exec([
       '-loop', '1',
       '-i', 'input.png',
@@ -228,29 +232,21 @@ export async function renderVideo(options: {
     ]);
 
     onProgress?.(90, '비디오 생성 중...');
-    console.log('[FFmpeg] Reading output...');
 
-    // 출력 파일 읽기
     const outputData = await ff.readFile('output.mp4');
-    
-    // Blob 생성
     const blob = new Blob([outputData as BlobPart], { type: 'video/mp4' });
     const videoUrl = URL.createObjectURL(blob);
-    console.log('[FFmpeg] Video created, blob size:', blob.size);
+    console.log('[FFmpeg] Video created, size:', blob.size);
 
-    // 임시 파일 정리
     try {
       await ff.deleteFile('input.png');
       await ff.deleteFile('input.mp3');
       await ff.deleteFile('output.mp4');
-    } catch (cleanupError) {
-      console.warn('[FFmpeg] Cleanup error:', cleanupError);
-    }
+    } catch {}
 
     onProgress?.(100, '렌더링 완료!');
 
     const duration = await getAudioDuration(audioUrl);
-    
     return { videoUrl, duration };
   } catch (error) {
     console.error('[FFmpeg] Render error:', error);
@@ -258,55 +254,23 @@ export async function renderVideo(options: {
   }
 }
 
-/**
- * 오디오 길이 가져오기
- */
 async function getAudioDuration(audioUrl: string): Promise<number> {
   return new Promise((resolve) => {
-    try {
-      const audio = new Audio();
-      audio.onloadedmetadata = () => {
-        resolve(audio.duration);
-      };
-      audio.onerror = () => {
-        resolve(10);
-      };
-      audio.src = audioUrl;
-    } catch {
-      resolve(10);
-    }
+    const audio = new Audio();
+    audio.onloadedmetadata = () => resolve(audio.duration);
+    audio.onerror = () => resolve(10);
+    audio.src = audioUrl;
   });
 }
 
-/**
- * FFmpeg 지원 여부 확인
- */
 export function isFFmpegSupported(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-  
-  const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
-  
-  if (!hasSharedArrayBuffer) {
-    console.warn('[FFmpeg] SharedArrayBuffer not available');
-  }
-  
-  return hasSharedArrayBuffer;
+  if (typeof window === 'undefined') return false;
+  return typeof SharedArrayBuffer !== 'undefined';
 }
 
-/**
- * FFmpeg 메모리 정리
- */
 export async function cleanupFFmpeg(): Promise<void> {
-  if (ffmpegInstance) {
-    try {
-      if (typeof ffmpegInstance.terminate === 'function') {
-        await ffmpegInstance.terminate();
-      }
-    } catch (error) {
-      console.warn('[FFmpeg] Cleanup error:', error);
-    }
+  if (ffmpegInstance?.terminate) {
+    try { await ffmpegInstance.terminate(); } catch {}
   }
   ffmpegInstance = null;
   isLoaded = false;
