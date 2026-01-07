@@ -21,6 +21,7 @@ export interface RenderOptions {
   
   // 효과 설정
   kenBurns?: KenBurnsEffect;
+  kenBurnsIntensity?: number; // 효과 강도 5~50% (기본 15%)
   transition?: TransitionType;
   
   // 품질 설정
@@ -110,17 +111,22 @@ function getRandomKenBurnsEffect(): Exclude<KenBurnsEffect, 'none' | 'random'> {
 
 /**
  * Ken Burns 효과 계산
+ * @param intensity - 효과 강도 (5~50%, 기본 15%)
  */
 function calculateKenBurnsTransform(
   effect: KenBurnsEffect,
   progress: number, // 0 ~ 1
   width: number,
-  height: number
+  height: number,
+  intensity: number = 15 // 기본 15%
 ): { scale: number; offsetX: number; offsetY: number } {
   // 기본값
   let scale = 1;
   let offsetX = 0;
   let offsetY = 0;
+  
+  // 강도를 비율로 변환 (15% -> 0.15)
+  const intensityRatio = intensity / 100;
   
   // 부드러운 easing (ease-in-out)
   const easeProgress = progress < 0.5 
@@ -129,37 +135,37 @@ function calculateKenBurnsTransform(
   
   switch (effect) {
     case 'zoom-in':
-      // 1.0 -> 1.2 (20% 확대)
-      scale = 1 + easeProgress * 0.2;
+      // 1.0 -> 1.0 + intensity (확대)
+      scale = 1 + easeProgress * intensityRatio;
       break;
       
     case 'zoom-out':
-      // 1.2 -> 1.0 (축소)
-      scale = 1.2 - easeProgress * 0.2;
+      // 1.0 + intensity -> 1.0 (축소)
+      scale = (1 + intensityRatio) - easeProgress * intensityRatio;
       break;
       
     case 'pan-left':
       // 오른쪽에서 왼쪽으로
-      scale = 1.15;
-      offsetX = (1 - easeProgress) * width * 0.1;
+      scale = 1 + intensityRatio * 0.5; // 패닝 시 약간 줌
+      offsetX = (1 - easeProgress) * width * (intensityRatio * 0.7);
       break;
       
     case 'pan-right':
       // 왼쪽에서 오른쪽으로
-      scale = 1.15;
-      offsetX = -(1 - easeProgress) * width * 0.1;
+      scale = 1 + intensityRatio * 0.5;
+      offsetX = -(1 - easeProgress) * width * (intensityRatio * 0.7);
       break;
       
     case 'pan-up':
       // 아래에서 위로
-      scale = 1.15;
-      offsetY = (1 - easeProgress) * height * 0.1;
+      scale = 1 + intensityRatio * 0.5;
+      offsetY = (1 - easeProgress) * height * (intensityRatio * 0.7);
       break;
       
     case 'pan-down':
       // 위에서 아래로
-      scale = 1.15;
-      offsetY = -(1 - easeProgress) * height * 0.1;
+      scale = 1 + intensityRatio * 0.5;
+      offsetY = -(1 - easeProgress) * height * (intensityRatio * 0.7);
       break;
       
     case 'none':
@@ -181,6 +187,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     aspectRatio,
     onProgress,
     kenBurns = 'none',
+    kenBurnsIntensity = 15, // 기본 15%
     transition = 'none',
     resolution = '1080p',
     fps = 30,
@@ -195,7 +202,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
   }
 
   onProgress?.(5, '리소스 로딩 중...');
-  console.log('[Renderer] 시작:', { kenBurns: actualKenBurns, transition, resolution, fps, bitrate });
+  console.log('[Renderer] 시작:', { kenBurns: actualKenBurns, kenBurnsIntensity: `${kenBurnsIntensity}%`, transition, resolution, fps, bitrate });
 
   // 해상도 설정
   const [width, height] = getResolution(resolution, aspectRatio);
@@ -243,8 +250,8 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     // 투명도 (페이드 효과) - 최소 0.05로 깜빡임 방지
     ctx.globalAlpha = Math.max(0.05, alpha);
     
-    // Ken Burns 효과 계산
-    const { scale, offsetX, offsetY } = calculateKenBurnsTransform(actualKenBurns, progress, width, height);
+    // Ken Burns 효과 계산 (강도 적용)
+    const { scale, offsetX, offsetY } = calculateKenBurnsTransform(actualKenBurns, progress, width, height, kenBurnsIntensity);
     
     // 변환 적용
     const drawWidth = baseWidth * scale;

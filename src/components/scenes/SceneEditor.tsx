@@ -403,6 +403,7 @@ const SceneEditor: React.FC = () => {
         },
         // 효과 설정
         kenBurns: activeScene.kenBurns || 'none',
+        kenBurnsIntensity: activeScene.kenBurnsZoom || 15, // 기본 15%
         transition: activeScene.transition || 'fade',
         // 품질 설정
         resolution: renderSettings?.resolution || '1080p',
@@ -1060,6 +1061,19 @@ const SceneEditor: React.FC = () => {
                     value={activeScene.kenBurns || 'none'}
                     onChange={(value) => handleUpdate({ kenBurns: value as KenBurnsEffect })}
                   />
+
+                  {/* Ken Burns 효과가 선택된 경우에만 강도 슬라이더 표시 */}
+                  {activeScene.kenBurns && activeScene.kenBurns !== 'none' && (
+                    <Slider
+                      label="📐 Ken Burns 강도 (영상 길이에 맞게 조절)"
+                      value={activeScene.kenBurnsZoom || 15}
+                      onChange={(value) => handleUpdate({ kenBurnsZoom: value })}
+                      min={5}
+                      max={50}
+                      step={5}
+                      unit="%"
+                    />
+                  )}
 
                   <Slider
                     label="이미지 추가 지속시간"
