@@ -1,192 +1,239 @@
 'use client';
 
-// FFmpeg 인스턴스
-let ffmpegInstance: any = null;
-let isLoaded = false;
-let loadingPromise: Promise<any> | null = null;
-
-// Single-threaded 버전 (더 작고 빠름, Worker 불필요)
-const FFMPEG_CORE_ST = 'https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/umd';
-
 /**
- * 프록시 URL
+ * 브라우저 기반 비디오 생성 (Canvas + MediaRecorder)
+ * 설치 없이 브라우저에서 직접 비디오 생성
  */
-function getProxyURL(file: string): string {
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/api/ffmpeg-proxy?file=${file}`;
-  }
-  return `/api/ffmpeg-proxy?file=${file}`;
-}
 
-/**
- * 스크립트 로드
- */
-function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      resolve();
-      return;
-    }
-    const script = document.createElement('script');
-    script.src = src;
-    script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Script load failed: ${src}`));
-    document.head.appendChild(script);
-  });
-}
-
-/**
- * FFmpeg 로드 (Single-threaded 버전)
- */
-export async function loadFFmpeg(
-  onProgress?: (progress: number, message: string) => void
-): Promise<any> {
-  if (isLoaded && ffmpegInstance) {
-    return ffmpegInstance;
-  }
-
-  if (loadingPromise) {
-    return loadingPromise;
-  }
-
-  loadingPromise = (async () => {
-    try {
-      onProgress?.(0, 'FFmpeg 로딩 중...');
-      console.log('[FFmpeg] Starting load (single-threaded version)...');
-
-      // 1. FFmpeg 스크립트 로드
-      await loadScript(getProxyURL('ffmpeg.js'));
-      onProgress?.(5, 'FFmpeg 스크립트 로드 완료');
-
-      const FFmpegModule = (window as any).FFmpegWASM;
-      if (!FFmpegModule?.FFmpeg) {
-        throw new Error('FFmpeg 모듈을 찾을 수 없습니다.');
-      }
-
-      console.log('[FFmpeg] Creating instance...');
-      ffmpegInstance = new FFmpegModule.FFmpeg();
-
-      ffmpegInstance.on('log', ({ message }: { message: string }) => {
-        console.log('[FFmpeg]', message);
-      });
-
-      ffmpegInstance.on('progress', ({ progress }: { progress: number }) => {
-        const percent = Math.round(progress * 100);
-        onProgress?.(15 + percent * 0.75, `인코딩 중... ${percent}%`);
-      });
-
-      onProgress?.(8, 'WASM 코어 로딩 중...');
-      console.log('[FFmpeg] Loading single-threaded WASM core...');
-
-      // 2. Single-threaded 코어 로드 (SharedArrayBuffer 불필요!)
-      await ffmpegInstance.load({
-        coreURL: `${FFMPEG_CORE_ST}/ffmpeg-core.js`,
-        wasmURL: `${FFMPEG_CORE_ST}/ffmpeg-core.wasm`,
-      });
-
-      isLoaded = true;
-      onProgress?.(12, 'FFmpeg 준비 완료');
-      console.log('[FFmpeg] Loaded successfully!');
-      
-      return ffmpegInstance;
-    } catch (error) {
-      console.error('[FFmpeg] Load error:', error);
-      loadingPromise = null;
-      isLoaded = false;
-      throw new Error(`FFmpeg 로드 실패: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  })();
-
-  return loadingPromise;
-}
-
-/**
- * 파일 데이터 가져오기
- */
-async function fetchFileData(url: string): Promise<Uint8Array> {
-  if (url.startsWith('data:')) {
-    const base64 = url.split(',')[1];
-    const bin = atob(base64);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return bytes;
-  }
-
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
-}
-
-/**
- * 렌더링
- */
-export async function renderVideo(options: {
+export interface RenderOptions {
   imageUrl: string;
   audioUrl: string;
   aspectRatio: '16:9' | '9:16';
   onProgress?: (progress: number, message: string) => void;
-}): Promise<{ videoUrl: string; duration: number }> {
-  const { imageUrl, audioUrl, aspectRatio, onProgress } = options;
+}
 
-  const ff = await loadFFmpeg(onProgress);
+export interface RenderResult {
+  videoUrl: string;
+  videoBlob: Blob;
+  duration: number;
+}
 
-  onProgress?.(13, '파일 준비 중...');
+/**
+ * 이미지 로드
+ */
+function loadImage(url: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('이미지 로드 실패'));
+    img.src = url;
+  });
+}
 
-  const imageData = await fetchFileData(imageUrl);
-  await ff.writeFile('input.png', imageData);
-  console.log('[FFmpeg] Image loaded:', imageData.length);
-
-  const audioData = await fetchFileData(audioUrl);
-  await ff.writeFile('input.mp3', audioData);
-  console.log('[FFmpeg] Audio loaded:', audioData.length);
-
-  onProgress?.(15, '렌더링 시작...');
-
-  const [w, h] = aspectRatio === '9:16' ? ['720', '1280'] : ['1280', '720'];
-  const vf = `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2,format=yuv420p`;
-
-  console.log('[FFmpeg] Encoding...');
-  await ff.exec([
-    '-loop', '1', '-i', 'input.png',
-    '-i', 'input.mp3',
-    '-vf', vf,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'stillimage', '-crf', '28',
-    '-c:a', 'aac', '-b:a', '128k',
-    '-shortest', '-movflags', '+faststart', '-y', 'output.mp4',
-  ]);
-
-  onProgress?.(92, '비디오 생성 중...');
-
-  const output = await ff.readFile('output.mp4');
-  const blob = new Blob([output as BlobPart], { type: 'video/mp4' });
-  const videoUrl = URL.createObjectURL(blob);
-  console.log('[FFmpeg] Done! Size:', blob.size);
-
-  try {
-    await ff.deleteFile('input.png');
-    await ff.deleteFile('input.mp3');
-    await ff.deleteFile('output.mp4');
-  } catch {}
-
-  onProgress?.(100, '렌더링 완료!');
-
-  const duration = await new Promise<number>((resolve) => {
-    const audio = new Audio(audioUrl);
+/**
+ * 오디오 길이 가져오기
+ */
+function getAudioDuration(url: string): Promise<number> {
+  return new Promise((resolve) => {
+    const audio = new Audio();
     audio.onloadedmetadata = () => resolve(audio.duration);
     audio.onerror = () => resolve(10);
+    audio.src = url;
+  });
+}
+
+/**
+ * URL을 Blob으로 변환
+ */
+async function urlToBlob(url: string): Promise<Blob> {
+  const res = await fetch(url);
+  return await res.blob();
+}
+
+/**
+ * Canvas + MediaRecorder로 비디오 생성 (고품질)
+ */
+export async function renderVideo(options: RenderOptions): Promise<RenderResult> {
+  const { imageUrl, audioUrl, aspectRatio, onProgress } = options;
+
+  onProgress?.(5, '리소스 로딩 중...');
+
+  // 고품질 해상도 (1080p)
+  const [width, height] = aspectRatio === '9:16' ? [1080, 1920] : [1920, 1080];
+
+  // 이미지 및 오디오 로드
+  const [img, duration] = await Promise.all([
+    loadImage(imageUrl),
+    getAudioDuration(audioUrl),
+  ]);
+
+  onProgress?.(15, '비디오 준비 중...');
+
+  // Canvas 생성
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d')!;
+
+  // 이미지를 캔버스에 그리기 (비율 유지하며 채우기)
+  const imgRatio = img.width / img.height;
+  const canvasRatio = width / height;
+  
+  let drawWidth, drawHeight, drawX, drawY;
+  if (imgRatio > canvasRatio) {
+    drawHeight = height;
+    drawWidth = height * imgRatio;
+    drawX = (width - drawWidth) / 2;
+    drawY = 0;
+  } else {
+    drawWidth = width;
+    drawHeight = width / imgRatio;
+    drawX = 0;
+    drawY = (height - drawHeight) / 2;
+  }
+
+  // 배경 검정 + 이미지 그리기
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+
+  onProgress?.(25, '비디오 인코딩 시작...');
+
+  // 비디오 스트림 캡처 (30fps)
+  const videoStream = canvas.captureStream(30);
+  
+  // 오디오 처리
+  const audioContext = new AudioContext();
+  const audioBlob = await urlToBlob(audioUrl);
+  const audioArrayBuffer = await audioBlob.arrayBuffer();
+  const audioBuffer = await audioContext.decodeAudioData(audioArrayBuffer);
+  
+  const audioSource = audioContext.createBufferSource();
+  audioSource.buffer = audioBuffer;
+  
+  const destination = audioContext.createMediaStreamDestination();
+  audioSource.connect(destination);
+  
+  // 비디오 + 오디오 스트림 합치기
+  const combinedStream = new MediaStream([
+    ...videoStream.getVideoTracks(),
+    ...destination.stream.getAudioTracks(),
+  ]);
+
+  // MediaRecorder 설정 (최고 품질)
+  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+    ? 'video/webm;codecs=vp9,opus'
+    : MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+    ? 'video/webm;codecs=vp8,opus'
+    : 'video/webm';
+
+  const recorder = new MediaRecorder(combinedStream, {
+    mimeType,
+    videoBitsPerSecond: 10000000, // 10Mbps 고품질
+    audioBitsPerSecond: 320000,   // 320kbps 오디오
   });
 
-  return { videoUrl, duration };
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  // 녹화
+  return new Promise((resolve, reject) => {
+    recorder.onstop = () => {
+      onProgress?.(95, '비디오 생성 중...');
+      
+      const videoBlob = new Blob(chunks, { type: mimeType });
+      const videoUrl = URL.createObjectURL(videoBlob);
+      
+      // 정리
+      try {
+        audioSource.stop();
+        audioContext.close();
+      } catch {}
+      
+      onProgress?.(100, '완료!');
+      
+      resolve({
+        videoUrl,
+        videoBlob,
+        duration,
+      });
+    };
+
+    recorder.onerror = () => reject(new Error('녹화 중 오류 발생'));
+
+    recorder.start();
+    audioSource.start();
+
+    // 진행률 업데이트
+    const startTime = Date.now();
+    const progressInterval = setInterval(() => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const progress = Math.min(90, 25 + (elapsed / duration) * 65);
+      onProgress?.(progress, `인코딩 중... ${Math.round(elapsed)}/${Math.round(duration)}초`);
+    }, 500);
+
+    // 오디오 길이만큼 녹화 후 중지
+    setTimeout(() => {
+      clearInterval(progressInterval);
+      recorder.stop();
+    }, duration * 1000 + 300);
+  });
 }
 
+/**
+ * 비디오 다운로드 (저장 위치 직접 선택)
+ */
+export async function downloadVideoWithPicker(
+  blob: Blob,
+  suggestedName: string = 'video.webm'
+): Promise<{ success: boolean; filename?: string }> {
+  // File System Access API 지원 시 (Chrome/Edge)
+  if ('showSaveFilePicker' in window) {
+    try {
+      const handle = await (window as any).showSaveFilePicker({
+        suggestedName,
+        types: [{
+          description: '비디오 파일',
+          accept: { 'video/webm': ['.webm'] },
+        }],
+      });
+      
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      
+      return { success: true, filename: handle.name };
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') {
+        return { success: false }; // 사용자 취소
+      }
+    }
+  }
+
+  // 폴백: 기본 다운로드 (다운로드 폴더로)
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = suggestedName;
+  a.click();
+  URL.revokeObjectURL(url);
+  
+  return { success: true, filename: suggestedName };
+}
+
+/**
+ * 지원 여부 확인
+ */
 export function isFFmpegSupported(): boolean {
-  return typeof window !== 'undefined';
+  if (typeof window === 'undefined') return false;
+  return typeof MediaRecorder !== 'undefined' && 
+         typeof HTMLCanvasElement.prototype.captureStream === 'function';
 }
 
-export async function cleanupFFmpeg(): Promise<void> {
-  try { await ffmpegInstance?.terminate?.(); } catch {}
-  ffmpegInstance = null;
-  isLoaded = false;
-  loadingPromise = null;
-}
+/**
+ * 정리 (미사용)
+ */
+export async function cleanupFFmpeg(): Promise<void> {}

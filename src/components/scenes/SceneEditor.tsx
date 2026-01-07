@@ -365,23 +365,9 @@ const SceneEditor: React.FC = () => {
 
   // 렌더링 진행률 상태
   const [renderProgress, setRenderProgress] = useState<{ percent: number; message: string } | null>(null);
-  const [localServerAvailable, setLocalServerAvailable] = useState<boolean | null>(null);
-  const [lastRenderPath, setLastRenderPath] = useState<string | null>(null);
+  const [lastVideoBlob, setLastVideoBlob] = useState<Blob | null>(null);
 
-  // 로컬 서버 상태 확인
-  useEffect(() => {
-    const checkServer = async () => {
-      const { isLocalServerAvailable } = await import('@/lib/ffmpeg/localRenderClient');
-      const available = await isLocalServerAvailable();
-      setLocalServerAvailable(available);
-    };
-    checkServer();
-    // 10초마다 재확인
-    const interval = setInterval(checkServer, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // 렌더링 (로컬 서버 우선, 폴백으로 브라우저)
+  // 렌더링 (브라우저에서 직접 - 설치 필요 없음)
   const handleRender = async () => {
     if (!activeScene.imageUrl) {
       setGenerationError('이미지가 필요합니다.');
@@ -398,43 +384,31 @@ const SceneEditor: React.FC = () => {
     setRenderProgress({ percent: 0, message: '렌더링 준비 중...' });
 
     try {
-      // 로컬 서버 확인
-      const { isLocalServerAvailable, renderVideoLocal, getDownloadUrl } = await import('@/lib/ffmpeg/localRenderClient');
-      const localAvailable = await isLocalServerAvailable();
-      setLocalServerAvailable(localAvailable);
-
-      if (localAvailable) {
-        // 🖥️ 로컬 서버 렌더링 (고품질, 빠름)
-        const result = await renderVideoLocal({
-          imageUrl: activeScene.imageUrl,
-          audioUrl: activeScene.audioUrl,
-          aspectRatio: currentProject?.aspectRatio || '16:9',
-          quality: 'high',
-          filename: `scene_${activeScene.order + 1}.mp4`,
-          kenBurns: activeScene.kenBurns,
-          subtitleText: activeScene.script,
-          subtitleEnabled: activeScene.subtitleEnabled,
-          onProgress: (percent, message) => {
-            setRenderProgress({ percent, message });
-          },
-        });
-
-        // 로컬 파일 경로 저장
-        setLastRenderPath(result.path);
-
-        handleUpdate({
-          videoUrl: getDownloadUrl(result.filename),
-          rendered: true,
-          error: undefined,
-        });
-
-        setRenderProgress(null);
-        alert(`✅ 렌더링 완료!\n\n📁 저장 위치:\n${result.path}\n\n📊 파일 크기: ${(result.size / 1024 / 1024).toFixed(1)} MB\n🎬 해상도: ${result.resolution}`);
-      } else {
-        // ⚠️ 로컬 서버 없음 - 안내 메시지
-        setGenerationError('로컬 렌더링 서버가 필요합니다. 아래 안내를 확인하세요.');
-        setRenderProgress(null);
+      const { renderVideo, isFFmpegSupported } = await import('@/lib/ffmpeg/ffmpegClient');
+      
+      if (!isFFmpegSupported()) {
+        throw new Error('이 브라우저는 비디오 생성을 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.');
       }
+
+      const result = await renderVideo({
+        imageUrl: activeScene.imageUrl,
+        audioUrl: activeScene.audioUrl,
+        aspectRatio: currentProject?.aspectRatio || '16:9',
+        onProgress: (percent, message) => {
+          setRenderProgress({ percent, message });
+        },
+      });
+
+      // Blob 저장 (다운로드용)
+      setLastVideoBlob(result.videoBlob);
+
+      handleUpdate({
+        videoUrl: result.videoUrl,
+        rendered: true,
+        error: undefined,
+      });
+
+      setRenderProgress(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : '렌더링 중 오류가 발생했습니다.';
       setGenerationError(message);
@@ -445,46 +419,45 @@ const SceneEditor: React.FC = () => {
     }
   };
 
-  // 다운로드 (저장 위치 선택 가능)
+  // 다운로드 (저장 위치 직접 선택)
   const handleDownload = async () => {
-    if (!activeScene.videoUrl) return;
+    if (!activeScene.videoUrl && !lastVideoBlob) return;
 
     try {
-      // 데모 모드에서는 알림만 표시
-      if (activeScene.videoUrl.startsWith('/api/demo-video')) {
-        alert('데모 모드에서는 다운로드할 수 없습니다. 실제 렌더링 후 다운로드 가능합니다.');
+      const filename = `scene_${activeScene.order + 1}.webm`;
+      
+      // Blob 가져오기
+      let blob: Blob;
+      if (lastVideoBlob) {
+        blob = lastVideoBlob;
+      } else if (activeScene.videoUrl) {
+        const response = await fetch(activeScene.videoUrl);
+        blob = await response.blob();
+      } else {
         return;
       }
 
-      const filename = `scene_${activeScene.order + 1}.mp4`;
-      const response = await fetch(activeScene.videoUrl);
-      const blob = await response.blob();
-
-      // File System Access API 지원 시 저장 위치 선택
+      // 저장 위치 선택 다이얼로그 (Chrome/Edge)
       if ('showSaveFilePicker' in window) {
         try {
           const handle = await (window as any).showSaveFilePicker({
             suggestedName: filename,
             types: [{
               description: '비디오 파일',
-              accept: { 'video/mp4': ['.mp4'] },
+              accept: { 'video/webm': ['.webm'] },
             }],
           });
           const writable = await handle.createWritable();
           await writable.write(blob);
           await writable.close();
-          alert(`✅ 저장 완료: ${handle.name}`);
+          alert(`✅ 저장 완료!\n📁 ${handle.name}\n📊 ${(blob.size / 1024 / 1024).toFixed(1)} MB`);
           return;
         } catch (err) {
-          // 사용자가 취소한 경우
-          if (err instanceof Error && err.name === 'AbortError') {
-            return;
-          }
-          // 다른 오류는 기본 방식으로 폴백
+          if ((err as Error).name === 'AbortError') return;
         }
       }
 
-      // 기본 방식 폴백
+      // 폴백: 기본 다운로드
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -1049,35 +1022,12 @@ const SceneEditor: React.FC = () => {
                   )}
                 </div>
                 
-                {/* 로컬 서버 상태 및 안내 */}
-                <div className={`mt-3 p-3 rounded-lg text-sm ${localServerAvailable ? 'bg-success/10 border border-success/30' : 'bg-warning/10 border border-warning/30'}`}>
-                  {localServerAvailable ? (
-                    <div className="flex items-center gap-2 text-success">
-                      <CheckCircle2 className="w-4 h-4" />
-                      <span>로컬 렌더링 서버 연결됨 (고품질 1080p)</span>
-                    </div>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-warning">
-                        <AlertCircle className="w-4 h-4" />
-                        <span>로컬 렌더링 서버 필요</span>
-                      </div>
-                      <div className="text-xs text-muted space-y-1">
-                        <p>1. <a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener" className="text-primary hover:underline">FFmpeg 설치</a></p>
-                        <p>2. <code className="bg-card px-1 rounded">pip install flask flask-cors</code></p>
-                        <p>3. <code className="bg-card px-1 rounded">python server.py</code> 실행</p>
-                        <p className="text-muted">📁 local-render-server 폴더 참고</p>
-                      </div>
-                    </div>
-                  )}
+                {/* 안내 메시지 */}
+                <div className="mt-3 p-2 rounded bg-primary/10 text-xs text-muted">
+                  <p>✨ 브라우저에서 바로 렌더링 (설치 필요 없음)</p>
+                  <p>📁 다운로드 시 저장 위치 직접 선택 가능</p>
+                  <p>🎬 1080p 고품질 / 10Mbps 비트레이트</p>
                 </div>
-                
-                {/* 마지막 렌더링 파일 경로 */}
-                {lastRenderPath && (
-                  <p className="text-xs text-muted mt-2">
-                    📁 저장됨: {lastRenderPath}
-                  </p>
-                )}
               </Card>
 
               {/* Video Settings */}
