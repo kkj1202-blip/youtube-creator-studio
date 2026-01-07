@@ -68,21 +68,25 @@ export async function loadFFmpeg(
       await loadScript(getProxyURL('ffmpeg.js'));
       onProgress?.(3, 'FFmpeg 스크립트 로드 완료');
 
-      // 2. FFmpeg 모듈 확인
-      const FFmpegModule = (window as any).FFmpeg;
+      // 2. FFmpeg 모듈 확인 (UMD 빌드는 FFmpegWASM으로 노출됨)
+      const FFmpegModule = (window as any).FFmpegWASM;
       
       if (!FFmpegModule) {
         const availableGlobals = Object.keys(window).filter(k => 
           k.toLowerCase().includes('ffmpeg')
         );
         console.log('[FFmpeg] Available globals:', availableGlobals);
-        throw new Error('FFmpeg 모듈을 찾을 수 없습니다.');
+        throw new Error('FFmpeg 모듈을 찾을 수 없습니다. 브라우저를 새로고침 해주세요.');
       }
 
+      console.log('[FFmpeg] FFmpegModule found:', Object.keys(FFmpegModule));
       onProgress?.(5, 'FFmpeg 인스턴스 생성 중...');
-      console.log('[FFmpeg] Creating FFmpeg instance...');
 
-      const FFmpegClass = FFmpegModule.FFmpeg || FFmpegModule;
+      // FFmpegWASM.FFmpeg 클래스 사용
+      const FFmpegClass = FFmpegModule.FFmpeg;
+      if (!FFmpegClass) {
+        throw new Error('FFmpeg 클래스를 찾을 수 없습니다.');
+      }
       ffmpegInstance = new FFmpegClass();
 
       // 로그 이벤트
