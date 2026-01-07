@@ -5,20 +5,22 @@ let ffmpegInstance: any = null;
 let isLoaded = false;
 let loadingPromise: Promise<any> | null = null;
 
-// CDN URL들
-const FFMPEG_CDN = {
-  ffmpeg: 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
-  util: 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/util.js',
-  coreJS: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
-  coreWASM: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
-};
+/**
+ * 프록시 URL 생성 (same-origin Worker 문제 해결)
+ */
+function getProxyURL(file: string): string {
+  // 현재 호스트 기반으로 프록시 URL 생성
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api/ffmpeg-proxy?file=${file}`;
+  }
+  return `/api/ffmpeg-proxy?file=${file}`;
+}
 
 /**
  * 스크립트 로드 헬퍼
  */
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    // 이미 로드된 스크립트인지 확인
     const existingScript = document.querySelector(`script[src="${src}"]`);
     if (existingScript) {
       resolve();
@@ -28,7 +30,6 @@ function loadScript(src: string): Promise<void> {
     const script = document.createElement('script');
     script.src = src;
     script.async = true;
-    script.crossOrigin = 'anonymous';
     
     script.onload = () => {
       console.log('[FFmpeg] Script loaded:', src);
@@ -45,17 +46,15 @@ function loadScript(src: string): Promise<void> {
 }
 
 /**
- * FFmpeg WASM 인스턴스 로드 (순수 CDN 방식)
+ * FFmpeg WASM 인스턴스 로드
  */
 export async function loadFFmpeg(
   onProgress?: (progress: number, message: string) => void
 ): Promise<any> {
-  // 이미 로드된 경우
   if (isLoaded && ffmpegInstance) {
     return ffmpegInstance;
   }
 
-  // 로딩 중인 경우 기존 Promise 반환
   if (loadingPromise) {
     return loadingPromise;
   }
@@ -65,24 +64,24 @@ export async function loadFFmpeg(
       onProgress?.(0, 'FFmpeg 스크립트 로딩 중...');
       console.log('[FFmpeg] Starting load process...');
 
-      // 1. FFmpeg 스크립트 로드
-      await loadScript(FFMPEG_CDN.ffmpeg);
+      // 1. FFmpeg 스크립트 로드 (프록시 사용)
+      await loadScript(getProxyURL('ffmpeg.js'));
       onProgress?.(3, 'FFmpeg 스크립트 로드 완료');
 
       // 2. FFmpeg 모듈 확인
-      const FFmpegModule = (window as any).FFmpeg_WASM || (window as any).FFmpegWASM || (window as any).FFmpeg;
+      const FFmpegModule = (window as any).FFmpeg;
       
       if (!FFmpegModule) {
-        // 직접 window에서 FFmpeg 클래스 찾기
-        console.log('[FFmpeg] Checking window object for FFmpeg...');
-        console.log('[FFmpeg] Available globals:', Object.keys(window).filter(k => k.toLowerCase().includes('ffmpeg')));
-        throw new Error('FFmpeg 모듈을 찾을 수 없습니다. 브라우저를 새로고침 해주세요.');
+        const availableGlobals = Object.keys(window).filter(k => 
+          k.toLowerCase().includes('ffmpeg')
+        );
+        console.log('[FFmpeg] Available globals:', availableGlobals);
+        throw new Error('FFmpeg 모듈을 찾을 수 없습니다.');
       }
 
       onProgress?.(5, 'FFmpeg 인스턴스 생성 중...');
       console.log('[FFmpeg] Creating FFmpeg instance...');
 
-      // FFmpeg 인스턴스 생성
       const FFmpegClass = FFmpegModule.FFmpeg || FFmpegModule;
       ffmpegInstance = new FFmpegClass();
 
@@ -98,12 +97,13 @@ export async function loadFFmpeg(
       });
 
       onProgress?.(8, 'WASM 코어 로딩 중...');
-      console.log('[FFmpeg] Loading WASM core...');
+      console.log('[FFmpeg] Loading WASM core via proxy...');
 
-      // WASM 코어 로드 (UMD 버전)
+      // WASM 코어 로드 (프록시 URL 사용 - same-origin)
       await ffmpegInstance.load({
-        coreURL: FFMPEG_CDN.coreJS,
-        wasmURL: FFMPEG_CDN.coreWASM,
+        coreURL: getProxyURL('ffmpeg-core.js'),
+        wasmURL: getProxyURL('ffmpeg-core.wasm'),
+        workerURL: getProxyURL('ffmpeg-core.worker.js'),
       });
 
       isLoaded = true;
@@ -180,7 +180,6 @@ export async function renderVideo(options: {
   } = options;
 
   try {
-    // FFmpeg 로드
     const ff = await loadFFmpeg(onProgress);
 
     onProgress?.(12, '파일 준비 중...');
@@ -202,7 +201,7 @@ export async function renderVideo(options: {
     // 해상도 설정
     const [width, height] = aspectRatio === '9:16' ? ['720', '1280'] : ['1280', '720'];
     
-    // 비디오 필터 (단순화)
+    // 비디오 필터
     const videoFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,format=yuv420p`;
 
     // FFmpeg 실행
@@ -246,7 +245,6 @@ export async function renderVideo(options: {
 
     onProgress?.(100, '렌더링 완료!');
 
-    // 오디오 길이 가져오기
     const duration = await getAudioDuration(audioUrl);
     
     return { videoUrl, duration };
@@ -267,7 +265,6 @@ async function getAudioDuration(audioUrl: string): Promise<number> {
         resolve(audio.duration);
       };
       audio.onerror = () => {
-        console.warn('[FFmpeg] Failed to get audio duration, using default');
         resolve(10);
       };
       audio.src = audioUrl;
@@ -285,11 +282,10 @@ export function isFFmpegSupported(): boolean {
     return false;
   }
   
-  // SharedArrayBuffer 지원 확인
   const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
   
   if (!hasSharedArrayBuffer) {
-    console.warn('[FFmpeg] SharedArrayBuffer not available. COOP/COEP headers may be missing.');
+    console.warn('[FFmpeg] SharedArrayBuffer not available');
   }
   
   return hasSharedArrayBuffer;
@@ -311,5 +307,4 @@ export async function cleanupFFmpeg(): Promise<void> {
   ffmpegInstance = null;
   isLoaded = false;
   loadingPromise = null;
-  console.log('[FFmpeg] Cleanup complete');
 }
