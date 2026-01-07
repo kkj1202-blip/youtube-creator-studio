@@ -554,6 +554,9 @@ export async function renderAllScenes(
   const processor = async (scene: Scene) => {
     updateScene?.(scene.id, { isProcessing: true, error: undefined });
 
+    // 메모리 정리를 위한 약간의 지연
+    await delay(300);
+
     // 브라우저 기반 렌더링 사용
     const result = await renderVideo({
       imageUrl: scene.imageUrl!,
@@ -569,6 +572,9 @@ export async function renderAllScenes(
       bitrate: renderSettings?.bitrate || 'high',
     });
 
+    // 렌더링 후 메모리 정리 대기
+    await delay(200);
+
     return { 
       videoUrl: result.videoUrl, 
       videoBlob: result.videoBlob,
@@ -579,7 +585,7 @@ export async function renderAllScenes(
   const queue = new ProcessingQueue(
     processor,
     'render',
-    { ...options, concurrency: 1, delayBetweenItems: 500 }, // 순차 처리로 메모리 관리
+    { ...options, concurrency: 1, delayBetweenItems: 1000 }, // 순차 처리 + 1초 딜레이
     onProgress,
     (scene, result, error) => {
       if (result) {
