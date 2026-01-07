@@ -394,11 +394,6 @@ const SceneEditor: React.FC = () => {
         imageUrl: activeScene.imageUrl,
         audioUrl: activeScene.audioUrl,
         aspectRatio: currentProject?.aspectRatio || '16:9',
-        kenBurns: activeScene.kenBurns,
-        kenBurnsSpeed: activeScene.kenBurnsSpeed,
-        kenBurnsZoom: activeScene.kenBurnsZoom,
-        subtitleText: activeScene.script,
-        subtitleEnabled: activeScene.subtitleEnabled,
         onProgress: (percent, message) => {
           setRenderProgress({ percent, message });
         },
