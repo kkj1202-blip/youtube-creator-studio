@@ -60,10 +60,13 @@ const transitionOptions = [
 
 const kenBurnsOptions = [
   { value: 'none', label: '없음' },
-  { value: 'zoom-in', label: '줌 인' },
-  { value: 'zoom-out', label: '줌 아웃' },
-  { value: 'pan-left', label: '왼쪽 패닝' },
-  { value: 'pan-right', label: '오른쪽 패닝' },
+  { value: 'random', label: '🎲 랜덤 (매번 다른 효과)' },
+  { value: 'zoom-in', label: '🔍 줌 인' },
+  { value: 'zoom-out', label: '🔎 줌 아웃' },
+  { value: 'pan-left', label: '⬅️ 왼쪽 패닝' },
+  { value: 'pan-right', label: '➡️ 오른쪽 패닝' },
+  { value: 'pan-up', label: '⬆️ 위로 패닝' },
+  { value: 'pan-down', label: '⬇️ 아래로 패닝' },
 ];
 
 interface ProgressState {
@@ -130,7 +133,8 @@ const BatchActions: React.FC = () => {
     voiceSpeed: 1.0,
     emotion: 'normal' as EmotionTag,
     transition: 'fade' as TransitionType,
-    kenBurns: 'zoom-in' as KenBurnsEffect,
+    kenBurns: 'random' as KenBurnsEffect,
+    kenBurnsZoom: 15, // Ken Burns 강도 (기본 15%)
     postAudioGap: 0.5,
     subtitleEnabled: true,
   });
@@ -1163,7 +1167,7 @@ const BatchActions: React.FC = () => {
                 />
 
                 <Select
-                  label="카메라 모션"
+                  label="🎬 Ken Burns 효과"
                   options={kenBurnsOptions}
                   value={bulkSettings.kenBurns}
                   onChange={(value) =>
@@ -1173,6 +1177,21 @@ const BatchActions: React.FC = () => {
                     }))
                   }
                 />
+
+                {/* Ken Burns 강도 (효과 선택 시에만 표시) */}
+                {bulkSettings.kenBurns !== 'none' && (
+                  <Slider
+                    label="📐 Ken Burns 강도"
+                    value={bulkSettings.kenBurnsZoom}
+                    onChange={(value) =>
+                      setBulkSettings((prev) => ({ ...prev, kenBurnsZoom: value }))
+                    }
+                    min={5}
+                    max={50}
+                    step={5}
+                    unit="%"
+                  />
+                )}
 
                 <Slider
                   label="음성 후 여백"

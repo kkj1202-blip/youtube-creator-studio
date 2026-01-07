@@ -10,7 +10,8 @@
 import type { Scene, Project } from '@/types';
 import { generateImage, generateImagePrompt } from './imageGeneration';
 import { generateVoice } from './voiceGeneration';
-import { renderScene } from './renderService';
+// 브라우저 렌더링 사용 (서버 API 대신)
+import { renderVideo } from '@/lib/ffmpeg/ffmpegClient';
 
 // ==================== 타입 정의 ====================
 
@@ -532,7 +533,9 @@ export async function generateAllVoicesWithAutoSwitch(
 }
 
 /**
- * 모든 씬 일괄 렌더링 (최적화)
+ * 모든 씬 일괄 렌더링 (브라우저 기반)
+ * - 50~100씬 대량 처리 최적화
+ * - 메모리 관리를 위해 순차 처리 (concurrency: 1)
  */
 export async function renderAllScenes(
   project: Project,
@@ -546,34 +549,37 @@ export async function renderAllScenes(
     return { success: true, completed: 0, failed: 0, errors: [], duration: 0 };
   }
 
+  const renderSettings = project.renderSettings;
+
   const processor = async (scene: Scene) => {
     updateScene?.(scene.id, { isProcessing: true, error: undefined });
 
-    const result = await renderScene({
-      sceneId: scene.id,
+    // 브라우저 기반 렌더링 사용
+    const result = await renderVideo({
       imageUrl: scene.imageUrl!,
       audioUrl: scene.audioUrl!,
       aspectRatio: project.aspectRatio,
-      transition: scene.transition,
-      kenBurns: scene.kenBurns,
-      subtitle: {
-        enabled: scene.subtitleEnabled,
-        text: scene.script,
-        style: project.subtitleStyle,
-      },
+      // 효과 설정
+      kenBurns: scene.kenBurns || 'none',
+      kenBurnsIntensity: scene.kenBurnsZoom || 15, // 강도 (기본 15%)
+      transition: scene.transition || 'fade',
+      // 품질 설정
+      resolution: renderSettings?.resolution || '1080p',
+      fps: renderSettings?.fps || 30,
+      bitrate: renderSettings?.bitrate || 'high',
     });
 
-    if (!result.success || !result.videoUrl) {
-      throw new Error(result.error || '렌더링 실패');
-    }
-
-    return { videoUrl: result.videoUrl, duration: result.duration };
+    return { 
+      videoUrl: result.videoUrl, 
+      videoBlob: result.videoBlob,
+      duration: result.duration 
+    };
   };
 
   const queue = new ProcessingQueue(
     processor,
     'render',
-    { ...options, concurrency: 2, delayBetweenItems: 1500 }, // 렌더링은 리소스 집약적
+    { ...options, concurrency: 1, delayBetweenItems: 500 }, // 순차 처리로 메모리 관리
     onProgress,
     (scene, result, error) => {
       if (result) {
