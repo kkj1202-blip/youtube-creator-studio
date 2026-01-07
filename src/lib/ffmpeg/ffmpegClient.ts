@@ -5,8 +5,47 @@ let ffmpegInstance: any = null;
 let isLoaded = false;
 let loadingPromise: Promise<any> | null = null;
 
+// CDN URL들
+const FFMPEG_CDN = {
+  ffmpeg: 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js',
+  util: 'https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/util.js',
+  coreJS: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.js',
+  coreWASM: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd/ffmpeg-core.wasm',
+};
+
 /**
- * FFmpeg WASM 인스턴스 로드 (Script 태그 방식)
+ * 스크립트 로드 헬퍼
+ */
+function loadScript(src: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    // 이미 로드된 스크립트인지 확인
+    const existingScript = document.querySelector(`script[src="${src}"]`);
+    if (existingScript) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    script.crossOrigin = 'anonymous';
+    
+    script.onload = () => {
+      console.log('[FFmpeg] Script loaded:', src);
+      resolve();
+    };
+    
+    script.onerror = (e) => {
+      console.error('[FFmpeg] Script load error:', src, e);
+      reject(new Error(`Failed to load script: ${src}`));
+    };
+
+    document.head.appendChild(script);
+  });
+}
+
+/**
+ * FFmpeg WASM 인스턴스 로드 (순수 CDN 방식)
  */
 export async function loadFFmpeg(
   onProgress?: (progress: number, message: string) => void
@@ -23,20 +62,29 @@ export async function loadFFmpeg(
 
   loadingPromise = (async () => {
     try {
-      onProgress?.(0, 'FFmpeg 초기화 중...');
-      console.log('[FFmpeg] Loading FFmpeg WASM...');
+      onProgress?.(0, 'FFmpeg 스크립트 로딩 중...');
+      console.log('[FFmpeg] Starting load process...');
 
-      // CDN에서 FFmpeg 스크립트 로드
-      const FFmpegModule = await loadFFmpegFromCDN();
+      // 1. FFmpeg 스크립트 로드
+      await loadScript(FFMPEG_CDN.ffmpeg);
+      onProgress?.(3, 'FFmpeg 스크립트 로드 완료');
+
+      // 2. FFmpeg 모듈 확인
+      const FFmpegModule = (window as any).FFmpeg_WASM || (window as any).FFmpegWASM || (window as any).FFmpeg;
       
-      if (!FFmpegModule || !FFmpegModule.FFmpeg) {
-        throw new Error('FFmpeg 모듈 로드 실패');
+      if (!FFmpegModule) {
+        // 직접 window에서 FFmpeg 클래스 찾기
+        console.log('[FFmpeg] Checking window object for FFmpeg...');
+        console.log('[FFmpeg] Available globals:', Object.keys(window).filter(k => k.toLowerCase().includes('ffmpeg')));
+        throw new Error('FFmpeg 모듈을 찾을 수 없습니다. 브라우저를 새로고침 해주세요.');
       }
 
       onProgress?.(5, 'FFmpeg 인스턴스 생성 중...');
-      
-      const { FFmpeg } = FFmpegModule;
-      ffmpegInstance = new FFmpeg();
+      console.log('[FFmpeg] Creating FFmpeg instance...');
+
+      // FFmpeg 인스턴스 생성
+      const FFmpegClass = FFmpegModule.FFmpeg || FFmpegModule;
+      ffmpegInstance = new FFmpegClass();
 
       // 로그 이벤트
       ffmpegInstance.on('log', ({ message }: { message: string }) => {
@@ -50,18 +98,17 @@ export async function loadFFmpeg(
       });
 
       onProgress?.(8, 'WASM 코어 로딩 중...');
+      console.log('[FFmpeg] Loading WASM core...');
 
-      // WASM 코어 로드 - 0.12.6 버전 사용
-      const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
-      
+      // WASM 코어 로드 (UMD 버전)
       await ffmpegInstance.load({
-        coreURL: `${baseURL}/ffmpeg-core.js`,
-        wasmURL: `${baseURL}/ffmpeg-core.wasm`,
+        coreURL: FFMPEG_CDN.coreJS,
+        wasmURL: FFMPEG_CDN.coreWASM,
       });
 
       isLoaded = true;
       onProgress?.(10, 'FFmpeg 준비 완료');
-      console.log('[FFmpeg] FFmpeg loaded successfully');
+      console.log('[FFmpeg] FFmpeg loaded successfully!');
       
       return ffmpegInstance;
     } catch (error) {
@@ -73,49 +120,6 @@ export async function loadFFmpeg(
   })();
 
   return loadingPromise;
-}
-
-/**
- * CDN에서 FFmpeg 스크립트 로드
- */
-async function loadFFmpegFromCDN(): Promise<any> {
-  // 먼저 npm 패키지에서 로드 시도
-  try {
-    const ffmpegModule = await import('@ffmpeg/ffmpeg');
-    console.log('[FFmpeg] Loaded from npm package');
-    return ffmpegModule;
-  } catch (npmError) {
-    console.warn('[FFmpeg] npm package load failed, trying CDN...', npmError);
-  }
-
-  // CDN 폴백
-  return new Promise((resolve, reject) => {
-    // 이미 로드된 경우
-    if ((window as any).FFmpegWASM) {
-      resolve((window as any).FFmpegWASM);
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.src = 'https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js';
-    script.async = true;
-    
-    script.onload = () => {
-      // UMD 빌드에서는 window.FFmpegWASM 또는 window.FFmpeg에 노출
-      const FFmpegGlobal = (window as any).FFmpegWASM || (window as any).FFmpeg;
-      if (FFmpegGlobal) {
-        resolve(FFmpegGlobal);
-      } else {
-        reject(new Error('FFmpeg global not found after script load'));
-      }
-    };
-    
-    script.onerror = () => {
-      reject(new Error('Failed to load FFmpeg script from CDN'));
-    };
-
-    document.head.appendChild(script);
-  });
 }
 
 /**
@@ -226,7 +230,7 @@ export async function renderVideo(options: {
     // 출력 파일 읽기
     const outputData = await ff.readFile('output.mp4');
     
-    // Blob 생성 - any 타입으로 TypeScript 오류 우회
+    // Blob 생성
     const blob = new Blob([outputData as BlobPart], { type: 'video/mp4' });
     const videoUrl = URL.createObjectURL(blob);
     console.log('[FFmpeg] Video created, blob size:', blob.size);
@@ -285,7 +289,7 @@ export function isFFmpegSupported(): boolean {
   const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
   
   if (!hasSharedArrayBuffer) {
-    console.warn('[FFmpeg] SharedArrayBuffer not available');
+    console.warn('[FFmpeg] SharedArrayBuffer not available. COOP/COEP headers may be missing.');
   }
   
   return hasSharedArrayBuffer;
@@ -297,7 +301,6 @@ export function isFFmpegSupported(): boolean {
 export async function cleanupFFmpeg(): Promise<void> {
   if (ffmpegInstance) {
     try {
-      // FFmpeg 인스턴스 종료 시도
       if (typeof ffmpegInstance.terminate === 'function') {
         await ffmpegInstance.terminate();
       }
