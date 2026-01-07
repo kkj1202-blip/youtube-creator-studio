@@ -390,6 +390,9 @@ const SceneEditor: React.FC = () => {
         throw new Error('이 브라우저는 비디오 생성을 지원하지 않습니다. Chrome 또는 Edge를 사용하세요.');
       }
 
+      // 렌더링 설정 가져오기
+      const renderSettings = currentProject?.renderSettings;
+      
       const result = await renderVideo({
         imageUrl: activeScene.imageUrl,
         audioUrl: activeScene.audioUrl,
@@ -397,6 +400,13 @@ const SceneEditor: React.FC = () => {
         onProgress: (percent, message) => {
           setRenderProgress({ percent, message });
         },
+        // 효과 설정
+        kenBurns: activeScene.kenBurns || 'none',
+        transition: activeScene.transition || 'fade',
+        // 품질 설정
+        resolution: renderSettings?.resolution || '1080p',
+        fps: renderSettings?.fps || 30,
+        bitrate: renderSettings?.bitrate || 'high',
       });
 
       // Blob 저장 (다운로드용)
@@ -1039,8 +1049,15 @@ const SceneEditor: React.FC = () => {
                   <Select
                     label="씬 전환 효과"
                     options={transitionOptions}
-                    value={activeScene.transition}
+                    value={activeScene.transition || 'fade'}
                     onChange={(value) => handleUpdate({ transition: value as TransitionType })}
+                  />
+
+                  <Select
+                    label="🎬 Ken Burns 효과 (이미지 움직임)"
+                    options={kenBurnsOptions}
+                    value={activeScene.kenBurns || 'none'}
+                    onChange={(value) => handleUpdate({ kenBurns: value as KenBurnsEffect })}
                   />
 
                   <Slider
