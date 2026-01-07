@@ -365,8 +365,23 @@ const SceneEditor: React.FC = () => {
 
   // 렌더링 진행률 상태
   const [renderProgress, setRenderProgress] = useState<{ percent: number; message: string } | null>(null);
+  const [localServerAvailable, setLocalServerAvailable] = useState<boolean | null>(null);
+  const [lastRenderPath, setLastRenderPath] = useState<string | null>(null);
 
-  // 렌더링 (브라우저 FFmpeg WASM 사용)
+  // 로컬 서버 상태 확인
+  useEffect(() => {
+    const checkServer = async () => {
+      const { isLocalServerAvailable } = await import('@/lib/ffmpeg/localRenderClient');
+      const available = await isLocalServerAvailable();
+      setLocalServerAvailable(available);
+    };
+    checkServer();
+    // 10초마다 재확인
+    const interval = setInterval(checkServer, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // 렌더링 (로컬 서버 우선, 폴백으로 브라우저)
   const handleRender = async () => {
     if (!activeScene.imageUrl) {
       setGenerationError('이미지가 필요합니다.');
@@ -383,29 +398,43 @@ const SceneEditor: React.FC = () => {
     setRenderProgress({ percent: 0, message: '렌더링 준비 중...' });
 
     try {
-      // 브라우저에서 FFmpeg WASM 사용
-      const { renderVideo, isFFmpegSupported } = await import('@/lib/ffmpeg/ffmpegClient');
-      
-      if (!isFFmpegSupported()) {
-        throw new Error('이 브라우저는 FFmpeg를 지원하지 않습니다. Chrome 또는 Edge 브라우저를 사용하세요.');
+      // 로컬 서버 확인
+      const { isLocalServerAvailable, renderVideoLocal, getDownloadUrl } = await import('@/lib/ffmpeg/localRenderClient');
+      const localAvailable = await isLocalServerAvailable();
+      setLocalServerAvailable(localAvailable);
+
+      if (localAvailable) {
+        // 🖥️ 로컬 서버 렌더링 (고품질, 빠름)
+        const result = await renderVideoLocal({
+          imageUrl: activeScene.imageUrl,
+          audioUrl: activeScene.audioUrl,
+          aspectRatio: currentProject?.aspectRatio || '16:9',
+          quality: 'high',
+          filename: `scene_${activeScene.order + 1}.mp4`,
+          kenBurns: activeScene.kenBurns,
+          subtitleText: activeScene.script,
+          subtitleEnabled: activeScene.subtitleEnabled,
+          onProgress: (percent, message) => {
+            setRenderProgress({ percent, message });
+          },
+        });
+
+        // 로컬 파일 경로 저장
+        setLastRenderPath(result.path);
+
+        handleUpdate({
+          videoUrl: getDownloadUrl(result.filename),
+          rendered: true,
+          error: undefined,
+        });
+
+        setRenderProgress(null);
+        alert(`✅ 렌더링 완료!\n\n📁 저장 위치:\n${result.path}\n\n📊 파일 크기: ${(result.size / 1024 / 1024).toFixed(1)} MB\n🎬 해상도: ${result.resolution}`);
+      } else {
+        // ⚠️ 로컬 서버 없음 - 안내 메시지
+        setGenerationError('로컬 렌더링 서버가 필요합니다. 아래 안내를 확인하세요.');
+        setRenderProgress(null);
       }
-
-      const result = await renderVideo({
-        imageUrl: activeScene.imageUrl,
-        audioUrl: activeScene.audioUrl,
-        aspectRatio: currentProject?.aspectRatio || '16:9',
-        onProgress: (percent, message) => {
-          setRenderProgress({ percent, message });
-        },
-      });
-
-      handleUpdate({
-        videoUrl: result.videoUrl,
-        rendered: true,
-        error: undefined,
-      });
-
-      setRenderProgress(null);
     } catch (error) {
       const message = error instanceof Error ? error.message : '렌더링 중 오류가 발생했습니다.';
       setGenerationError(message);
@@ -1020,10 +1049,35 @@ const SceneEditor: React.FC = () => {
                   )}
                 </div>
                 
-                {/* FFmpeg 브라우저 안내 */}
-                <p className="text-xs text-muted mt-2">
-                  💡 브라우저에서 직접 렌더링됩니다 (Chrome/Edge 권장)
-                </p>
+                {/* 로컬 서버 상태 및 안내 */}
+                <div className={`mt-3 p-3 rounded-lg text-sm ${localServerAvailable ? 'bg-success/10 border border-success/30' : 'bg-warning/10 border border-warning/30'}`}>
+                  {localServerAvailable ? (
+                    <div className="flex items-center gap-2 text-success">
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span>로컬 렌더링 서버 연결됨 (고품질 1080p)</span>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-warning">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>로컬 렌더링 서버 필요</span>
+                      </div>
+                      <div className="text-xs text-muted space-y-1">
+                        <p>1. <a href="https://ffmpeg.org/download.html" target="_blank" rel="noopener" className="text-primary hover:underline">FFmpeg 설치</a></p>
+                        <p>2. <code className="bg-card px-1 rounded">pip install flask flask-cors</code></p>
+                        <p>3. <code className="bg-card px-1 rounded">python server.py</code> 실행</p>
+                        <p className="text-muted">📁 local-render-server 폴더 참고</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* 마지막 렌더링 파일 경로 */}
+                {lastRenderPath && (
+                  <p className="text-xs text-muted mt-2">
+                    📁 저장됨: {lastRenderPath}
+                  </p>
+                )}
               </Card>
 
               {/* Video Settings */}
