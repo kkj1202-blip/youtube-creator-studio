@@ -44,12 +44,13 @@ const transitionOptions = [
 
 const kenBurnsOptions = [
   { value: 'none', label: '없음' },
-  { value: 'zoom-in', label: '줌 인' },
-  { value: 'zoom-out', label: '줌 아웃' },
-  { value: 'pan-left', label: '왼쪽 패닝' },
-  { value: 'pan-right', label: '오른쪽 패닝' },
-  { value: 'pan-up', label: '위로 패닝' },
-  { value: 'pan-down', label: '아래로 패닝' },
+  { value: 'random', label: '🎲 랜덤 (매번 다른 효과)' },
+  { value: 'zoom-in', label: '🔍 줌 인' },
+  { value: 'zoom-out', label: '🔎 줌 아웃' },
+  { value: 'pan-left', label: '⬅️ 왼쪽 패닝' },
+  { value: 'pan-right', label: '➡️ 오른쪽 패닝' },
+  { value: 'pan-up', label: '⬆️ 위로 패닝' },
+  { value: 'pan-down', label: '⬇️ 아래로 패닝' },
 ];
 
 // 새로운 모션 효과 옵션

@@ -6,7 +6,7 @@ export type ImageStyle = '2d-anime' | '3d-anime' | 'realistic' | 'cartoon' | 'wa
 
 export type TransitionType = 'none' | 'fade' | 'slide';
 
-export type KenBurnsEffect = 'none' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down';
+export type KenBurnsEffect = 'none' | 'random' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down';
 
 // 새로운 모션 효과 타입
 export type MotionEffect = 'none' | 'breathing' | 'pulse' | 'float' | 'shake' | 'parallax-soft' | 'parallax-medium' | 'parallax-strong';

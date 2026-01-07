@@ -5,12 +5,12 @@
  * 설치 없이 브라우저에서 직접 비디오 생성
  * 
  * 지원 효과:
- * - Ken Burns (줌인, 줌아웃, 패닝)
+ * - Ken Burns (줌인, 줌아웃, 패닝, 랜덤)
  * - 페이드 인/아웃
  * - 품질 설정 (해상도, fps, 비트레이트)
  */
 
-export type KenBurnsEffect = 'none' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down';
+export type KenBurnsEffect = 'none' | 'random' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down';
 export type TransitionType = 'none' | 'fade' | 'slide';
 
 export interface RenderOptions {
@@ -94,6 +94,21 @@ function getBitrate(bitrate: string): number {
 }
 
 /**
+ * 랜덤 Ken Burns 효과 선택
+ */
+function getRandomKenBurnsEffect(): Exclude<KenBurnsEffect, 'none' | 'random'> {
+  const effects: Exclude<KenBurnsEffect, 'none' | 'random'>[] = [
+    'zoom-in',
+    'zoom-out', 
+    'pan-left',
+    'pan-right',
+    'pan-up',
+    'pan-down',
+  ];
+  return effects[Math.floor(Math.random() * effects.length)];
+}
+
+/**
  * Ken Burns 효과 계산
  */
 function calculateKenBurnsTransform(
@@ -146,6 +161,11 @@ function calculateKenBurnsTransform(
       scale = 1.15;
       offsetY = -(1 - easeProgress) * height * 0.1;
       break;
+      
+    case 'none':
+    default:
+      // 효과 없음 - 기본값 유지
+      break;
   }
   
   return { scale, offsetX, offsetY };
@@ -155,7 +175,7 @@ function calculateKenBurnsTransform(
  * Canvas + MediaRecorder로 비디오 생성 (효과 포함)
  */
 export async function renderVideo(options: RenderOptions): Promise<RenderResult> {
-  const {
+  let {
     imageUrl,
     audioUrl,
     aspectRatio,
@@ -167,8 +187,15 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     bitrate = 'high',
   } = options;
 
+  // 랜덤 효과 처리
+  let actualKenBurns = kenBurns;
+  if (kenBurns === 'random') {
+    actualKenBurns = getRandomKenBurnsEffect();
+    console.log(`[Renderer] 랜덤 효과 선택: ${actualKenBurns}`);
+  }
+
   onProgress?.(5, '리소스 로딩 중...');
-  console.log('[Renderer] 시작:', { kenBurns, transition, resolution, fps, bitrate });
+  console.log('[Renderer] 시작:', { kenBurns: actualKenBurns, transition, resolution, fps, bitrate });
 
   // 해상도 설정
   const [width, height] = getResolution(resolution, aspectRatio);
@@ -213,11 +240,11 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, width, height);
     
-    // 투명도 (페이드 효과)
-    ctx.globalAlpha = alpha;
+    // 투명도 (페이드 효과) - 최소 0.05로 깜빡임 방지
+    ctx.globalAlpha = Math.max(0.05, alpha);
     
     // Ken Burns 효과 계산
-    const { scale, offsetX, offsetY } = calculateKenBurnsTransform(kenBurns, progress, width, height);
+    const { scale, offsetX, offsetY } = calculateKenBurnsTransform(actualKenBurns, progress, width, height);
     
     // 변환 적용
     const drawWidth = baseWidth * scale;
@@ -344,17 +371,19 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
       const elapsed = (Date.now() - startTime) / 1000;
       const progress = Math.min(1, elapsed / duration);
       
-      // 페이드 효과
+      // 페이드 효과 (부드럽게 개선)
       let alpha = 1;
       if (transition === 'fade') {
-        const fadeDuration = 0.5; // 0.5초 페이드
+        const fadeDuration = 0.8; // 0.8초 페이드 (더 부드럽게)
         if (elapsed < fadeDuration) {
-          // 페이드 인
+          // 페이드 인: 0 -> 1
           alpha = elapsed / fadeDuration;
         } else if (elapsed > duration - fadeDuration) {
-          // 페이드 아웃
-          alpha = (duration - elapsed) / fadeDuration;
+          // 페이드 아웃: 1 -> 0
+          alpha = Math.max(0, (duration - elapsed) / fadeDuration);
         }
+        // 부드러운 이징 적용
+        alpha = alpha * alpha * (3 - 2 * alpha); // smoothstep
       }
       
       drawFrame(progress, alpha);
