@@ -771,19 +771,28 @@ export const useStore = create<AppState>()(
       name: 'youtube-creator-studio',
       partialize: (state) => {
         // 프로젝트 저장 시 용량 최적화
+        // URL 유효성 체크 (blob:, data: 제외, 외부 URL만 저장)
+        const isValidExternalUrl = (url: string | undefined): boolean => {
+          if (!url) return false;
+          if (url.startsWith('blob:')) return false;
+          if (url.startsWith('data:')) return false;
+          // http/https URL만 저장
+          return url.startsWith('http://') || url.startsWith('https://');
+        };
+
         const optimizeScene = (scene: Scene) => ({
           // 필수 필드만 저장
           id: scene.id,
           order: scene.order,
           script: scene.script,
           imagePrompt: scene.imagePrompt,
-          // URL은 외부 URL만 저장 (base64 제외)
-          imageUrl: scene.imageUrl?.startsWith('data:') ? undefined : 
-                   scene.imageUrl?.startsWith('blob:') ? undefined : scene.imageUrl,
+          // 이미지 URL: 외부 URL만 저장 (blob, data URL 제외)
+          imageUrl: isValidExternalUrl(scene.imageUrl) ? scene.imageUrl : undefined,
           imageSource: scene.imageSource,
-          // 음성/비디오 URL은 저장하지 않음 (재생성 필요)
-          audioUrl: undefined,
-          audioGenerated: false,
+          // 음성 URL: 외부 URL만 저장 (ElevenLabs 등에서 생성된 URL 보존)
+          audioUrl: isValidExternalUrl(scene.audioUrl) ? scene.audioUrl : undefined,
+          audioGenerated: isValidExternalUrl(scene.audioUrl) ? scene.audioGenerated : false,
+          // 비디오 URL: blob URL이므로 저장하지 않음 (재생성 필요)
           videoUrl: undefined,
           rendered: false,
           // 설정값들
