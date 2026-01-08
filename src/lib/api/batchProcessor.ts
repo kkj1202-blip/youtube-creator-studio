@@ -10,8 +10,7 @@
 import type { Scene, Project } from '@/types';
 import { generateImage, generateImagePrompt } from './imageGeneration';
 import { generateVoice } from './voiceGeneration';
-// 브라우저 렌더링 사용 (서버 API 대신)
-import { renderVideo } from '@/lib/ffmpeg/ffmpegClient';
+// 브라우저 렌더링은 동적 import로 사용 (서버 사이드 호환성)
 
 // ==================== 타입 정의 ====================
 
@@ -536,6 +535,7 @@ export async function generateAllVoicesWithAutoSwitch(
  * 모든 씬 일괄 렌더링 (브라우저 기반)
  * - 50~100씬 대량 처리 최적화
  * - 메모리 관리를 위해 순차 처리 (concurrency: 1)
+ * - 동적 import로 브라우저 전용 코드 분리
  */
 export async function renderAllScenes(
   project: Project,
@@ -543,69 +543,149 @@ export async function renderAllScenes(
   updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
   options?: Partial<BatchOptions>
 ): Promise<BatchProcessingResult> {
+  // 브라우저 환경 체크
+  if (typeof window === 'undefined') {
+    console.error('[renderAllScenes] 서버 환경에서 호출됨 - 브라우저에서만 실행 가능');
+    return { 
+      success: false, 
+      completed: 0, 
+      failed: 0, 
+      errors: ['렌더링은 브라우저에서만 가능합니다.'], 
+      duration: 0 
+    };
+  }
+
   const scenes = project.scenes.filter((s) => s.imageUrl && s.audioGenerated && !s.rendered);
   
   if (scenes.length === 0) {
+    console.log('[renderAllScenes] 렌더링할 씬이 없습니다.');
     return { success: true, completed: 0, failed: 0, errors: [], duration: 0 };
   }
 
-  const renderSettings = project.renderSettings;
+  console.log(`[renderAllScenes] 렌더링 시작: ${scenes.length}개 씬`);
 
-  const processor = async (scene: Scene) => {
-    updateScene?.(scene.id, { isProcessing: true, error: undefined });
-
-    // 메모리 정리를 위한 약간의 지연
-    await delay(300);
-
-    // 브라우저 기반 렌더링 사용
-    const result = await renderVideo({
-      imageUrl: scene.imageUrl!,
-      audioUrl: scene.audioUrl!,
-      aspectRatio: project.aspectRatio,
-      // 효과 설정
-      kenBurns: scene.kenBurns || 'none',
-      kenBurnsIntensity: scene.kenBurnsZoom || 15, // 강도 (기본 15%)
-      transition: scene.transition || 'fade',
-      // 품질 설정
-      resolution: renderSettings?.resolution || '1080p',
-      fps: renderSettings?.fps || 30,
-      bitrate: renderSettings?.bitrate || 'high',
-    });
-
-    // 렌더링 후 메모리 정리 대기
-    await delay(200);
-
-    return { 
-      videoUrl: result.videoUrl, 
-      videoBlob: result.videoBlob,
-      duration: result.duration 
+  // 동적 import로 브라우저 전용 렌더러 로드
+  let renderVideo: typeof import('@/lib/ffmpeg/ffmpegClient').renderVideo;
+  try {
+    const ffmpegModule = await import('@/lib/ffmpeg/ffmpegClient');
+    renderVideo = ffmpegModule.renderVideo;
+    console.log('[renderAllScenes] ffmpegClient 모듈 로드 완료');
+  } catch (error) {
+    console.error('[renderAllScenes] ffmpegClient 로드 실패:', error);
+    return {
+      success: false,
+      completed: 0,
+      failed: scenes.length,
+      errors: ['렌더링 모듈 로드 실패'],
+      duration: 0,
     };
-  };
+  }
 
-  const queue = new ProcessingQueue(
-    processor,
-    'render',
-    { ...options, concurrency: 1, delayBetweenItems: 1000 }, // 순차 처리 + 1초 딜레이
-    onProgress,
-    (scene, result, error) => {
-      if (result) {
-        updateScene?.(scene.id, {
-          videoUrl: result.videoUrl,
-          rendered: true,
-          isProcessing: false,
-          error: undefined,
-        });
-      } else {
-        updateScene?.(scene.id, {
-          isProcessing: false,
-          error: error || '알 수 없는 오류',
-        });
+  const renderSettings = project.renderSettings;
+  const errors: string[] = [];
+  let completed = 0;
+  let failed = 0;
+  const startTime = Date.now();
+
+  // 순차 처리로 메모리 관리
+  for (let i = 0; i < scenes.length; i++) {
+    const scene = scenes[i];
+    const sceneLabel = `씬 ${scene.order + 1}`;
+
+    try {
+      updateScene?.(scene.id, { isProcessing: true, error: undefined });
+
+      // 진행상황 보고
+      onProgress?.({
+        type: 'render',
+        total: scenes.length,
+        completed,
+        failed,
+        current: `${sceneLabel} 렌더링 중...`,
+        errors,
+      });
+
+      console.log(`[renderAllScenes] ${sceneLabel} 렌더링 시작`);
+      console.log(`  - 이미지: ${scene.imageUrl?.substring(0, 50)}...`);
+      console.log(`  - 오디오: ${scene.audioUrl?.substring(0, 50)}...`);
+
+      // 메모리 정리를 위한 지연
+      await delay(500);
+
+      // 브라우저 기반 렌더링 실행
+      const result = await renderVideo({
+        imageUrl: scene.imageUrl!,
+        audioUrl: scene.audioUrl!,
+        aspectRatio: project.aspectRatio,
+        // 효과 설정
+        kenBurns: scene.kenBurns || 'none',
+        kenBurnsIntensity: scene.kenBurnsZoom || 15,
+        transition: scene.transition || 'fade',
+        // 품질 설정
+        resolution: renderSettings?.resolution || '1080p',
+        fps: renderSettings?.fps || 30,
+        bitrate: renderSettings?.bitrate || 'high',
+      });
+
+      console.log(`[renderAllScenes] ${sceneLabel} 렌더링 완료`);
+      console.log(`  - 비디오 URL 생성: ${!!result.videoUrl}`);
+      console.log(`  - Blob 크기: ${result.videoBlob ? (result.videoBlob.size / 1024 / 1024).toFixed(2) : 0}MB`);
+
+      // 씬 업데이트
+      updateScene?.(scene.id, {
+        videoUrl: result.videoUrl,
+        rendered: true,
+        isProcessing: false,
+        error: undefined,
+      });
+
+      completed++;
+
+      // 렌더링 후 메모리 정리 대기
+      await delay(500);
+
+      // 가비지 컬렉션 힌트 (브라우저가 참조 해제된 blob 정리하도록)
+      if (typeof window !== 'undefined' && (window as unknown as { gc?: () => void }).gc) {
+        (window as unknown as { gc?: () => void }).gc?.();
       }
-    }
-  );
 
-  queue.addItems(scenes.map((s) => ({ id: `씬 ${s.order + 1}`, data: s })));
-  return queue.process();
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      console.error(`[renderAllScenes] ${sceneLabel} 렌더링 실패:`, errorMsg);
+      
+      errors.push(`${sceneLabel}: ${errorMsg}`);
+      failed++;
+
+      updateScene?.(scene.id, {
+        isProcessing: false,
+        error: errorMsg,
+      });
+
+      // 오류 발생 후 잠시 대기
+      await delay(1000);
+    }
+
+    // 진행상황 보고
+    onProgress?.({
+      type: 'render',
+      total: scenes.length,
+      completed,
+      failed,
+      current: i === scenes.length - 1 ? '완료' : `${sceneLabel} 완료`,
+      errors,
+    });
+  }
+
+  const duration = Date.now() - startTime;
+  console.log(`[renderAllScenes] 전체 렌더링 완료: ${completed}개 성공, ${failed}개 실패, ${duration}ms 소요`);
+
+  return {
+    success: failed === 0,
+    completed,
+    failed,
+    errors,
+    duration,
+  };
 }
 
 /**
@@ -636,6 +716,8 @@ export async function processSceneRange(
 
 /**
  * 전체 파이프라인 실행 (이미지 → 음성 → 렌더링)
+ * - 브라우저 환경에서만 렌더링 가능
+ * - 각 단계는 최신 프로젝트 상태를 사용하도록 getLatestProject 콜백 지원
  */
 export async function runFullPipeline(
   project: Project,
@@ -644,7 +726,8 @@ export async function runFullPipeline(
   defaultVoiceId: string,
   onProgress?: (stage: string, progress: BatchProcessingProgress) => void,
   updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
-  options?: Partial<BatchOptions>
+  options?: Partial<BatchOptions>,
+  getLatestProject?: () => Project | null // 최신 프로젝트 상태 가져오기
 ): Promise<{
   imageResult: BatchProcessingResult;
   voiceResult: BatchProcessingResult;
@@ -652,8 +735,12 @@ export async function runFullPipeline(
   totalDuration: number;
 }> {
   const startTime = Date.now();
+  console.log('[runFullPipeline] 전체 파이프라인 시작');
+  console.log(`  - 브라우저 환경: ${typeof window !== 'undefined'}`);
+  console.log(`  - 씬 수: ${project.scenes.length}`);
 
   // 1. 이미지 생성
+  console.log('[runFullPipeline] 1단계: 이미지 생성');
   onProgress?.('image', {
     type: 'image',
     total: project.scenes.length,
@@ -670,11 +757,14 @@ export async function runFullPipeline(
     updateScene,
     options
   );
+  console.log(`[runFullPipeline] 이미지 생성 완료: ${imageResult.completed}개 성공, ${imageResult.failed}개 실패`);
 
-  // 2. 음성 생성
+  // 2. 음성 생성 (최신 프로젝트 상태 사용)
+  const projectForVoice = getLatestProject?.() || project;
+  console.log('[runFullPipeline] 2단계: 음성 생성');
   onProgress?.('voice', {
     type: 'voice',
-    total: project.scenes.length,
+    total: projectForVoice.scenes.length,
     completed: 0,
     failed: 0,
     current: '음성 생성 시작...',
@@ -682,18 +772,38 @@ export async function runFullPipeline(
   });
 
   const voiceResult = await generateAllVoices(
-    project,
+    projectForVoice,
     voiceApiKey,
     defaultVoiceId,
     (p) => onProgress?.('voice', p),
     updateScene,
     options
   );
+  console.log(`[runFullPipeline] 음성 생성 완료: ${voiceResult.completed}개 성공, ${voiceResult.failed}개 실패`);
 
-  // 3. 렌더링
+  // 3. 렌더링 (브라우저 환경에서만 가능, 최신 프로젝트 상태 사용)
+  const projectForRender = getLatestProject?.() || project;
+  console.log('[runFullPipeline] 3단계: 렌더링');
+  
+  if (typeof window === 'undefined') {
+    console.warn('[runFullPipeline] 서버 환경에서는 렌더링을 건너뜁니다.');
+    return {
+      imageResult,
+      voiceResult,
+      renderResult: {
+        success: false,
+        completed: 0,
+        failed: 0,
+        errors: ['렌더링은 브라우저에서만 가능합니다.'],
+        duration: 0,
+      },
+      totalDuration: Date.now() - startTime,
+    };
+  }
+
   onProgress?.('render', {
     type: 'render',
-    total: project.scenes.length,
+    total: projectForRender.scenes.length,
     completed: 0,
     failed: 0,
     current: '렌더링 시작...',
@@ -701,17 +811,21 @@ export async function runFullPipeline(
   });
 
   const renderResult = await renderAllScenes(
-    project,
+    projectForRender,
     (p) => onProgress?.('render', p),
     updateScene,
     options
   );
+  console.log(`[runFullPipeline] 렌더링 완료: ${renderResult.completed}개 성공, ${renderResult.failed}개 실패`);
+
+  const totalDuration = Date.now() - startTime;
+  console.log(`[runFullPipeline] 전체 파이프라인 완료: ${totalDuration}ms 소요`);
 
   return {
     imageResult,
     voiceResult,
     renderResult,
-    totalDuration: Date.now() - startTime,
+    totalDuration,
   };
 }
 

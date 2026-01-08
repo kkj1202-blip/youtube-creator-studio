@@ -629,12 +629,25 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
+      // 최신 프로젝트 상태를 가져오는 콜백 (렌더링 시 최신 씬 데이터 사용)
+      const getLatestProject = () => {
+        const state = useStore.getState();
+        return state.currentProject;
+      };
+
+      console.log('[BatchActions] 전체 자동처리 시작');
+      console.log(`  - 씬 수: ${currentProject.scenes.length}`);
+      console.log(`  - 이미지 없는 씬: ${currentProject.scenes.filter(s => !s.imageUrl).length}`);
+      console.log(`  - 음성 없는 씬: ${currentProject.scenes.filter(s => !s.audioGenerated).length}`);
+      console.log(`  - 렌더링 안된 씬: ${currentProject.scenes.filter(s => !s.rendered).length}`);
+
       const result = await runFullPipeline(
         currentProject,
         settings.kieApiKey,
         voiceApiKey,
         defaultVoiceId,
         (stage, progress) => {
+          console.log(`[BatchActions] 단계: ${stage}, 완료: ${progress.completed}/${progress.total}`);
           setProcessingState(prev => ({
             ...prev,
             currentStage: stage as 'image' | 'voice' | 'render',
@@ -643,8 +656,15 @@ const BatchActions: React.FC = () => {
             currentSceneNumber: progress.completed + 1,
           }));
         },
-        updateScene
+        updateScene,
+        undefined, // options
+        getLatestProject // 최신 프로젝트 상태 콜백
       );
+
+      console.log('[BatchActions] 전체 자동처리 완료');
+      console.log(`  - 이미지: ${result.imageResult.completed}개`);
+      console.log(`  - 음성: ${result.voiceResult.completed}개`);
+      console.log(`  - 렌더링: ${result.renderResult.completed}개`);
 
       setProcessingState(prev => ({
         ...prev,
