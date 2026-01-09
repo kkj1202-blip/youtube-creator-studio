@@ -30,9 +30,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ElevenLabs TTS API 호출
+    // ElevenLabs TTS API 호출 (고품질 설정)
+    // output_format: mp3_44100_192 (44.1kHz, 192kbps - 고품질)
+    const outputFormat = 'mp3_44100_192';
+    
     const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}?output_format=${outputFormat}`,
       {
         method: 'POST',
         headers: {
@@ -79,9 +82,8 @@ export async function POST(request: NextRequest) {
     const base64Audio = Buffer.from(audioBuffer).toString('base64');
     const audioUrl = `data:audio/mpeg;base64,${base64Audio}`;
 
-    // 오디오 길이 계산 (대략적)
-    // MP3 비트레이트 128kbps 기준
-    const estimatedDuration = (audioBuffer.byteLength * 8) / (128 * 1000);
+    // 오디오 길이 계산 (192kbps 기준)
+    const estimatedDuration = (audioBuffer.byteLength * 8) / (192 * 1000);
 
     return NextResponse.json({ 
       audioUrl,
