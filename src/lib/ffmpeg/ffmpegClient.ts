@@ -259,7 +259,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
   const ctx = canvas.getContext('2d', { 
     alpha: false,
     desynchronized: true,  // 성능 향상
-  });
+  })!;
   
   if (!ctx) {
     throw new Error('Canvas 2D 컨텍스트 생성 실패');
