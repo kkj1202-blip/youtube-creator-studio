@@ -1,8 +1,11 @@
 'use client';
 
 /**
- * 브라우저 기반 비디오 렌더링 (Canvas + MediaRecorder)
- * 완전 재작성 - 안정성 최우선
+ * 브라우저 기반 비디오 렌더링 v3.0
+ * - 안정성 최우선
+ * - CORS 처리 개선
+ * - Ken Burns 효과 정상화
+ * - 영상 품질 개선
  */
 
 export type KenBurnsEffect = 'none' | 'random' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down';
@@ -27,127 +30,168 @@ export interface RenderResult {
   duration: number;
 }
 
-// ============ 유틸리티 함수 ============
+// ============ 이미지 로딩 (CORS 처리 강화) ============
 
-function loadImage(url: string): Promise<HTMLImageElement> {
+async function loadImageSafe(url: string): Promise<HTMLImageElement> {
+  console.log('[Image] 로딩 시작:', url.substring(0, 100));
+  
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.crossOrigin = 'anonymous';
     
+    // 타임아웃
     const timeout = setTimeout(() => {
-      reject(new Error('이미지 로드 타임아웃 (30초)'));
-    }, 30000);
+      console.error('[Image] 타임아웃');
+      reject(new Error('이미지 로드 타임아웃'));
+    }, 60000);
     
     img.onload = () => {
       clearTimeout(timeout);
+      console.log('[Image] 로딩 완료:', img.width, 'x', img.height);
+      
+      if (img.width === 0 || img.height === 0) {
+        reject(new Error('이미지 크기가 0입니다'));
+        return;
+      }
+      
       resolve(img);
     };
-    img.onerror = () => {
+    
+    img.onerror = (e) => {
       clearTimeout(timeout);
-      reject(new Error('이미지 로드 실패'));
+      console.error('[Image] 로딩 실패:', e);
+      reject(new Error('이미지 로드 실패 - CORS 또는 URL 문제'));
     };
-    img.src = url;
+    
+    // CORS 설정
+    img.crossOrigin = 'anonymous';
+    
+    // data: URL은 그대로, 아니면 프록시 고려
+    if (url.startsWith('data:')) {
+      img.src = url;
+    } else {
+      // 외부 URL
+      img.src = url;
+    }
   });
 }
 
-async function loadAudioAsBuffer(url: string): Promise<{ buffer: AudioBuffer; arrayBuffer: ArrayBuffer }> {
-  console.log('[Audio] 로드 시작:', url.substring(0, 80));
-  
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`오디오 로드 실패: ${response.status}`);
-  }
-  
-  const arrayBuffer = await response.arrayBuffer();
-  console.log('[Audio] 다운로드 완료:', (arrayBuffer.byteLength / 1024).toFixed(1), 'KB');
-  
-  // AudioContext 생성 (48kHz로 고정하여 품질 보장)
-  const audioContext = new AudioContext({ sampleRate: 48000 });
+// ============ 오디오 로딩 ============
+
+async function loadAudioSafe(url: string): Promise<{ duration: number; arrayBuffer: ArrayBuffer }> {
+  console.log('[Audio] 로딩 시작:', url.substring(0, 100));
   
   try {
-    // suspended 상태면 resume
-    if (audioContext.state === 'suspended') {
-      await audioContext.resume();
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
     }
     
-    const buffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-    console.log('[Audio] 디코딩 완료:', buffer.duration.toFixed(2), '초,', buffer.numberOfChannels, '채널,', buffer.sampleRate, 'Hz');
+    const arrayBuffer = await response.arrayBuffer();
+    console.log('[Audio] 다운로드 완료:', (arrayBuffer.byteLength / 1024).toFixed(1), 'KB');
     
-    await audioContext.close();
-    return { buffer, arrayBuffer };
+    // 임시 AudioContext로 duration 확인
+    const tempCtx = new AudioContext();
+    try {
+      const decoded = await tempCtx.decodeAudioData(arrayBuffer.slice(0));
+      const duration = decoded.duration;
+      console.log('[Audio] 디코딩 완료:', duration.toFixed(2), '초');
+      await tempCtx.close();
+      return { duration, arrayBuffer };
+    } catch (e) {
+      await tempCtx.close();
+      throw e;
+    }
   } catch (error) {
-    await audioContext.close();
-    throw error;
+    console.error('[Audio] 로딩 실패:', error);
+    throw new Error('오디오 로드 실패: ' + (error instanceof Error ? error.message : String(error)));
   }
 }
 
-function getResolution(resolution: string, aspectRatio: '16:9' | '9:16'): [number, number] {
+// ============ 해상도/비트레이트 ============
+
+function getResolution(res: string, ar: '16:9' | '9:16'): [number, number] {
   const map: Record<string, Record<string, [number, number]>> = {
     '720p': { '16:9': [1280, 720], '9:16': [720, 1280] },
     '1080p': { '16:9': [1920, 1080], '9:16': [1080, 1920] },
     '4k': { '16:9': [3840, 2160], '9:16': [2160, 3840] },
   };
-  return map[resolution]?.[aspectRatio] || map['1080p'][aspectRatio];
+  return map[res]?.[ar] || [1920, 1080];
 }
 
-function getBitrate(bitrate: string): number {
+function getBitrate(br: string): number {
   const map: Record<string, number> = {
-    'low': 2_000_000,
-    'medium': 4_000_000,
-    'high': 8_000_000,
-    'ultra': 12_000_000,
+    'low': 3_000_000,
+    'medium': 6_000_000,
+    'high': 10_000_000,
+    'ultra': 15_000_000,
   };
-  return map[bitrate] || map['high'];
+  return map[br] || 10_000_000;
 }
 
-function getRandomKenBurns(): Exclude<KenBurnsEffect, 'none' | 'random'> {
-  const effects: Exclude<KenBurnsEffect, 'none' | 'random'>[] = [
-    'zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down',
-  ];
+// ============ Ken Burns 효과 ============
+
+function getRandomKenBurns(): KenBurnsEffect {
+  const effects: KenBurnsEffect[] = ['zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down'];
   return effects[Math.floor(Math.random() * effects.length)];
 }
 
-function calcKenBurns(
+function calculateKenBurns(
   effect: KenBurnsEffect,
-  progress: number,
-  width: number,
-  height: number,
-  intensity: number = 15
-): { scale: number; offsetX: number; offsetY: number } {
-  const ratio = intensity / 100;
-  // Smooth ease-in-out
+  progress: number,  // 0 ~ 1
+  intensity: number = 15  // 5 ~ 50
+): { scale: number; translateX: number; translateY: number } {
+  // 더 강한 효과를 위해 intensity 증폭
+  const power = intensity / 100 * 1.5;
+  
+  // ease-in-out 곡선
   const t = progress < 0.5 
     ? 2 * progress * progress 
     : 1 - Math.pow(-2 * progress + 2, 2) / 2;
   
-  let scale = 1, offsetX = 0, offsetY = 0;
+  let scale = 1;
+  let translateX = 0;
+  let translateY = 0;
   
   switch (effect) {
     case 'zoom-in':
-      scale = 1 + t * ratio;
+      // 1.0 -> 1.0 + power (예: 1.0 -> 1.225)
+      scale = 1.0 + t * power;
       break;
+      
     case 'zoom-out':
-      scale = (1 + ratio) - t * ratio;
+      // 1.0 + power -> 1.0 (예: 1.225 -> 1.0)
+      scale = (1.0 + power) - t * power;
       break;
+      
     case 'pan-left':
-      scale = 1 + ratio * 0.5;
-      offsetX = (1 - t) * width * ratio * 0.7;
+      // 오른쪽에서 왼쪽으로 이동
+      scale = 1.0 + power * 0.5;
+      translateX = (0.5 - t) * power * 100;  // 양수 -> 음수
       break;
+      
     case 'pan-right':
-      scale = 1 + ratio * 0.5;
-      offsetX = -(1 - t) * width * ratio * 0.7;
+      // 왼쪽에서 오른쪽으로 이동
+      scale = 1.0 + power * 0.5;
+      translateX = (t - 0.5) * power * 100;  // 음수 -> 양수
       break;
+      
     case 'pan-up':
-      scale = 1 + ratio * 0.5;
-      offsetY = (1 - t) * height * ratio * 0.7;
+      // 아래에서 위로 이동
+      scale = 1.0 + power * 0.5;
+      translateY = (0.5 - t) * power * 100;
       break;
+      
     case 'pan-down':
-      scale = 1 + ratio * 0.5;
-      offsetY = -(1 - t) * height * ratio * 0.7;
+      // 위에서 아래로 이동
+      scale = 1.0 + power * 0.5;
+      translateY = (t - 0.5) * power * 100;
       break;
+      
+    default:
+      scale = 1.0;
   }
   
-  return { scale, offsetX, offsetY };
+  return { scale, translateX, translateY };
 }
 
 // ============ 메인 렌더링 함수 ============
@@ -156,7 +200,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
   const {
     imageUrl,
     audioUrl,
-    aspectRatio,
+    aspectRatio = '16:9',
     onProgress,
     kenBurns = 'none',
     kenBurnsIntensity = 15,
@@ -166,201 +210,215 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     bitrate = 'high',
   } = options;
 
-  // 랜덤 효과 선택
+  console.log('========================================');
+  console.log('[Render] 렌더링 시작');
+  console.log('[Render] 설정:', { aspectRatio, kenBurns, kenBurnsIntensity, transition, resolution, fps, bitrate });
+  
+  // 실제 Ken Burns 효과 결정
   const actualKenBurns = kenBurns === 'random' ? getRandomKenBurns() : kenBurns;
-  if (kenBurns === 'random') {
-    console.log('[Render] 랜덤 효과:', actualKenBurns);
-  }
+  console.log('[Render] Ken Burns 효과:', actualKenBurns, '강도:', kenBurnsIntensity);
 
-  const [width, height] = getResolution(resolution, aspectRatio);
-  const videoBitrate = getBitrate(bitrate);
+  onProgress?.(5, '리소스 로딩 중...');
 
-  console.log('[Render] 시작:', { width, height, fps, bitrate: videoBitrate });
-  onProgress?.(5, '리소스 로딩...');
-
-  // 1. 리소스 로드 (병렬)
+  // 1. 리소스 로드
   let img: HTMLImageElement;
-  let audioBuffer: AudioBuffer;
+  let audioDuration: number;
   let audioArrayBuffer: ArrayBuffer;
 
   try {
     const [imgResult, audioResult] = await Promise.all([
-      loadImage(imageUrl),
-      loadAudioAsBuffer(audioUrl),
+      loadImageSafe(imageUrl),
+      loadAudioSafe(audioUrl),
     ]);
     img = imgResult;
-    audioBuffer = audioResult.buffer;
+    audioDuration = audioResult.duration;
     audioArrayBuffer = audioResult.arrayBuffer;
   } catch (error) {
     console.error('[Render] 리소스 로드 실패:', error);
     throw error;
   }
 
-  const duration = audioBuffer.duration;
-  console.log('[Render] 리소스 로드 완료. 이미지:', img.width, 'x', img.height, ', 오디오:', duration.toFixed(2), '초');
-  
-  onProgress?.(15, '캔버스 준비...');
+  const duration = audioDuration;
+  console.log('[Render] 리소스 준비 완료');
+  console.log('[Render] 이미지:', img.width, 'x', img.height);
+  console.log('[Render] 오디오:', duration.toFixed(2), '초');
+
+  onProgress?.(15, '캔버스 설정 중...');
 
   // 2. Canvas 설정
-  const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
-  const ctx = canvas.getContext('2d', { alpha: false })!;
+  const [canvasWidth, canvasHeight] = getResolution(resolution, aspectRatio);
+  const videoBitrate = getBitrate(bitrate);
+  
+  console.log('[Render] 캔버스:', canvasWidth, 'x', canvasHeight);
+  console.log('[Render] 비트레이트:', (videoBitrate / 1_000_000).toFixed(1), 'Mbps');
 
-  // 이미지 비율 계산 (cover 방식)
+  const canvas = document.createElement('canvas');
+  canvas.width = canvasWidth;
+  canvas.height = canvasHeight;
+  
+  const ctx = canvas.getContext('2d', { 
+    alpha: false,
+    desynchronized: true,  // 성능 향상
+  });
+  
+  if (!ctx) {
+    throw new Error('Canvas 2D 컨텍스트 생성 실패');
+  }
+
+  // 이미지 렌더링 품질 설정
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+
+  // 이미지 커버 방식 계산
   const imgRatio = img.width / img.height;
-  const canvasRatio = width / height;
-  let baseW: number, baseH: number;
+  const canvasRatio = canvasWidth / canvasHeight;
+  
+  let baseWidth: number, baseHeight: number;
   if (imgRatio > canvasRatio) {
-    baseH = height;
-    baseW = height * imgRatio;
+    baseHeight = canvasHeight;
+    baseWidth = canvasHeight * imgRatio;
   } else {
-    baseW = width;
-    baseH = width / imgRatio;
+    baseWidth = canvasWidth;
+    baseHeight = canvasWidth / imgRatio;
   }
 
   // 프레임 그리기 함수
-  function drawFrame(progress: number, alpha: number = 1) {
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, width, height);
+  function drawFrame(progress: number, alpha: number = 1.0) {
+    // 배경 (검정)
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
     
-    ctx.globalAlpha = Math.max(0.02, Math.min(1, alpha));
+    // 투명도 적용
+    ctx.globalAlpha = Math.max(0.01, Math.min(1.0, alpha));
     
-    const { scale, offsetX, offsetY } = calcKenBurns(actualKenBurns, progress, width, height, kenBurnsIntensity);
+    // Ken Burns 변환 계산
+    const { scale, translateX, translateY } = calculateKenBurns(actualKenBurns, progress, kenBurnsIntensity);
     
-    const drawW = baseW * scale;
-    const drawH = baseH * scale;
-    const drawX = (width - drawW) / 2 + offsetX;
-    const drawY = (height - drawH) / 2 + offsetY;
+    // 최종 크기
+    const drawW = baseWidth * scale;
+    const drawH = baseHeight * scale;
     
+    // 중앙 배치 + 이동
+    const drawX = (canvasWidth - drawW) / 2 + (translateX * canvasWidth / 100);
+    const drawY = (canvasHeight - drawH) / 2 + (translateY * canvasHeight / 100);
+    
+    // 이미지 그리기
     ctx.drawImage(img, drawX, drawY, drawW, drawH);
-    ctx.globalAlpha = 1;
+    
+    // 투명도 복원
+    ctx.globalAlpha = 1.0;
   }
 
-  onProgress?.(20, '오디오 컨텍스트 생성...');
+  onProgress?.(20, '오디오 준비 중...');
 
-  // 3. AudioContext 생성 (렌더링용, 48kHz)
+  // 3. AudioContext 설정
   const audioContext = new AudioContext({ sampleRate: 48000 });
   
-  // suspended 상태 해제
   if (audioContext.state === 'suspended') {
-    console.log('[Render] AudioContext resume 시도');
     await audioContext.resume();
   }
 
-  // 오디오 버퍼 재디코딩 (새 AudioContext에서)
-  const renderAudioBuffer = await audioContext.decodeAudioData(audioArrayBuffer.slice(0));
+  // 오디오 버퍼 디코딩
+  const audioBuffer = await audioContext.decodeAudioData(audioArrayBuffer.slice(0));
   
-  // 오디오 소스 생성
+  // 오디오 소스
   const audioSource = audioContext.createBufferSource();
-  audioSource.buffer = renderAudioBuffer;
+  audioSource.buffer = audioBuffer;
   
-  // GainNode로 볼륨 조절 (음성 뭉개짐 방지)
+  // Gain 노드 (볼륨)
   const gainNode = audioContext.createGain();
   gainNode.gain.value = 1.0;
   
-  // MediaStreamDestination (오디오를 스트림으로 변환)
+  // MediaStream 출력
   const audioDestination = audioContext.createMediaStreamDestination();
   
-  // 연결: source -> gain -> destination
+  // 연결
   audioSource.connect(gainNode);
   gainNode.connect(audioDestination);
 
-  onProgress?.(25, '스트림 생성...');
+  onProgress?.(25, '스트림 생성 중...');
 
-  // 4. 비디오 스트림 생성
+  // 4. 비디오 스트림
   const videoStream = canvas.captureStream(fps);
   
-  // 5. 스트림 합치기
+  // 5. 합성 스트림
   const combinedStream = new MediaStream();
   
-  // 비디오 트랙 추가
-  videoStream.getVideoTracks().forEach(track => {
-    combinedStream.addTrack(track);
-    console.log('[Render] 비디오 트랙 추가:', track.label);
-  });
+  // 비디오 트랙
+  const videoTracks = videoStream.getVideoTracks();
+  videoTracks.forEach(track => combinedStream.addTrack(track));
+  console.log('[Render] 비디오 트랙:', videoTracks.length);
   
-  // 오디오 트랙 추가
-  audioDestination.stream.getAudioTracks().forEach(track => {
-    combinedStream.addTrack(track);
-    console.log('[Render] 오디오 트랙 추가:', track.label);
-  });
+  // 오디오 트랙
+  const audioTracks = audioDestination.stream.getAudioTracks();
+  audioTracks.forEach(track => combinedStream.addTrack(track));
+  console.log('[Render] 오디오 트랙:', audioTracks.length);
 
-  const videoTrackCount = combinedStream.getVideoTracks().length;
-  const audioTrackCount = combinedStream.getAudioTracks().length;
-  console.log('[Render] 합쳐진 스트림:', videoTrackCount, '비디오,', audioTrackCount, '오디오');
-
-  if (audioTrackCount === 0) {
-    console.error('[Render] 오디오 트랙이 없습니다!');
-  }
-
-  // 6. MediaRecorder 설정
+  // 6. MediaRecorder
   const mimeTypes = [
+    'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
-    'video/webm;codecs=vp9,opus', 
     'video/webm',
   ];
   
-  let mimeType = 'video/webm';
-  for (const type of mimeTypes) {
-    if (MediaRecorder.isTypeSupported(type)) {
-      mimeType = type;
+  let selectedMime = 'video/webm';
+  for (const mime of mimeTypes) {
+    if (MediaRecorder.isTypeSupported(mime)) {
+      selectedMime = mime;
       break;
     }
   }
-  console.log('[Render] 코덱:', mimeType);
+  console.log('[Render] 코덱:', selectedMime);
 
   const recorder = new MediaRecorder(combinedStream, {
-    mimeType,
+    mimeType: selectedMime,
     videoBitsPerSecond: videoBitrate,
-    audioBitsPerSecond: 320_000,
+    audioBitsPerSecond: 320000,
   });
 
-  onProgress?.(30, '녹화 준비...');
+  onProgress?.(30, '녹화 시작...');
 
   // 7. 녹화 실행
   return new Promise<RenderResult>((resolve, reject) => {
     const chunks: Blob[] = [];
-    let rafId: number = 0;
-    let intervalId: ReturnType<typeof setInterval>;
+    let animationId = 0;
+    let progressInterval: ReturnType<typeof setInterval>;
     let timeoutId: ReturnType<typeof setTimeout>;
-    let startTime = 0;
+    let renderStartTime = 0;
     let isActive = true;
-    let hasStopped = false;
+    let stopped = false;
 
     // 정리 함수
     const cleanup = () => {
       if (!isActive) return;
       isActive = false;
       
-      if (rafId) cancelAnimationFrame(rafId);
-      if (intervalId) clearInterval(intervalId);
-      if (timeoutId) clearTimeout(timeoutId);
+      cancelAnimationFrame(animationId);
+      clearInterval(progressInterval);
+      clearTimeout(timeoutId);
       
       try { audioSource.stop(); } catch {}
       try { audioSource.disconnect(); } catch {}
       try { gainNode.disconnect(); } catch {}
       try { combinedStream.getTracks().forEach(t => t.stop()); } catch {}
-      try { 
-        if (audioContext.state !== 'closed') {
-          audioContext.close(); 
-        }
-      } catch {}
-      
-      console.log('[Render] 정리 완료');
+      try { if (audioContext.state !== 'closed') audioContext.close(); } catch {}
     };
 
-    // 녹화 중지 안전하게
-    const safeStop = () => {
-      if (hasStopped) return;
-      hasStopped = true;
+    // 안전한 녹화 중지
+    const stopRecording = () => {
+      if (stopped) return;
+      stopped = true;
+      
+      console.log('[Render] 녹화 중지 요청');
       
       try {
         if (recorder.state === 'recording') {
           recorder.stop();
         }
       } catch (e) {
-        console.error('[Render] 녹화 중지 오류:', e);
+        console.error('[Render] 중지 오류:', e);
+        cleanup();
+        reject(e);
       }
     };
 
@@ -371,134 +429,137 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     };
 
     recorder.onstop = () => {
-      console.log('[Render] 녹화 완료, 청크:', chunks.length);
-      cleanup();
+      console.log('[Render] 녹화 완료');
+      console.log('[Render] 청크 수:', chunks.length);
       
+      cleanup();
+
       if (chunks.length === 0) {
         reject(new Error('녹화 데이터가 없습니다'));
         return;
       }
 
-      const videoBlob = new Blob(chunks, { type: mimeType });
+      const videoBlob = new Blob(chunks, { type: selectedMime });
       const sizeMB = videoBlob.size / 1024 / 1024;
       console.log('[Render] 비디오 크기:', sizeMB.toFixed(2), 'MB');
 
-      if (videoBlob.size < 30 * 1024) {
-        reject(new Error(`비디오가 너무 작습니다 (${(videoBlob.size / 1024).toFixed(1)}KB)`));
+      if (videoBlob.size < 10 * 1024) {
+        reject(new Error('비디오 파일이 손상되었습니다'));
         return;
       }
 
       const videoUrl = URL.createObjectURL(videoBlob);
-      onProgress?.(100, '완료!');
       
+      onProgress?.(100, '완료!');
+      console.log('[Render] 렌더링 성공!');
+      console.log('========================================');
+
       resolve({ videoUrl, videoBlob, duration });
     };
 
     recorder.onerror = (e) => {
       console.error('[Render] 녹화 오류:', e);
       cleanup();
-      reject(new Error('녹화 중 오류 발생'));
+      reject(new Error('녹화 중 오류가 발생했습니다'));
     };
 
-    // 프레임 애니메이션
-    const animate = () => {
+    // 프레임 렌더링 루프
+    const renderLoop = () => {
       if (!isActive) return;
-      
-      const elapsed = (Date.now() - startTime) / 1000;
-      const progress = Math.min(1, elapsed / duration);
-      
+
+      const elapsed = (Date.now() - renderStartTime) / 1000;
+      const progress = Math.min(1.0, elapsed / duration);
+
       // 페이드 효과
-      let alpha = 1;
+      let alpha = 1.0;
       if (transition === 'fade') {
-        const fadeTime = 0.6;
+        const fadeTime = 0.5;
         if (elapsed < fadeTime) {
           alpha = elapsed / fadeTime;
         } else if (elapsed > duration - fadeTime) {
-          alpha = Math.max(0, (duration - elapsed) / fadeTime);
+          alpha = (duration - elapsed) / fadeTime;
         }
-        // smoothstep
-        alpha = alpha * alpha * (3 - 2 * alpha);
+        alpha = Math.max(0.01, alpha);
       }
-      
+
+      // 프레임 그리기
       drawFrame(progress, alpha);
-      rafId = requestAnimationFrame(animate);
+
+      // 다음 프레임
+      if (progress < 1.0) {
+        animationId = requestAnimationFrame(renderLoop);
+      }
     };
 
-    // 오디오 종료 이벤트
+    // 오디오 종료 시 녹화 중지
     audioSource.onended = () => {
       console.log('[Render] 오디오 재생 종료');
-      setTimeout(safeStop, 200);
+      setTimeout(stopRecording, 300);
     };
 
     // 진행률 업데이트
-    intervalId = setInterval(() => {
+    progressInterval = setInterval(() => {
       if (!isActive) return;
-      const elapsed = (Date.now() - startTime) / 1000;
+      const elapsed = (Date.now() - renderStartTime) / 1000;
       const pct = Math.min(95, 30 + (elapsed / duration) * 65);
-      onProgress?.(pct, `녹화 중... ${Math.round(elapsed)}/${Math.round(duration)}초`);
-    }, 500);
+      onProgress?.(Math.round(pct), `녹화 중... ${Math.round(elapsed)}/${Math.round(duration)}초`);
+    }, 300);
 
-    // 타임아웃 (오디오 길이 + 10초, 최대 5분)
-    const maxDuration = Math.min((duration + 10) * 1000, 300000);
+    // 타임아웃 (오디오 길이 + 15초, 최대 10분)
+    const maxTime = Math.min((duration + 15) * 1000, 600000);
     timeoutId = setTimeout(() => {
-      console.log('[Render] 타임아웃');
-      safeStop();
-    }, maxDuration);
+      console.log('[Render] 타임아웃 - 강제 종료');
+      stopRecording();
+    }, maxTime);
 
-    // ========== 녹화 시작 ==========
-    console.log('[Render] 녹화 시작...');
+    // ===== 녹화 시작 =====
+    console.log('[Render] 녹화 시작!');
     
-    // 1) 오디오 먼저 시작
+    // 첫 프레임 그리기
+    drawFrame(0, transition === 'fade' ? 0.01 : 1.0);
+    
+    // 오디오 시작
     audioSource.start(0);
     
-    // 2) 약간 지연 후 녹화 시작 (오디오 동기화)
+    // 약간 지연 후 녹화 시작
     setTimeout(() => {
       if (!isActive) return;
       
       try {
-        recorder.start(200); // 200ms마다 데이터 수집
-        startTime = Date.now();
-        animate();
-        console.log('[Render] 녹화 진행 중');
-        onProgress?.(35, '녹화 중...');
+        recorder.start(100);  // 100ms마다 데이터
+        renderStartTime = Date.now();
+        renderLoop();
+        onProgress?.(35, '녹화 진행 중...');
       } catch (e) {
-        console.error('[Render] 녹화 시작 실패:', e);
+        console.error('[Render] 시작 실패:', e);
         cleanup();
         reject(e);
       }
-    }, 100);
+    }, 50);
   });
 }
 
-// ============ 다운로드 함수 ============
+// ============ 유틸리티 함수 ============
 
 export async function downloadVideoWithPicker(
   blob: Blob,
   suggestedName: string = 'video.webm'
 ): Promise<{ success: boolean; filename?: string }> {
-  // File System Access API 시도
   if ('showSaveFilePicker' in window) {
     try {
       const handle = await (window as any).showSaveFilePicker({
         suggestedName,
-        types: [{
-          description: '비디오 파일',
-          accept: { 'video/webm': ['.webm'] },
-        }],
+        types: [{ description: '비디오', accept: { 'video/webm': ['.webm'] } }],
       });
       const writable = await handle.createWritable();
       await writable.write(blob);
       await writable.close();
       return { success: true, filename: handle.name };
     } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        return { success: false };
-      }
-      // fallback to download
+      if ((err as Error).name === 'AbortError') return { success: false };
     }
   }
 
-  // Fallback: 다운로드 링크
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
@@ -507,11 +568,8 @@ export async function downloadVideoWithPicker(
   a.click();
   document.body.removeChild(a);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  
   return { success: true, filename: suggestedName };
 }
-
-// ============ 지원 체크 ============
 
 export function isFFmpegSupported(): boolean {
   if (typeof window === 'undefined') return false;
@@ -522,6 +580,4 @@ export function isFFmpegSupported(): boolean {
   );
 }
 
-export async function cleanupFFmpeg(): Promise<void> {
-  // 브라우저 렌더링은 별도 정리 불필요
-}
+export async function cleanupFFmpeg(): Promise<void> {}
