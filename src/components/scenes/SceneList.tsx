@@ -35,6 +35,7 @@ import { useStore } from '@/store/useStore';
 import SceneCard from './SceneCard';
 import { Button, Input, Badge } from '@/components/ui';
 import { generateImagePrompt } from '@/lib/api/imageGeneration';
+import { buildFinalPrompt } from '@/lib/imageStyles';
 import type { Scene } from '@/types';
 
 // 페이지당 씬 수
@@ -150,7 +151,7 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
     }
   }, [scenes, reorderScenes]);
 
-  // 이미지 생성 핸들러
+  // 이미지 생성 핸들러 (캐릭터 일관성 적용)
   const handleGenerateImage = useCallback(async (sceneId: string) => {
     if (!currentProject || !settings.kieApiKey) {
       alert('설정에서 이미지 생성 API 키를 입력하세요.');
@@ -163,11 +164,33 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
     updateScene(sceneId, { isProcessing: true, error: undefined });
 
     try {
-      const prompt = scene.imagePrompt || generateImagePrompt(
-        scene.script,
-        currentProject.imageStyle,
-        currentProject.customStylePrompt
-      );
+      // 마스터 스타일 프롬프트 (캐릭터 분석에서 설정된 스타일)
+      const masterStylePrompt = currentProject.masterImageStylePrompt || '';
+      
+      // 캐릭터 일관성 설정
+      const consistencySettings = currentProject.imageConsistency;
+      
+      // 씬 설명
+      const sceneDescription = scene.imagePrompt || scene.script;
+      
+      let prompt: string;
+      
+      if (masterStylePrompt) {
+        // 캐릭터 분석으로 스타일이 설정된 경우 - 일관성 적용
+        prompt = buildFinalPrompt(
+          sceneDescription,
+          masterStylePrompt,
+          consistencySettings
+        );
+        console.log('[SceneList] 마스터 스타일 적용:', prompt.slice(0, 100) + '...');
+      } else {
+        // 레거시 방식 (기존 스타일 프리셋)
+        prompt = scene.imagePrompt || generateImagePrompt(
+          scene.script,
+          currentProject.imageStyle,
+          currentProject.customStylePrompt
+        );
+      }
 
       const response = await fetch('/api/generate-image', {
         method: 'POST',
