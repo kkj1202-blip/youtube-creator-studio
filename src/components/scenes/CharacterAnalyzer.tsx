@@ -142,9 +142,14 @@ async function generateCharacterImage(
     }
     
     console.log('[CharacterAnalyzer] ========== 성공! ==========');
-    console.log('[CharacterAnalyzer] Image URL:', data.imageUrl);
+    console.log('[CharacterAnalyzer] Original Image URL:', data.imageUrl);
+    
+    // 프록시 URL로 변환 (CORS 문제 해결)
+    const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(data.imageUrl)}`;
+    console.log('[CharacterAnalyzer] Proxy URL:', proxyUrl);
+    
     onStatusChange?.('완료!');
-    return data.imageUrl;
+    return proxyUrl;
   } catch (error) {
     console.error('[CharacterAnalyzer] ========== 에러 발생 ==========');
     console.error('[CharacterAnalyzer] Error:', error);
