@@ -1,7 +1,7 @@
 'use client';
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Monitor,
   Palette,
@@ -10,9 +10,13 @@ import {
   Music,
   Type,
   Settings2,
+  Sparkles,
+  ChevronDown,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, Select, Slider, Toggle, Input, Card } from '@/components/ui';
+import { ImageStyleSelector } from '@/components/ImageStyleSelector';
+import { getStyleById, ImageStyle as MasterImageStyle, ConsistencySettings } from '@/lib/imageStyles';
 import type { AspectRatio, ImageStyle, TransitionType, KenBurnsEffect, EmotionTag } from '@/types';
 
 const aspectRatioOptions = [
@@ -52,8 +56,27 @@ const emotionOptions = [
 
 const ProjectSettings: React.FC = () => {
   const { currentProject, updateProject, settings, applyToAllScenes } = useStore();
+  const [showMasterStyle, setShowMasterStyle] = useState(false);
 
   if (!currentProject) return null;
+
+  // 마스터 스타일 핸들러
+  const handleMasterStyleSelect = (style: MasterImageStyle | null) => {
+    updateProject({
+      masterImageStyleId: style?.id,
+      masterImageStylePrompt: style?.prompt,
+    });
+  };
+
+  const handleConsistencyChange = (settings: ConsistencySettings) => {
+    updateProject({
+      imageConsistency: settings,
+    });
+  };
+
+  const currentMasterStyle = currentProject.masterImageStyleId 
+    ? getStyleById(currentProject.masterImageStyleId) 
+    : null;
 
   // 즐겨찾기 보이스 (설정에서 직접 등록한 Voice ID)
   const favoriteVoiceOptions = (settings.favoriteVoices || []).map((voice) => ({
@@ -111,29 +134,82 @@ const ProjectSettings: React.FC = () => {
         </div>
       </Card>
 
-      {/* 이미지 설정 */}
+      {/* 마스터 이미지 스타일 (2026 라이브러리) */}
       <Card>
-        <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
-          <Palette className="w-5 h-5 text-primary" />
-          이미지 스타일
-        </h3>
-        <div className="space-y-4">
-          <Select
-            label="기본 스타일"
-            options={imageStyleOptions}
-            value={currentProject.imageStyle}
-            onChange={(value) => updateProject({ imageStyle: value as ImageStyle })}
-          />
-          {currentProject.imageStyle === 'custom' && (
-            <Input
-              label="커스텀 스타일 프롬프트"
-              value={currentProject.customStylePrompt || ''}
-              onChange={(e) => updateProject({ customStylePrompt: e.target.value })}
-              placeholder="예: cyberpunk style, neon lights, futuristic city"
-            />
+        <button
+          onClick={() => setShowMasterStyle(!showMasterStyle)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+              <Sparkles className="w-5 h-5 text-white" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-foreground">마스터 이미지 스타일</h3>
+              <p className="text-sm text-muted">
+                {currentMasterStyle 
+                  ? `적용 중: ${currentMasterStyle.name}` 
+                  : '스타일 라이브러리에서 선택하세요 (권장)'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {currentMasterStyle && (
+              <span className="bg-primary/20 text-primary text-xs px-2 py-1 rounded-full">
+                적용됨
+              </span>
+            )}
+            <ChevronDown className={`w-5 h-5 text-muted transition-transform ${showMasterStyle ? 'rotate-180' : ''}`} />
+          </div>
+        </button>
+
+        <AnimatePresence>
+          {showMasterStyle && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-4 pt-4 border-t border-border overflow-hidden"
+            >
+              <ImageStyleSelector
+                selectedStyleId={currentProject.masterImageStyleId}
+                onStyleSelect={handleMasterStyleSelect}
+                consistencySettings={currentProject.imageConsistency}
+                onConsistencyChange={handleConsistencyChange}
+              />
+            </motion.div>
           )}
-        </div>
+        </AnimatePresence>
       </Card>
+
+      {/* 레거시 이미지 설정 (마스터 스타일 미사용 시) */}
+      {!currentMasterStyle && (
+        <Card>
+          <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+            <Palette className="w-5 h-5 text-primary" />
+            기본 이미지 스타일 (레거시)
+          </h3>
+          <p className="text-xs text-muted mb-4">
+            ⚠️ 위의 "마스터 이미지 스타일"을 사용하시는 것을 권장합니다.
+          </p>
+          <div className="space-y-4">
+            <Select
+              label="기본 스타일"
+              options={imageStyleOptions}
+              value={currentProject.imageStyle}
+              onChange={(value) => updateProject({ imageStyle: value as ImageStyle })}
+            />
+            {currentProject.imageStyle === 'custom' && (
+              <Input
+                label="커스텀 스타일 프롬프트"
+                value={currentProject.customStylePrompt || ''}
+                onChange={(e) => updateProject({ customStylePrompt: e.target.value })}
+                placeholder="예: cyberpunk style, neon lights, futuristic city"
+              />
+            )}
+          </div>
+        </Card>
+      )}
 
       {/* 음성 설정 */}
       <Card>

@@ -109,6 +109,16 @@ const createDefaultProject = (name: string = '새 프로젝트'): Project => ({
   updatedAt: new Date().toISOString(),
   aspectRatio: '16:9',
   imageStyle: 'realistic',
+  // 마스터 이미지 스타일 (2026 라이브러리)
+  masterImageStyleId: undefined,
+  masterImageStylePrompt: undefined,
+  // 이미지 일관성 설정
+  imageConsistency: {
+    characterDescription: undefined,
+    backgroundDescription: undefined,
+    colorPalette: undefined,
+    artDirection: undefined,
+  },
   scenes: [],
   defaultVoiceSpeed: 1.0,
   defaultEmotion: 'normal',

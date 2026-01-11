@@ -25,6 +25,7 @@ import ScenePreview from './ScenePreview';
 import ImageUploader from './ImageUploader';
 import { generateImagePrompt, stylePresets } from '@/lib/api/imageGeneration';
 import { estimateAudioDuration } from '@/lib/api/voiceGeneration';
+import { buildFinalPrompt, getStyleById } from '@/lib/imageStyles';
 import type { Scene, EmotionTag, TransitionType, KenBurnsEffect, MotionEffect, TTSEngine } from '@/types';
 import MotionEffects from './MotionEffects';
 import { useBrowserTTS } from '@/hooks/useBrowserTTS';
@@ -184,18 +185,42 @@ const SceneEditor: React.FC = () => {
     setGenerationError(null);
 
     try {
-      const prompt = activeScene.imagePrompt || generateImagePrompt(
-        activeScene.script,
-        currentProject.imageStyle,
-        currentProject.customStylePrompt
-      );
+      // 마스터 스타일 프롬프트 가져오기
+      const masterStylePrompt = currentProject.masterImageStylePrompt || '';
+      
+      // 일관성 설정 가져오기
+      const consistencySettings = currentProject.imageConsistency;
+      
+      // 씬 설명 (사용자가 입력한 프롬프트 또는 대본 기반 생성)
+      const sceneDescription = activeScene.imagePrompt || activeScene.script;
+      
+      // 최종 프롬프트 조합: 스타일 + 일관성 + 씬 설명
+      let finalPrompt: string;
+      
+      if (masterStylePrompt) {
+        // 마스터 스타일이 설정된 경우 새 방식 사용
+        finalPrompt = buildFinalPrompt(
+          sceneDescription,
+          masterStylePrompt,
+          consistencySettings
+        );
+      } else {
+        // 레거시 방식 (기존 스타일 프리셋)
+        finalPrompt = activeScene.imagePrompt || generateImagePrompt(
+          activeScene.script,
+          currentProject.imageStyle,
+          currentProject.customStylePrompt
+        );
+      }
+
+      console.log('[Image Generation] Final prompt:', finalPrompt);
 
       const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           apiKey: settings.kieApiKey,
-          prompt,
+          prompt: finalPrompt,
           aspectRatio: currentProject.aspectRatio,
         }),
       });
@@ -209,7 +234,7 @@ const SceneEditor: React.FC = () => {
       handleUpdate({
         imageUrl: data.imageUrl,
         imageSource: 'generated',
-        imagePrompt: prompt,
+        imagePrompt: finalPrompt,
         error: undefined,
       });
 

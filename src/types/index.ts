@@ -98,6 +98,18 @@ export interface Project {
   imageStyle: ImageStyle;
   customStylePrompt?: string;
   
+  // 마스터 이미지 스타일 설정 (2026 라이브러리)
+  masterImageStyleId?: string;      // 선택된 스타일 ID
+  masterImageStylePrompt?: string;  // 선택된 스타일 프롬프트
+  
+  // 이미지 일관성 설정
+  imageConsistency?: {
+    characterDescription?: string;  // 캐릭터 외형 설명
+    backgroundDescription?: string; // 배경 설명
+    colorPalette?: string;          // 색상 팔레트
+    artDirection?: string;          // 아트 디렉션 추가 지시
+  };
+  
   // 씬 목록
   scenes: Scene[];
   

@@ -10,6 +10,7 @@
 import type { Scene, Project } from '@/types';
 import { generateImage, generateImagePrompt } from './imageGeneration';
 import { generateVoice } from './voiceGeneration';
+import { buildFinalPrompt } from '@/lib/imageStyles';
 // 브라우저 렌더링은 동적 import로 사용 (서버 사이드 호환성)
 
 // ==================== 타입 정의 ====================
@@ -252,11 +253,30 @@ export async function generateAllImages(
   const processor = async (scene: Scene) => {
     updateScene?.(scene.id, { isProcessing: true, error: undefined });
 
-    const prompt = scene.imagePrompt || generateImagePrompt(
-      scene.script,
-      project.imageStyle,
-      project.customStylePrompt
-    );
+    // 마스터 스타일 프롬프트 확인
+    const masterStylePrompt = project.masterImageStylePrompt || '';
+    const consistencySettings = project.imageConsistency;
+    
+    let prompt: string;
+    
+    if (masterStylePrompt) {
+      // 2026 마스터 스타일 라이브러리 사용
+      const sceneDescription = scene.imagePrompt || scene.script;
+      prompt = buildFinalPrompt(
+        sceneDescription,
+        masterStylePrompt,
+        consistencySettings
+      );
+    } else {
+      // 레거시 방식
+      prompt = scene.imagePrompt || generateImagePrompt(
+        scene.script,
+        project.imageStyle,
+        project.customStylePrompt
+      );
+    }
+
+    console.log(`[BatchProcessor] Scene ${scene.order + 1} prompt:`, prompt.slice(0, 100) + '...');
 
     const result = await generateImage(apiKey, {
       prompt,

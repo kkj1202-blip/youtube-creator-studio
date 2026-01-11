@@ -14,9 +14,13 @@ import {
   SplitSquareVertical,
   Hash,
   Minus,
+  Palette,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, TextArea, Card, Input, Toggle } from '@/components/ui';
+import { ImageStyleSelector } from '@/components/ImageStyleSelector';
+import { ImageStyle, ConsistencySettings } from '@/lib/imageStyles';
 
 interface ScriptInputProps {
   onComplete: () => void;
@@ -55,11 +59,37 @@ const MARKER_PATTERNS = {
 };
 
 const ScriptInput: React.FC<ScriptInputProps> = ({ onComplete }) => {
-  const { parseScriptToScenes, currentProject } = useStore();
+  const { parseScriptToScenes, currentProject, updateProject } = useStore();
   const [script, setScript] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [showOptions, setShowOptions] = useState(false);
+  const [showStyleSelector, setShowStyleSelector] = useState(false);
   const [options, setOptions] = useState<ParseOptions>(defaultParseOptions);
+  
+  // 이미지 스타일 상태
+  const [selectedStyle, setSelectedStyle] = useState<ImageStyle | null>(null);
+  const [consistencySettings, setConsistencySettings] = useState<ConsistencySettings>({});
+
+  // 스타일 선택 핸들러
+  const handleStyleSelect = useCallback((style: ImageStyle | null) => {
+    setSelectedStyle(style);
+    if (currentProject) {
+      updateProject({
+        masterImageStyleId: style?.id,
+        masterImageStylePrompt: style?.prompt,
+      });
+    }
+  }, [currentProject, updateProject]);
+
+  // 일관성 설정 변경 핸들러
+  const handleConsistencyChange = useCallback((settings: ConsistencySettings) => {
+    setConsistencySettings(settings);
+    if (currentProject) {
+      updateProject({
+        imageConsistency: settings,
+      });
+    }
+  }, [currentProject, updateProject]);
 
   // 마커 기반 분리 함수
   const splitByMarkers = useCallback((text: string, markerType: ParseOptions['markerType'], removeMarkers: boolean): string[] => {
@@ -493,6 +523,53 @@ const ScriptInput: React.FC<ScriptInputProps> = ({ onComplete }) => {
                 label="마커 텍스트 제거"
               />
             </div>
+          </motion.div>
+        )}
+      </Card>
+
+      {/* 이미지 스타일 선택 섹션 */}
+      <Card className="mb-6">
+        <button
+          onClick={() => setShowStyleSelector(!showStyleSelector)}
+          className="w-full flex items-center justify-between"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+              <Palette className="w-5 h-5 text-white" />
+            </div>
+            <div className="text-left">
+              <h3 className="font-semibold text-foreground">이미지 스타일 설정</h3>
+              <p className="text-sm text-muted">
+                {selectedStyle 
+                  ? `선택됨: ${selectedStyle.name}` 
+                  : '모든 씬에 적용할 이미지 스타일을 선택하세요'}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {selectedStyle && (
+              <span className="bg-primary/20 text-primary text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                <Sparkles className="w-3 h-3" />
+                스타일 적용됨
+              </span>
+            )}
+            <Settings2 className={`w-5 h-5 text-muted transition-transform ${showStyleSelector ? 'rotate-180' : ''}`} />
+          </div>
+        </button>
+
+        {showStyleSelector && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 pt-4 border-t border-border"
+          >
+            <ImageStyleSelector
+              selectedStyleId={selectedStyle?.id}
+              onStyleSelect={handleStyleSelect}
+              consistencySettings={consistencySettings}
+              onConsistencyChange={handleConsistencyChange}
+            />
           </motion.div>
         )}
       </Card>
