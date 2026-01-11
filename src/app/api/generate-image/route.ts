@@ -2,38 +2,36 @@ import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * KIE 이미지 생성 API 엔드포인트
- * KIE API를 통한 이미지 생성 프록시
+ * 공식 문서: https://docs.kie.ai/flux-kontext-api/generate-or-edit-image
  * 
  * API 구조:
- * - Create Task: POST https://api.kie.ai/api/v1/jobs/createTask
- * - Query Task: GET https://api.kie.ai/api/v1/jobs/recordInfo?taskId=xxx
+ * - Create Task: POST https://api.kie.ai/api/v1/flux-kontext/generate-or-edit-image
+ * - Query Task: GET https://api.kie.ai/api/v1/flux-kontext/get-image-details?taskId=xxx
  * - Authorization: Bearer YOUR_API_KEY
  */
 
-const KIE_API_BASE = 'https://api.kie.ai/api/v1/jobs';
+const KIE_API_BASE = 'https://api.kie.ai/api/v1/flux-kontext';
 
-// 작업 생성 후 결과를 폴링하는 최대 대기 시간 (ms)
+// 작업 결과 폴링 최대 대기 시간
 const MAX_POLLING_TIME = 120000; // 2분
 const POLLING_INTERVAL = 2000; // 2초
 
 interface KieTaskResponse {
   code?: number;
+  msg?: string;
   data?: {
     taskId?: string;
     status?: string;
+    progress?: number;
     output?: {
       imageUrl?: string;
       images?: string[];
-      url?: string;
     };
     result?: {
       imageUrl?: string;
       images?: string[];
     };
   };
-  message?: string;
-  taskId?: string;
-  status?: string;
 }
 
 // 작업 상태 조회
@@ -42,15 +40,16 @@ async function pollTaskResult(taskId: string, apiKey: string): Promise<string | 
   
   while (Date.now() - startTime < MAX_POLLING_TIME) {
     try {
-      const response = await fetch(`${KIE_API_BASE}/recordInfo?taskId=${taskId}`, {
+      const response = await fetch(`${KIE_API_BASE}/get-image-details?taskId=${taskId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
         },
       });
       
       if (!response.ok) {
-        console.error('KIE Query Task error:', await response.text());
+        console.error('KIE Query Task error:', response.status, await response.text());
         await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL));
         continue;
       }
@@ -58,30 +57,33 @@ async function pollTaskResult(taskId: string, apiKey: string): Promise<string | 
       const data: KieTaskResponse = await response.json();
       console.log('KIE Task Status:', JSON.stringify(data, null, 2));
       
-      const status = data.data?.status || data.status;
-      
-      // 완료 상태 확인
-      if (status === 'completed' || status === 'success' || status === 'COMPLETED' || status === 'SUCCESS') {
-        // 다양한 응답 형식 처리
-        const imageUrl = 
-          data.data?.output?.imageUrl ||
-          data.data?.output?.images?.[0] ||
-          data.data?.output?.url ||
-          data.data?.result?.imageUrl ||
-          data.data?.result?.images?.[0];
+      // 성공 응답 확인 (code: 200)
+      if (data.code === 200) {
+        const status = data.data?.status?.toLowerCase();
         
-        if (imageUrl) {
-          return imageUrl;
+        // 완료 상태
+        if (status === 'completed' || status === 'success' || status === 'done') {
+          const imageUrl = 
+            data.data?.output?.imageUrl ||
+            data.data?.output?.images?.[0] ||
+            data.data?.result?.imageUrl ||
+            data.data?.result?.images?.[0];
+          
+          if (imageUrl) {
+            return imageUrl;
+          }
         }
+        
+        // 실패 상태
+        if (status === 'failed' || status === 'error') {
+          console.error('KIE Task failed:', data.msg || data.data);
+          return null;
+        }
+        
+        // 진행 중 - 계속 폴링
+        console.log(`KIE Task progress: ${data.data?.progress || 'unknown'}%`);
       }
       
-      // 실패 상태 확인
-      if (status === 'failed' || status === 'error' || status === 'FAILED' || status === 'ERROR') {
-        console.error('KIE Task failed:', data.message || data.data);
-        return null;
-      }
-      
-      // 대기 후 재시도
       await new Promise(resolve => setTimeout(resolve, POLLING_INTERVAL));
     } catch (error) {
       console.error('Polling error:', error);
@@ -96,7 +98,7 @@ async function pollTaskResult(taskId: string, apiKey: string): Promise<string | 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { apiKey, prompt, style, aspectRatio, negativePrompt, model } = body;
+    const { apiKey, prompt, aspectRatio, negativePrompt, model, inputImage } = body;
 
     if (!apiKey) {
       return NextResponse.json(
@@ -112,30 +114,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 화면 비율에 따른 해상도 설정
-    const dimensions = aspectRatio === '9:16' 
-      ? { width: 720, height: 1280 }
-      : { width: 1280, height: 720 };
-
-    // KIE API 작업 생성 요청
-    const createTaskPayload = {
-      model: model || 'flux-schnell', // 기본 모델
-      callBackUrl: '', // 콜백 URL (옵션)
-      input: {
-        prompt: prompt,
-        negative_prompt: negativePrompt || 'low quality, blurry, distorted, ugly, bad anatomy',
-        width: dimensions.width,
-        height: dimensions.height,
-        num_images: 1,
-        aspect_ratio: aspectRatio || '16:9',
-        style: style,
-      },
+    // KIE API 요청 페이로드 (공식 문서 기준)
+    const createTaskPayload: Record<string, unknown> = {
+      prompt: prompt,
+      aspectRatio: aspectRatio || '16:9',
+      model: model || 'flux-kontext-pro',
+      outputFormat: 'jpeg',
+      enableTranslation: true, // 비영어 프롬프트 자동 번역
+      safetyTolerance: 2,
     };
+
+    // 이미지 편집 모드 (inputImage가 있는 경우)
+    if (inputImage) {
+      createTaskPayload.inputImage = inputImage;
+    }
 
     console.log('KIE Create Task request:', JSON.stringify(createTaskPayload, null, 2));
 
     // 작업 생성 요청
-    const createResponse = await fetch(`${KIE_API_BASE}/createTask`, {
+    const createResponse = await fetch(`${KIE_API_BASE}/generate-or-edit-image`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
@@ -144,36 +141,35 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify(createTaskPayload),
     });
 
-    if (!createResponse.ok) {
-      const errorText = await createResponse.text();
-      console.error('KIE Create Task error:', errorText);
-      
-      // 데모 모드: API 실패 시 placeholder 이미지 반환
-      if (process.env.NODE_ENV === 'development' || !apiKey.startsWith('sk-')) {
-        const placeholderUrl = `https://via.placeholder.com/${dimensions.width}x${dimensions.height}/1a1a2e/8b5cf6?text=${encodeURIComponent(prompt.slice(0, 30))}`;
-        return NextResponse.json({ 
-          imageUrl: placeholderUrl,
-          demo: true,
-          message: 'API 키가 유효하지 않아 데모 이미지가 반환되었습니다.'
-        });
-      }
-      
-      return NextResponse.json(
-        { error: `작업 생성 실패: ${errorText}` },
-        { status: createResponse.status }
-      );
-    }
-
     const createData: KieTaskResponse = await createResponse.json();
     console.log('KIE Create Task response:', JSON.stringify(createData, null, 2));
 
-    // taskId 추출 (다양한 응답 형식 처리)
-    const taskId = createData.data?.taskId || createData.taskId;
+    // 에러 응답 처리
+    if (createData.code !== 200) {
+      const errorMsg = createData.msg || '알 수 없는 오류';
+      console.error('KIE Create Task error:', errorMsg);
+      
+      // 에러 코드별 메시지
+      const errorMessages: Record<number, string> = {
+        401: '인증 실패: API 키가 유효하지 않습니다.',
+        402: '크레딧 부족: 계정에 크레딧이 부족합니다.',
+        404: '엔드포인트를 찾을 수 없습니다.',
+        422: '요청 파라미터가 올바르지 않습니다.',
+        429: '요청 한도 초과: 잠시 후 다시 시도하세요.',
+        500: '서버 오류가 발생했습니다.',
+      };
+      
+      return NextResponse.json(
+        { error: errorMessages[createData.code || 500] || errorMsg },
+        { status: createData.code || 500 }
+      );
+    }
+
+    // taskId 추출
+    const taskId = createData.data?.taskId;
     
     if (!taskId) {
-      console.error('No taskId in response:', createData);
-      
-      // 직접 이미지 URL이 반환된 경우
+      // 즉시 이미지가 반환된 경우
       const directImageUrl = 
         createData.data?.output?.imageUrl ||
         createData.data?.output?.images?.[0] ||
@@ -183,53 +179,34 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ imageUrl: directImageUrl });
       }
       
-      // 데모 모드
-      if (process.env.NODE_ENV === 'development') {
-        return NextResponse.json({ 
-          imageUrl: `https://via.placeholder.com/${dimensions.width}x${dimensions.height}/1a1a2e/8b5cf6?text=Demo+Image`,
-          demo: true,
-        });
-      }
-      
+      console.error('No taskId in response:', createData);
       return NextResponse.json(
         { error: 'taskId를 받지 못했습니다.' },
         { status: 500 }
       );
     }
 
+    console.log('KIE Task created:', taskId);
+
     // 작업 결과 폴링
     const imageUrl = await pollTaskResult(taskId, apiKey);
     
     if (!imageUrl) {
-      // 데모 모드
-      if (process.env.NODE_ENV === 'development') {
-        return NextResponse.json({ 
-          imageUrl: `https://via.placeholder.com/${dimensions.width}x${dimensions.height}/1a1a2e/8b5cf6?text=Timeout`,
-          demo: true,
-          message: '이미지 생성 시간이 초과되어 데모 이미지가 반환되었습니다.'
-        });
-      }
-      
       return NextResponse.json(
-        { error: '이미지 생성 시간이 초과되었습니다.' },
+        { error: '이미지 생성 시간이 초과되었거나 실패했습니다.' },
         { status: 504 }
       );
     }
 
-    return NextResponse.json({ imageUrl, taskId });
+    return NextResponse.json({ 
+      imageUrl, 
+      taskId,
+      success: true,
+    });
   } catch (error) {
     console.error('Image generation error:', error);
-    
-    // 데모 모드: 에러 시에도 placeholder 반환
-    if (process.env.NODE_ENV === 'development') {
-      return NextResponse.json({ 
-        imageUrl: 'https://via.placeholder.com/1280x720/1a1a2e/8b5cf6?text=Demo+Image',
-        demo: true,
-      });
-    }
-    
     return NextResponse.json(
-      { error: '서버 오류가 발생했습니다.' },
+      { error: '서버 오류가 발생했습니다: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }
     );
   }
@@ -249,10 +226,11 @@ export async function GET(request: NextRequest) {
       );
     }
     
-    const response = await fetch(`${KIE_API_BASE}/recordInfo?taskId=${taskId}`, {
+    const response = await fetch(`${KIE_API_BASE}/get-image-details?taskId=${taskId}`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
       },
     });
     

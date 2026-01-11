@@ -477,7 +477,7 @@ const ApiSettings: React.FC = () => {
       <Card>
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
           <ImageIcon className="w-5 h-5 text-primary" />
-          이미지 생성 API (KIE / Genspark)
+          이미지 생성 API (KIE)
         </h3>
         <div className="space-y-3">
           <div className="flex gap-2">
@@ -516,7 +516,7 @@ const ApiSettings: React.FC = () => {
             </div>
           )}
           <p className="text-xs text-muted">
-            Genspark 이미지 생성 API 키를 입력하세요. 2D 애니, 3D 애니, 실사 스타일의 이미지를 생성할 수 있습니다.
+            KIE 이미지 생성 API 키를 입력하세요. 2D 애니, 3D 애니, 실사 스타일의 이미지를 생성할 수 있습니다.
           </p>
         </div>
       </Card>

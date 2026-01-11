@@ -1,6 +1,6 @@
 /**
  * 이미지 생성 API 서비스
- * Genspark 이미지 생성 API 연동
+ * KIE 이미지 생성 API 연동
  */
 
 export interface ImageGenerationParams {
@@ -59,7 +59,7 @@ export async function generateImage(
   }
 
   try {
-    // Genspark 이미지 생성 API 호출
+    // KIE 이미지 생성 API 호출
     // 실제 API 엔드포인트와 형식에 맞게 수정 필요
     const response = await fetch('/api/generate-image', {
       method: 'POST',
