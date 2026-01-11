@@ -50,8 +50,8 @@ export const imageStyleLibrary: StyleCategory[] = [
       },
       {
         id: 'stickman',
-        name: '졸라맨 (Premium Motion Stickman)',
-        prompt: 'Stylized minimalist stickman with glowing neon joints, sleek fluid motion trails, professional 2D motion graphics, high-contrast dark background, expressive facial emojis, 4k aesthetic.',
+        name: '졸라맨 (Premium Expressive Stickman)',
+        prompt: 'Premium minimalist stickman character with highly expressive, stylized facial features integrated directly onto the character head, sleek fluid motion lines, professional 2D motion graphics aesthetic, clean vector art, high-contrast dark studio background, dynamic poses, cinematic lighting highlighting the character form, 4k resolution.',
       },
       {
         id: 'claymation',
