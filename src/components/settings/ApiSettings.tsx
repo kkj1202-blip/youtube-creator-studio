@@ -25,6 +25,8 @@ import {
   Filter,
   ChevronDown,
   ChevronUp,
+  Brain,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, Input, Card, Badge } from '@/components/ui';
@@ -472,6 +474,92 @@ const ApiSettings: React.FC = () => {
           </div>
         </Card>
       )}
+
+      {/* LLM API (Gemini / OpenAI) */}
+      <Card>
+        <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <Brain className="w-5 h-5 text-purple-500" />
+          AI 대본 분석 (LLM)
+        </h3>
+        <div className="space-y-4">
+          {/* Provider 선택 */}
+          <div className="flex items-center gap-4">
+            <span className="text-sm text-muted">기본 AI:</span>
+            <div className="flex gap-2">
+              <button
+                onClick={() => updateSettings({ llmProvider: 'gemini' })}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  settings.llmProvider === 'gemini' 
+                    ? 'bg-primary text-white' 
+                    : 'bg-muted/20 text-muted hover:bg-muted/30'
+                }`}
+              >
+                <Sparkles className="w-3 h-3 inline mr-1" />
+                Gemini
+              </button>
+              <button
+                onClick={() => updateSettings({ llmProvider: 'openai' })}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  settings.llmProvider === 'openai' 
+                    ? 'bg-primary text-white' 
+                    : 'bg-muted/20 text-muted hover:bg-muted/30'
+                }`}
+              >
+                🤖 OpenAI
+              </button>
+            </div>
+          </div>
+          
+          {/* Gemini API Key */}
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1 block">Gemini API 키</label>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  type={showKeys.gemini ? 'text' : 'password'}
+                  value={settings.geminiApiKey || ''}
+                  onChange={(e) => updateSettings({ geminiApiKey: e.target.value })}
+                  placeholder="Gemini API 키 (AIza...)"
+                  icon={<Key className="w-4 h-4" />}
+                />
+                <button
+                  onClick={() => toggleShowKey('gemini')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                >
+                  {showKeys.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* OpenAI API Key */}
+          <div>
+            <label className="text-sm font-medium text-foreground mb-1 block">OpenAI API 키 (백업)</label>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  type={showKeys.openai ? 'text' : 'password'}
+                  value={settings.openaiApiKey || ''}
+                  onChange={(e) => updateSettings({ openaiApiKey: e.target.value })}
+                  placeholder="OpenAI API 키 (sk-...)"
+                  icon={<Key className="w-4 h-4" />}
+                />
+                <button
+                  onClick={() => toggleShowKey('openai')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                >
+                  {showKeys.openai ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          <p className="text-xs text-muted">
+            LLM API 키를 입력하면 대본에서 캐릭터의 이름, 외형, 성격, 관계를 자동으로 분석합니다.
+            Gemini가 기본이며, 실패 시 OpenAI로 자동 전환됩니다.
+          </p>
+        </div>
+      </Card>
 
       {/* KIE (Image Generation) API */}
       <Card>

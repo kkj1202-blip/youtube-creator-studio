@@ -195,6 +195,11 @@ export interface Settings {
   elevenLabsAccounts: ElevenLabsAccount[];
   youtubeApiKey: string;
   
+  // LLM API 키
+  geminiApiKey: string;
+  openaiApiKey: string;
+  llmProvider: 'gemini' | 'openai';
+  
   // 기본 설정
   defaultAspectRatio: AspectRatio;
   defaultImageStyle: ImageStyle;

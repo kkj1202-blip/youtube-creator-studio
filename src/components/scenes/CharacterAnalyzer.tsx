@@ -15,24 +15,30 @@ import {
   ThumbsUp,
   AlertCircle,
   ChevronDown,
+  Brain,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import Button from '@/components/ui/Button';
-import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
-import { imageStyleLibrary, getStyleById, getAllStyles } from '@/lib/imageStyles';
+import { imageStyleLibrary, getStyleById } from '@/lib/imageStyles';
+import { analyzeCharacters, generateCharacterImagePrompt, Character as LLMCharacter, LLMConfig } from '@/lib/api/llm';
 
 interface Character {
   id: string;
   name: string;
   description: string;
   appearance: string;
-  role: '주인공' | '조연';
+  role: '주인공' | '조연' | '단역';
+  gender: '남성' | '여성' | '불명';
+  ageRange: string;
+  personality: string;
+  relationship: string;
   imageUrl?: string;
   isGenerating?: boolean;
   approved: boolean;
   error?: string;
-  status?: string; // API 상태 표시
+  status?: string;
+  generatedPrompt?: string;
 }
 
 interface CharacterAnalyzerProps {
@@ -40,66 +46,14 @@ interface CharacterAnalyzerProps {
   onClose: () => void;
 }
 
-// 대본에서 주요 캐릭터 분석
-function analyzeMainCharacters(scripts: string[]): { name: string; role: '주인공' | '조연' }[] {
-  const fullScript = scripts.join('\n');
-  const dialoguePatterns = [
-    /^([가-힣]{2,4})\s*[:：]/gm,
-    /\[([가-힣]{2,4})\]/g,
-    /「([가-힣]{2,4})」/g,
-  ];
-  
-  const nameCounts = new Map<string, number>();
-  
-  dialoguePatterns.forEach(pattern => {
-    let match;
-    const tempScript = fullScript;
-    while ((match = pattern.exec(tempScript)) !== null) {
-      const name = match[1].trim();
-      if (name.length >= 2 && name.length <= 4) {
-        nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
-      }
-    }
-  });
-  
-  const sortedNames = Array.from(nameCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3);
-  
-  const result = sortedNames.map(([ name ], index) => ({
-    name,
-    role: (index === 0 ? '주인공' : '조연') as '주인공' | '조연',
-  }));
-  
-  if (result.length === 0) {
-    return [
-      { name: '주인공', role: '주인공' },
-      { name: '조연1', role: '조연' },
-    ];
-  }
-  
-  return result;
-}
-
 // 캐릭터 이미지 생성
 async function generateCharacterImage(
   apiKey: string,
-  character: Character,
-  styleId: string = 'hyper-photo',
+  prompt: string,
   onStatusChange?: (status: string) => void
 ): Promise<string> {
-  const style = getStyleById(styleId);
-  const stylePrompt = style?.prompt || 'photorealistic portrait, professional photography, studio lighting, 8k uhd';
-  
-  const characterDesc = character.appearance || `${character.name}, Korean ${character.role === '주인공' ? 'protagonist' : 'supporting'} character`;
-  const extraDesc = character.description || 'friendly expression';
-  const prompt = `${characterDesc}, ${extraDesc}, ${stylePrompt}, portrait shot, centered, looking at camera`;
-  
   console.log('[CharacterAnalyzer] ========== API 호출 시작 ==========');
-  console.log('[CharacterAnalyzer] Character:', character.name);
   console.log('[CharacterAnalyzer] Prompt:', prompt);
-  console.log('[CharacterAnalyzer] Style:', style?.name || styleId);
-  console.log('[CharacterAnalyzer] API Key (first 8 chars):', apiKey?.slice(0, 8) + '...');
   
   onStatusChange?.('API 요청 중...');
 
@@ -115,7 +69,6 @@ async function generateCharacterImage(
     });
     
     console.log('[CharacterAnalyzer] Response status:', response.status);
-    console.log('[CharacterAnalyzer] Response headers:', Object.fromEntries(response.headers.entries()));
     
     const responseText = await response.text();
     console.log('[CharacterAnalyzer] Raw response:', responseText);
@@ -128,8 +81,6 @@ async function generateCharacterImage(
       throw new Error(`응답 파싱 실패: ${responseText.slice(0, 100)}`);
     }
     
-    console.log('[CharacterAnalyzer] Parsed response:', JSON.stringify(data, null, 2));
-    
     if (!response.ok) {
       const errorMsg = data.error || `HTTP 오류 ${response.status}`;
       console.error('[CharacterAnalyzer] API 에러:', errorMsg);
@@ -137,16 +88,13 @@ async function generateCharacterImage(
     }
     
     if (!data.imageUrl) {
-      console.error('[CharacterAnalyzer] imageUrl 없음. 전체 응답:', data);
-      throw new Error('이미지 URL을 받지 못했습니다. taskId: ' + (data.taskId || 'none'));
+      throw new Error('이미지 URL을 받지 못했습니다.');
     }
     
     console.log('[CharacterAnalyzer] ========== 성공! ==========');
-    console.log('[CharacterAnalyzer] Original Image URL:', data.imageUrl);
     
     // 프록시 URL로 변환 (CORS 문제 해결)
     const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(data.imageUrl)}`;
-    console.log('[CharacterAnalyzer] Proxy URL:', proxyUrl);
     
     onStatusChange?.('완료!');
     return proxyUrl;
@@ -165,32 +113,63 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedStyle, setSelectedStyle] = useState('hyper-photo');
   const [generatingAll, setGeneratingAll] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const hasApiKey = !!settings.kieApiKey;
-  const allStyles = getAllStyles();
+  const hasLLMKey = !!settings.geminiApiKey || !!settings.openaiApiKey;
+  
+  const getLLMConfig = (): LLMConfig => ({
+    provider: settings.llmProvider || 'gemini',
+    geminiApiKey: settings.geminiApiKey,
+    openaiApiKey: settings.openaiApiKey,
+  });
 
-  // 1단계: 대본 분석
+  // 1단계: LLM으로 대본 분석
   const handleAnalyze = useCallback(async () => {
     if (!currentProject) return;
+    
+    if (!hasLLMKey) {
+      setAnalysisError('설정에서 Gemini 또는 OpenAI API 키를 입력하세요.');
+      return;
+    }
+    
     setIsAnalyzing(true);
-    await new Promise(resolve => setTimeout(resolve, 500));
+    setAnalysisError(null);
     
-    const scripts = currentProject.scenes.map(s => s.script);
-    const analyzed = analyzeMainCharacters(scripts);
-    
-    const chars: Character[] = analyzed.map((char, idx) => ({
-      id: `char-${idx}`,
-      name: char.name,
-      role: char.role,
-      description: '',
-      appearance: '',
-      approved: false,
-    }));
-    
-    setCharacters(chars);
-    setStep('generate');
-    setIsAnalyzing(false);
-  }, [currentProject]);
+    try {
+      console.log('[CharacterAnalyzer] LLM 대본 분석 시작...');
+      const scripts = currentProject.scenes.map(s => s.script);
+      
+      const llmCharacters = await analyzeCharacters(getLLMConfig(), scripts);
+      
+      console.log('[CharacterAnalyzer] LLM 분석 결과:', llmCharacters);
+      
+      if (llmCharacters.length === 0) {
+        throw new Error('캐릭터를 찾을 수 없습니다. 대본을 확인해주세요.');
+      }
+      
+      const chars: Character[] = llmCharacters.map((char, idx) => ({
+        id: `char-${idx}`,
+        name: char.name,
+        role: char.role as '주인공' | '조연' | '단역',
+        gender: char.gender as '남성' | '여성' | '불명',
+        ageRange: char.ageRange,
+        appearance: char.appearance,
+        personality: char.personality,
+        relationship: char.relationship,
+        description: `${char.personality}. ${char.relationship}`,
+        approved: false,
+      }));
+      
+      setCharacters(chars);
+      setStep('generate');
+    } catch (error) {
+      console.error('[CharacterAnalyzer] 분석 오류:', error);
+      setAnalysisError(error instanceof Error ? error.message : '분석 중 오류가 발생했습니다.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [currentProject, settings]);
 
   const addCharacter = () => {
     if (characters.length >= 5) return;
@@ -200,6 +179,10 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       description: '',
       appearance: '',
       role: '조연',
+      gender: '불명',
+      ageRange: '',
+      personality: '',
+      relationship: '',
       approved: false,
     }]);
   };
@@ -212,7 +195,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     setCharacters(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
   };
 
-  // 개별 이미지 생성
+  // LLM으로 캐릭터별 이미지 프롬프트 생성 후 이미지 생성
   const generateSingleImage = async (charId: string) => {
     if (!hasApiKey) {
       alert('설정에서 KIE API 키를 입력하세요.');
@@ -225,16 +208,45 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       return;
     }
     
-    console.log('[CharacterAnalyzer] 시작: 캐릭터', char.name);
-    updateCharacter(charId, { isGenerating: true, error: undefined, status: '시작 중...' });
+    updateCharacter(charId, { isGenerating: true, error: undefined, status: 'LLM 프롬프트 생성 중...' });
     
     try {
+      let prompt: string;
+      
+      // LLM API 키가 있으면 LLM으로 프롬프트 생성
+      if (hasLLMKey) {
+        const style = getStyleById(selectedStyle);
+        const llmChar: LLMCharacter = {
+          name: char.name,
+          role: char.role,
+          gender: char.gender,
+          ageRange: char.ageRange,
+          appearance: char.appearance || `${char.gender} ${char.ageRange}`,
+          personality: char.personality || '친근함',
+          relationship: char.relationship || '',
+        };
+        
+        prompt = await generateCharacterImagePrompt(
+          getLLMConfig(),
+          llmChar,
+          style?.name || 'photorealistic'
+        );
+        console.log('[CharacterAnalyzer] LLM 생성 프롬프트:', prompt);
+      } else {
+        // LLM 없이 기본 프롬프트
+        const style = getStyleById(selectedStyle);
+        const stylePrompt = style?.prompt || 'photorealistic portrait';
+        prompt = `portrait of ${char.appearance || char.name}, ${char.gender}, ${char.ageRange}, ${stylePrompt}, centered, looking at camera, highly detailed`;
+      }
+      
+      updateCharacter(charId, { status: '이미지 생성 중...', generatedPrompt: prompt });
+      
       const imageUrl = await generateCharacterImage(
         settings.kieApiKey, 
-        char, 
-        selectedStyle,
+        prompt,
         (status) => updateCharacter(charId, { status })
       );
+      
       updateCharacter(charId, { imageUrl, isGenerating: false, status: undefined });
     } catch (error) {
       console.error('[CharacterAnalyzer] Error:', error);
@@ -260,10 +272,6 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     }
     
     console.log('[CharacterAnalyzer] ========== 전체 생성 시작 ==========');
-    console.log('[CharacterAnalyzer] 캐릭터 수:', characters.length);
-    console.log('[CharacterAnalyzer] 선택된 스타일:', selectedStyle);
-    console.log('[CharacterAnalyzer] API Key:', settings.kieApiKey ? '설정됨' : '없음');
-    
     setGeneratingAll(true);
     
     let successCount = 0;
@@ -276,26 +284,49 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
         continue;
       }
       
-      console.log(`[CharacterAnalyzer] ${i+1}/${characters.length} 생성 중: ${char.name}`);
-      updateCharacter(char.id, { isGenerating: true, error: undefined, status: `${i+1}/${characters.length} 생성 중...` });
+      updateCharacter(char.id, { isGenerating: true, error: undefined, status: `${i+1}/${characters.length} LLM 프롬프트 생성 중...` });
       
       try {
+        let prompt: string;
+        
+        if (hasLLMKey) {
+          const style = getStyleById(selectedStyle);
+          const llmChar: LLMCharacter = {
+            name: char.name,
+            role: char.role,
+            gender: char.gender,
+            ageRange: char.ageRange,
+            appearance: char.appearance || `${char.gender} ${char.ageRange}`,
+            personality: char.personality || '친근함',
+            relationship: char.relationship || '',
+          };
+          
+          prompt = await generateCharacterImagePrompt(
+            getLLMConfig(),
+            llmChar,
+            style?.name || 'photorealistic'
+          );
+        } else {
+          const style = getStyleById(selectedStyle);
+          const stylePrompt = style?.prompt || 'photorealistic portrait';
+          prompt = `portrait of ${char.appearance || char.name}, ${char.gender}, ${char.ageRange}, ${stylePrompt}, centered, looking at camera`;
+        }
+        
+        updateCharacter(char.id, { status: `${i+1}/${characters.length} 이미지 생성 중...`, generatedPrompt: prompt });
+        
         const imageUrl = await generateCharacterImage(
           settings.kieApiKey, 
-          char, 
-          selectedStyle,
-          (status) => updateCharacter(char.id, { status })
+          prompt,
+          (status) => updateCharacter(char.id, { status: `${i+1}/${characters.length} ${status}` })
         );
+        
         updateCharacter(char.id, { imageUrl, isGenerating: false, status: undefined });
         successCount++;
-        console.log(`[CharacterAnalyzer] ${char.name}: 성공!`);
       } catch (error) {
         failCount++;
-        const errMsg = error instanceof Error ? error.message : '생성 실패';
-        console.error(`[CharacterAnalyzer] ${char.name}: 실패 -`, errMsg);
         updateCharacter(char.id, { 
           isGenerating: false, 
-          error: errMsg,
+          error: error instanceof Error ? error.message : '생성 실패',
           status: undefined
         });
       }
@@ -306,14 +337,12 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       }
     }
     
-    console.log(`[CharacterAnalyzer] ========== 완료: 성공 ${successCount}, 실패 ${failCount} ==========`);
     setGeneratingAll(false);
     
-    // 하나라도 성공하면 review로
     if (successCount > 0) {
       setStep('review');
     } else if (failCount > 0) {
-      alert(`모든 이미지 생성 실패. 콘솔을 확인해주세요.`);
+      alert('모든 이미지 생성 실패. 콘솔을 확인해주세요.');
     }
   };
 
@@ -329,14 +358,19 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       return;
     }
 
+    // 캐릭터 정보를 프로젝트에 저장 (일관성 유지용)
     const characterDescription = approvedCharacters
-      .map(c => `${c.name}(${c.role}): ${c.appearance || '기본 외형'}, ${c.description || ''}`)
+      .map(c => `${c.name}(${c.role}, ${c.gender}, ${c.ageRange}): ${c.appearance}`)
+      .join(' | ');
+    
+    const artDirection = approvedCharacters
+      .map(c => c.generatedPrompt || c.appearance)
       .join(' | ');
     
     updateProject({
       imageConsistency: {
         characterDescription,
-        artDirection: `캐릭터 일관성 유지: ${approvedCharacters.map(c => c.name).join(', ')}`,
+        artDirection: `캐릭터 일관성: ${artDirection}`,
       },
     });
 
@@ -345,11 +379,10 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
 
   const approvedCount = characters.filter(c => c.approved && c.imageUrl).length;
   const generatedCount = characters.filter(c => c.imageUrl).length;
-  const selectedStyleName = getStyleById(selectedStyle)?.name || selectedStyle;
 
   return (
     <div className="space-y-4">
-      {/* 간소화된 헤더 + 단계 표시 */}
+      {/* 단계 표시 */}
       <div className="flex items-center justify-between pb-3 border-b border-border">
         <div className="flex items-center gap-3">
           {['분석', '생성', '승인'].map((label, i) => (
@@ -368,19 +401,43 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
         </div>
       </div>
 
-      {/* 1단계: 분석 */}
+      {/* 1단계: LLM 분석 */}
       {step === 'analyze' && (
-        <div className="text-center py-6">
-          <p className="text-sm text-muted mb-4">대본에서 주요 캐릭터를 추출합니다.</p>
+        <div className="text-center py-6 space-y-4">
+          <div className="flex items-center justify-center gap-2 text-primary">
+            <Brain className="w-8 h-8" />
+            <span className="text-lg font-semibold">AI 대본 분석</span>
+          </div>
+          
+          <p className="text-sm text-muted">
+            {hasLLMKey 
+              ? 'LLM이 대본을 분석하여 캐릭터의 이름, 외형, 성격, 관계를 자동으로 추출합니다.'
+              : '⚠️ 설정에서 Gemini 또는 OpenAI API 키를 입력하면 더 정확한 분석이 가능합니다.'}
+          </p>
+          
+          {analysisError && (
+            <div className="text-sm text-error bg-error/10 p-3 rounded-lg flex items-center gap-2 justify-center">
+              <AlertCircle className="w-4 h-4" />
+              {analysisError}
+            </div>
+          )}
+          
           <Button
             variant="primary"
+            size="lg"
             onClick={handleAnalyze}
             disabled={isAnalyzing}
             isLoading={isAnalyzing}
-            icon={<Sparkles className="w-4 h-4" />}
+            icon={<Sparkles className="w-5 h-5" />}
           >
-            {isAnalyzing ? '분석 중...' : '대본 분석하기'}
+            {isAnalyzing ? 'AI 분석 중...' : '대본 분석하기'}
           </Button>
+          
+          {!hasLLMKey && (
+            <p className="text-xs text-warning">
+              LLM API 키 없이도 기본 분석은 가능하지만, 캐릭터 외형이 정확하지 않을 수 있습니다.
+            </p>
+          )}
         </div>
       )}
 
@@ -410,77 +467,100 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
 
           {/* 캐릭터 목록 */}
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-medium">캐릭터 ({characters.length}명)</h3>
+            <h3 className="text-sm font-medium flex items-center gap-2">
+              <Users className="w-4 h-4" />
+              캐릭터 ({characters.length}명)
+            </h3>
             <Button variant="ghost" size="sm" onClick={addCharacter} disabled={characters.length >= 5} icon={<Plus className="w-3 h-3" />}>
               추가
             </Button>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 max-h-[45vh] overflow-y-auto">
+          <div className="space-y-4 max-h-[50vh] overflow-y-auto pr-2">
             {characters.map((char) => (
               <motion.div
                 key={char.id}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="p-3 rounded-lg border border-border bg-card"
+                className="p-4 rounded-lg border border-border bg-card"
               >
-                {/* 이미지 영역 */}
-                <div className="aspect-square rounded-lg bg-muted/20 overflow-hidden relative mb-3">
-                  {char.imageUrl ? (
-                    <img src={char.imageUrl} alt={char.name} className="w-full h-full object-cover" />
-                  ) : char.isGenerating ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10">
-                      <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
-                      <span className="text-xs text-muted">{char.status || '생성 중...'}</span>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => generateSingleImage(char.id)}
-                      disabled={!char.name.trim() || !hasApiKey}
-                      className="w-full h-full flex flex-col items-center justify-center hover:bg-muted/30 transition-colors disabled:opacity-50"
-                    >
-                      <ImageIcon className="w-10 h-10 text-muted mb-1" />
-                      <span className="text-xs text-muted">클릭하여 생성</span>
-                    </button>
-                  )}
-                  
-                  {char.imageUrl && !char.isGenerating && (
-                    <button
-                      onClick={() => generateSingleImage(char.id)}
-                      className="absolute top-2 right-2 p-1.5 rounded bg-black/60 hover:bg-black/80"
-                    >
-                      <RefreshCw className="w-3 h-3 text-white" />
-                    </button>
-                  )}
-                </div>
-
-                {/* 입력 필드 */}
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      value={char.name}
-                      onChange={(e) => updateCharacter(char.id, { name: e.target.value })}
-                      placeholder="이름"
-                      className="flex-1 text-sm"
-                    />
-                    <span className={`text-xs px-2 py-1.5 rounded ${char.role === '주인공' ? 'bg-primary/20 text-primary' : 'bg-muted/30 text-muted'}`}>
-                      {char.role}
-                    </span>
-                    <button onClick={() => removeCharacter(char.id)} className="text-muted hover:text-error p-1">
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                <div className="flex gap-4">
+                  {/* 이미지 영역 */}
+                  <div className="w-32 h-32 flex-shrink-0 rounded-lg bg-muted/20 overflow-hidden relative">
+                    {char.imageUrl ? (
+                      <img src={char.imageUrl} alt={char.name} className="w-full h-full object-cover" />
+                    ) : char.isGenerating ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10">
+                        <Loader2 className="w-6 h-6 animate-spin text-primary mb-1" />
+                        <span className="text-xs text-muted text-center px-2">{char.status || '생성 중...'}</span>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => generateSingleImage(char.id)}
+                        disabled={!char.name.trim() || !hasApiKey}
+                        className="w-full h-full flex flex-col items-center justify-center hover:bg-muted/30 transition-colors disabled:opacity-50"
+                      >
+                        <ImageIcon className="w-8 h-8 text-muted mb-1" />
+                        <span className="text-xs text-muted">클릭하여 생성</span>
+                      </button>
+                    )}
+                    
+                    {char.imageUrl && !char.isGenerating && (
+                      <button
+                        onClick={() => generateSingleImage(char.id)}
+                        className="absolute top-1 right-1 p-1 rounded bg-black/60 hover:bg-black/80"
+                      >
+                        <RefreshCw className="w-3 h-3 text-white" />
+                      </button>
+                    )}
                   </div>
-                  <Input
-                    value={char.appearance}
-                    onChange={(e) => updateCharacter(char.id, { appearance: e.target.value })}
-                    placeholder="외형 (예: 20대 여성, 긴 검은머리)"
-                    className="text-sm"
-                  />
-                  {char.error && (
-                    <div className="text-xs text-error bg-error/10 p-2 rounded flex items-center gap-1">
-                      <AlertCircle className="w-3 h-3" />{char.error}
+
+                  {/* 정보 영역 */}
+                  <div className="flex-1 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={char.name}
+                        onChange={(e) => updateCharacter(char.id, { name: e.target.value })}
+                        placeholder="이름"
+                        className="flex-1 text-sm font-medium"
+                      />
+                      <span className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
+                        char.role === '주인공' ? 'bg-primary/20 text-primary' : 
+                        char.role === '조연' ? 'bg-blue-500/20 text-blue-400' :
+                        'bg-muted/30 text-muted'
+                      }`}>
+                        {char.role}
+                      </span>
+                      <button onClick={() => removeCharacter(char.id)} className="text-muted hover:text-error p-1">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
-                  )}
+                    
+                    <div className="flex gap-2 text-xs">
+                      <span className="px-2 py-0.5 bg-muted/20 rounded">{char.gender}</span>
+                      <span className="px-2 py-0.5 bg-muted/20 rounded">{char.ageRange || '나이 미상'}</span>
+                    </div>
+                    
+                    <Input
+                      value={char.appearance}
+                      onChange={(e) => updateCharacter(char.id, { appearance: e.target.value })}
+                      placeholder="외형 (예: 긴 검은 머리, 날카로운 눈매, 단정한 정장)"
+                      className="text-sm"
+                    />
+                    
+                    <Input
+                      value={char.personality}
+                      onChange={(e) => updateCharacter(char.id, { personality: e.target.value })}
+                      placeholder="성격 (예: 차분하고 지적인)"
+                      className="text-sm"
+                    />
+                    
+                    {char.error && (
+                      <div className="text-xs text-error bg-error/10 p-2 rounded flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" />{char.error}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </motion.div>
             ))}
@@ -504,7 +584,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
               isLoading={generatingAll}
               icon={<Sparkles className="w-4 h-4" />}
             >
-              {generatingAll ? '생성 중...' : `이미지 생성 (${characters.length}명)`}
+              {generatingAll ? '생성 중...' : `전체 이미지 생성 (${characters.length}명)`}
             </Button>
           </div>
         </>
@@ -518,7 +598,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
             <span className="text-xs text-muted">{approvedCount}/{generatedCount} 선택됨</span>
           </div>
           
-          <p className="text-xs text-muted">마음에 드는 캐릭터를 클릭하여 선택하세요.</p>
+          <p className="text-xs text-muted">마음에 드는 캐릭터를 클릭하여 선택하세요. 승인된 캐릭터의 외형이 전체 씬에 적용됩니다.</p>
 
           <div className="grid grid-cols-2 gap-4 max-h-[50vh] overflow-y-auto">
             {characters.filter(c => c.imageUrl).map((char) => (
@@ -534,7 +614,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-medium text-white text-sm">{char.name}</div>
-                      <div className="text-xs text-white/70">{char.role}</div>
+                      <div className="text-xs text-white/70">{char.role} · {char.gender} · {char.ageRange}</div>
                     </div>
                     {char.approved && (
                       <div className="w-6 h-6 rounded-full bg-success flex items-center justify-center">

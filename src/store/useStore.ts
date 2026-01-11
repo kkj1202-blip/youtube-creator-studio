@@ -43,6 +43,10 @@ const defaultSettings: Settings = {
     { name: '계정 2', apiKey: '', voices: [], isActive: false },
   ],
   youtubeApiKey: '',
+  // LLM API 키
+  geminiApiKey: '',
+  openaiApiKey: '',
+  llmProvider: 'gemini',
   defaultAspectRatio: '16:9',
   defaultImageStyle: 'realistic',
   defaultVoiceId: undefined,
