@@ -30,6 +30,8 @@ import {
   List,
   LayoutGrid,
   FileText,
+  Wand2,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import SceneCard from './SceneCard';
@@ -67,6 +69,8 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterType>('all');
   const [compact, setCompact] = useState(defaultCompact);
+  const [isGeneratingAll, setIsGeneratingAll] = useState(false);
+  const [generatingProgress, setGeneratingProgress] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -247,6 +251,50 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       });
     }
   }, [currentProject, settings.kieApiKey, updateScene]);
+
+  // 일괄 이미지 생성 핸들러
+  const handleGenerateAllImages = useCallback(async () => {
+    if (!currentProject || !settings.kieApiKey) {
+      alert('설정에서 이미지 생성 API 키를 입력하세요.');
+      return;
+    }
+
+    // 이미지 없는 씬만 필터링
+    const scenesWithoutImage = currentProject.scenes.filter(s => !s.imageUrl);
+    if (scenesWithoutImage.length === 0) {
+      alert('모든 씬에 이미지가 있습니다.');
+      return;
+    }
+
+    setIsGeneratingAll(true);
+    setGeneratingProgress(0);
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < scenesWithoutImage.length; i++) {
+      const scene = scenesWithoutImage[i];
+      setGeneratingProgress(i + 1);
+
+      try {
+        await handleGenerateImage(scene.id);
+        successCount++;
+      } catch (error) {
+        failCount++;
+        console.error(`[SceneList] 씬 ${scene.order + 1} 이미지 생성 실패:`, error);
+      }
+
+      // API 호출 간격 (2초)
+      if (i < scenesWithoutImage.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    setIsGeneratingAll(false);
+    setGeneratingProgress(0);
+
+    alert(`이미지 생성 완료!\n성공: ${successCount}개\n실패: ${failCount}개`);
+  }, [currentProject, settings.kieApiKey, handleGenerateImage]);
 
   // 음성 생성 핸들러
   const handleGenerateAudio = useCallback(async (sceneId: string) => {
@@ -449,6 +497,25 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
           </Badge>
         )}
       </div>
+
+      {/* 일괄 AI 이미지 생성 버튼 */}
+      {stats.total > 0 && stats.withImage < stats.total && settings.kieApiKey && (
+        <div className="flex gap-2">
+          <Button
+            variant="primary"
+            className="flex-1"
+            onClick={handleGenerateAllImages}
+            disabled={isGeneratingAll}
+            isLoading={isGeneratingAll}
+            icon={<Sparkles className="w-4 h-4" />}
+          >
+            {isGeneratingAll 
+              ? `생성 중... (${generatingProgress}/${stats.total - stats.withImage})` 
+              : `🎨 이미지 없는 씬 AI 일괄 생성 (${stats.total - stats.withImage}개)`
+            }
+          </Button>
+        </div>
+      )}
 
       {/* 검색 및 필터 */}
       <div className="flex flex-wrap gap-2">
