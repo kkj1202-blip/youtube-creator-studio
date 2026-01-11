@@ -248,9 +248,12 @@ const SceneEditor: React.FC = () => {
         throw new Error(errorMsg);
       }
 
+      // CORS 문제 해결을 위해 프록시 URL로 변환
+      const proxyImageUrl = `/api/proxy-image?url=${encodeURIComponent(data.imageUrl)}`;
       console.log('[SceneEditor] ✅ 이미지 생성 성공:', data.imageUrl?.slice(0, 50));
+      console.log('[SceneEditor] 프록시 URL:', proxyImageUrl);
       handleUpdate({
-        imageUrl: data.imageUrl,
+        imageUrl: proxyImageUrl,
         imageSource: 'generated',
         imagePrompt: finalPrompt,
         error: undefined,

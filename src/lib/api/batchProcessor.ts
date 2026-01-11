@@ -298,8 +298,10 @@ export async function generateAllImages(
     onProgress,
     (scene, result, error) => {
       if (result) {
+        // CORS 문제 해결을 위해 프록시 URL로 변환
+        const proxyImageUrl = `/api/proxy-image?url=${encodeURIComponent(result.imageUrl)}`;
         updateScene?.(scene.id, {
-          imageUrl: result.imageUrl,
+          imageUrl: proxyImageUrl,
           imageSource: 'generated',
           imagePrompt: result.prompt,
           isProcessing: false,
