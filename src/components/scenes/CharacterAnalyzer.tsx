@@ -99,27 +99,36 @@ async function generateCharacterImage(
   
   const prompt = `${character.appearance || `${character.name}, Korean ${character.role === '주인공' ? 'protagonist' : 'supporting'} character`}, ${character.description || 'friendly expression'}, ${stylePrompt}, portrait shot, centered, looking at camera`;
   
-  const response = await fetch('/api/generate-image', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      apiKey,
-      prompt,
-      aspectRatio: '1:1', // 캐릭터 프로필은 정사각형
-    }),
-  });
+  console.log('[CharacterAnalyzer] Generating image with prompt:', prompt);
+  console.log('[CharacterAnalyzer] Style:', styleId, style?.name);
   
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error || '이미지 생성 실패');
+  try {
+    const response = await fetch('/api/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey,
+        prompt,
+        aspectRatio: '1:1', // 캐릭터 프로필은 정사각형
+      }),
+    });
+    
+    const data = await response.json();
+    console.log('[CharacterAnalyzer] API Response:', data);
+    
+    if (!response.ok) {
+      throw new Error(data.error || `HTTP ${response.status}: 이미지 생성 실패`);
+    }
+    
+    if (!data.imageUrl) {
+      throw new Error('이미지 URL을 받지 못했습니다. 응답: ' + JSON.stringify(data).slice(0, 200));
+    }
+    
+    return data.imageUrl;
+  } catch (error) {
+    console.error('[CharacterAnalyzer] Image generation error:', error);
+    throw error;
   }
-  
-  const data = await response.json();
-  if (!data.imageUrl) {
-    throw new Error('이미지 URL을 받지 못했습니다');
-  }
-  
-  return data.imageUrl;
 }
 
 export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnalyzerProps) {
@@ -417,7 +426,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
               </Button>
             </div>
 
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {characters.map((char, index) => (
                 <motion.div
                   key={char.id}
@@ -425,83 +434,82 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                   animate={{ opacity: 1, y: 0 }}
                   className="p-4 rounded-lg border border-border bg-muted/5"
                 >
-                  <div className="flex items-start gap-4">
-                    {/* 이미지 미리보기 / 생성 버튼 */}
-                    <div className="w-24 h-24 rounded-lg bg-muted/20 flex-shrink-0 overflow-hidden relative">
-                      {char.imageUrl ? (
-                        <img 
-                          src={char.imageUrl} 
-                          alt={char.name}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : char.isGenerating ? (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <Loader2 className="w-6 h-6 animate-spin text-primary" />
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => generateSingleImage(char.id)}
-                          disabled={!char.name.trim() || !hasApiKey}
-                          className="w-full h-full flex flex-col items-center justify-center gap-1 hover:bg-muted/30 transition-colors disabled:opacity-50"
-                        >
-                          <ImageIcon className="w-6 h-6 text-muted" />
-                          <span className="text-xs text-muted">생성</span>
-                        </button>
-                      )}
-                      
-                      {/* 재생성 버튼 */}
-                      {char.imageUrl && !char.isGenerating && (
-                        <button
-                          onClick={() => generateSingleImage(char.id)}
-                          className="absolute top-1 right-1 p-1 rounded bg-black/50 hover:bg-black/70 transition-colors"
-                          title="다시 생성"
-                        >
-                          <RefreshCw className="w-3 h-3 text-white" />
-                        </button>
-                      )}
-                    </div>
-
-                    {/* 캐릭터 정보 */}
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          value={char.name}
-                          onChange={(e) => updateCharacter(char.id, { name: e.target.value })}
-                          placeholder="캐릭터 이름"
-                          className="flex-1"
-                        />
-                        <span className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
-                          char.role === '주인공' ? 'bg-primary/20 text-primary' : 'bg-muted/50 text-muted'
-                        }`}>
-                          {char.role}
-                        </span>
-                        <button
-                          onClick={() => removeCharacter(char.id)}
-                          className="text-muted hover:text-error transition-colors p-1"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                  {/* 이미지 미리보기 / 생성 버튼 - 더 크게 */}
+                  <div className="w-full aspect-square rounded-lg bg-muted/20 overflow-hidden relative mb-4">
+                    {char.imageUrl ? (
+                      <img 
+                        src={char.imageUrl} 
+                        alt={char.name}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : char.isGenerating ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-2">
+                        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+                        <span className="text-sm text-muted">이미지 생성 중...</span>
                       </div>
-                      
+                    ) : (
+                      <button
+                        onClick={() => generateSingleImage(char.id)}
+                        disabled={!char.name.trim() || !hasApiKey}
+                        className="w-full h-full flex flex-col items-center justify-center gap-2 hover:bg-muted/30 transition-colors disabled:opacity-50"
+                      >
+                        <ImageIcon className="w-12 h-12 text-muted" />
+                        <span className="text-sm text-muted">클릭하여 생성</span>
+                      </button>
+                    )}
+                    
+                    {/* 재생성 버튼 */}
+                    {char.imageUrl && !char.isGenerating && (
+                      <button
+                        onClick={() => generateSingleImage(char.id)}
+                        className="absolute top-2 right-2 p-2 rounded-lg bg-black/60 hover:bg-black/80 transition-colors"
+                        title="다시 생성"
+                      >
+                        <RefreshCw className="w-4 h-4 text-white" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* 캐릭터 정보 */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
                       <Input
-                        value={char.appearance}
-                        onChange={(e) => updateCharacter(char.id, { appearance: e.target.value })}
-                        placeholder="외형 (예: 20대 여성, 긴 검은 머리, 안경)"
+                        value={char.name}
+                        onChange={(e) => updateCharacter(char.id, { name: e.target.value })}
+                        placeholder="캐릭터 이름"
+                        className="flex-1"
                       />
-                      
-                      <Input
-                        value={char.description}
-                        onChange={(e) => updateCharacter(char.id, { description: e.target.value })}
-                        placeholder="추가 설명 (예: 밝은 미소, 캐주얼 의상)"
-                      />
-                      
-                      {char.error && (
-                        <div className="text-xs text-error flex items-center gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          {char.error}
-                        </div>
-                      )}
+                      <span className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
+                        char.role === '주인공' ? 'bg-primary/20 text-primary' : 'bg-muted/50 text-muted'
+                      }`}>
+                        {char.role}
+                      </span>
+                      <button
+                        onClick={() => removeCharacter(char.id)}
+                        className="text-muted hover:text-error transition-colors p-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
+                    
+                    <Input
+                      value={char.appearance}
+                      onChange={(e) => updateCharacter(char.id, { appearance: e.target.value })}
+                      placeholder="외형 (예: 20대 여성, 긴 검은 머리, 안경)"
+                    />
+                    
+                    <Input
+                      value={char.description}
+                      onChange={(e) => updateCharacter(char.id, { description: e.target.value })}
+                      placeholder="추가 설명 (예: 밝은 미소, 캐주얼 의상)"
+                    />
+                    
+                    {char.error && (
+                      <div className="text-sm text-error flex items-center gap-2 p-2 bg-error/10 rounded">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                        <span>{char.error}</span>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               ))}

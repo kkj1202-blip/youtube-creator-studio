@@ -1424,7 +1424,7 @@ const BatchActions: React.FC = () => {
         isOpen={showCharacterAnalyzer}
         onClose={() => setShowCharacterAnalyzer(false)}
         title="캐릭터 분석 & 이미지 생성"
-        size="lg"
+        size="xl"
       >
         <CharacterAnalyzer
           onApprove={handleCharacterApproved}
