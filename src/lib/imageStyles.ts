@@ -139,8 +139,8 @@ export const imageStyleLibrary: StyleCategory[] = [
       },
       {
         id: 'joseon',
-        name: '조선시대 (K-Heritage)',
-        prompt: 'Joseon Dynasty Korea, authentic high-quality Hanbok textures, historical cinematic accuracy, misty morning light, traditional architecture, high-end K-Drama movie aesthetic.',
+        name: '조선시대 (18세기 후반 웹툰)',
+        prompt: '18th-century Korean Joseon Dynasty (late 1700s) animation style, high-fidelity 2D webtoon aesthetic, historically accurate Hanbok textures with silk and cotton details, expressive character faces with bold line art, bustling traditional market (Jumak) background with 18th-century Hanok architecture, warm cinematic lighting, vibrant color palette, dynamic perspective, high-quality manhwa masterpiece.',
       },
       {
         id: 'cyberpunk',
