@@ -177,28 +177,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 해상도 계산 (Z-Image)
-    let width = 1280;
-    let height = 720;
-    
-    if (aspectRatio === '9:16') {
-      width = 720;
-      height = 1280;
-    } else if (aspectRatio === '1:1') {
-      width = 1024;
-      height = 1024;
-    }
-
     // KIE Z-Image API 요청 페이로드
+    // aspect_ratio 형식: "16:9", "9:16", "1:1" 등
     const createTaskPayload = {
       model: 'z-image',
       input: {
         prompt: prompt,
+        aspect_ratio: aspectRatio || '16:9',
         negative_prompt: 'low quality, blurry, distorted, ugly, bad anatomy, watermark, text, logo',
-        width: width,
-        height: height,
-        num_images: 1,
-        ...(style && { style: style }),
       },
     };
 
