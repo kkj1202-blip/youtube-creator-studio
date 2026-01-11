@@ -368,19 +368,34 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       return;
     }
 
+    // 스타일 프롬프트 가져오기
+    const style = getStyleById(selectedStyle);
+    const stylePrompt = style?.prompt || '';
+    const styleName = style?.name || '실사화';
+
     // 캐릭터 정보를 프로젝트에 저장 (일관성 유지용)
     const characterDescription = approvedCharacters
       .map(c => `${c.name}(${c.role}, ${c.gender}, ${c.ageRange}): ${c.appearance}`)
       .join(' | ');
     
-    const artDirection = approvedCharacters
+    // 승인된 캐릭터들의 외형 프롬프트
+    const characterPrompts = approvedCharacters
       .map(c => c.generatedPrompt || c.appearance)
-      .join(' | ');
+      .join('; ');
+    
+    console.log('[CharacterAnalyzer] 승인 완료');
+    console.log('  - 스타일:', styleName);
+    console.log('  - 스타일 프롬프트:', stylePrompt);
+    console.log('  - 캐릭터:', characterDescription);
     
     updateProject({
+      // 마스터 스타일 프롬프트 저장 (전체 씬에 적용)
+      masterImageStylePrompt: stylePrompt,
+      masterImageStyleId: selectedStyle,
+      // 캐릭터 일관성 정보
       imageConsistency: {
         characterDescription,
-        artDirection: `캐릭터 일관성: ${artDirection}`,
+        artDirection: characterPrompts,
       },
     });
 
