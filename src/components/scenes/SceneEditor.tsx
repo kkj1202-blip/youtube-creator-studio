@@ -620,17 +620,26 @@ const SceneEditor: React.FC = () => {
                     </div>
                   )}
                 </div>
+                {/* API 키 안내 */}
+                {!settings.kieApiKey && (
+                  <div className="mt-3 p-3 bg-warning/10 border border-warning/30 rounded-lg">
+                    <p className="text-xs text-warning flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      이미지 생성을 위해 설정에서 API 키를 입력하세요
+                    </p>
+                  </div>
+                )}
                 <div className="flex gap-2 mt-3">
                   <Button
                     variant="primary"
                     size="sm"
                     className="flex-1"
                     onClick={handleGenerateImage}
-                    disabled={isGeneratingImage}
+                    disabled={isGeneratingImage || !settings.kieApiKey}
                     isLoading={isGeneratingImage}
                     icon={<Wand2 className="w-4 h-4" />}
                   >
-                    AI 생성
+                    {settings.kieApiKey ? 'AI 생성' : 'API 키 필요'}
                   </Button>
                   <Button
                     variant="ghost"
@@ -646,7 +655,7 @@ const SceneEditor: React.FC = () => {
                       variant="ghost"
                       size="sm"
                       onClick={handleGenerateImage}
-                      disabled={isGeneratingImage}
+                      disabled={isGeneratingImage || !settings.kieApiKey}
                       icon={<RefreshCw className="w-4 h-4" />}
                     >
                       재생성
