@@ -258,13 +258,18 @@ export async function POST(request: NextRequest) {
         422: '요청 파라미터가 올바르지 않습니다.',
         429: '요청 한도 초과: 잠시 후 다시 시도하세요.',
         455: '컨텐츠 정책 위반',
-        500: '서버 오류가 발생했습니다.',
+        500: 'KIE 서버 오류',
         501: '생성 실패',
         505: '모델이 일시적으로 사용 불가능합니다.',
       };
       
+      // 원본 메시지도 함께 표시
+      const displayError = errorMessages[createData.code] 
+        ? `${errorMessages[createData.code]} (${errorMsg})`
+        : errorMsg;
+      
       return NextResponse.json(
-        { error: errorMessages[createData.code] || errorMsg },
+        { error: displayError, code: createData.code, originalMsg: errorMsg },
         { status: createData.code || 500 }
       );
     }
