@@ -32,7 +32,6 @@ import { Button, Card, Select, Toggle, Slider, Modal } from '@/components/ui';
 import ImageUploader from './ImageUploader';
 import CharacterAnalyzer from './CharacterAnalyzer';
 import type { Scene, EmotionTag, TransitionType, KenBurnsEffect } from '@/types';
-import type { ConsistencySettings } from '@/lib/imageStyles';
 import {
   generateAllImages,
   generateAllVoices,
@@ -447,10 +446,9 @@ const BatchActions: React.FC = () => {
 
   // ========== 기존 일괄 처리 함수 (시간 추적 추가) ==========
 
-  // 캐릭터 분석 후 이미지 생성 시작
+  // 캐릭터 승인 후 전체 씬 이미지 생성
   const handleCharacterApproved = useCallback(async (
-    characters: Array<{ name: string; appearance: string; description: string }>,
-    consistencySettings: ConsistencySettings
+    characters: Array<{ name: string; appearance: string; description: string; imageUrl?: string }>
   ) => {
     setShowCharacterAnalyzer(false);
     
@@ -459,9 +457,9 @@ const BatchActions: React.FC = () => {
       return;
     }
 
-    // 캐릭터 정보로 일관성 설정이 이미 저장됨 (CharacterAnalyzer에서)
-    console.log('[BatchActions] Starting image generation with characters:', characters);
-    console.log('[BatchActions] Consistency settings:', consistencySettings);
+    // 승인된 캐릭터 정보 로그
+    console.log('[BatchActions] Approved characters:', characters);
+    console.log('[BatchActions] Starting scene image generation with character consistency');
 
     // 이미지 일괄 생성 시작
     setProcessingState(prev => ({
@@ -501,7 +499,7 @@ const BatchActions: React.FC = () => {
       if (result.errors.length > 0) {
         alert(`이미지 생성 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
       } else {
-        alert(`✅ 모든 이미지 생성 완료! (${result.completed}개)`);
+        alert(`✅ 모든 씬 이미지 생성 완료! (${result.completed}개)\n\n승인된 캐릭터: ${characters.map(c => c.name).join(', ')}`);
       }
     } catch (error) {
       setProcessingState(prev => ({

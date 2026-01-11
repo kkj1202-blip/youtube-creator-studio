@@ -7,166 +7,159 @@ import {
   Wand2,
   Loader2,
   CheckCircle2,
-  AlertCircle,
-  Eye,
-  Edit3,
+  XCircle,
   Trash2,
   Plus,
   Sparkles,
   Image as ImageIcon,
-  ChevronDown,
-  ChevronUp,
   RefreshCw,
+  ThumbsUp,
+  ThumbsDown,
+  AlertCircle,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
-import { ConsistencySettings } from '@/lib/imageStyles';
 
 interface Character {
   id: string;
   name: string;
   description: string;
   appearance: string;
-  role: string;
+  role: '주인공' | '조연';
+  imageUrl?: string;
+  isGenerating?: boolean;
   approved: boolean;
+  error?: string;
 }
 
 interface CharacterAnalyzerProps {
-  onApprove: (characters: Character[], settings: ConsistencySettings) => void;
+  onApprove: (characters: Character[]) => void;
   onClose: () => void;
 }
 
-// 대본에서 캐릭터 분석 (간단한 휴리스틱)
-function analyzeCharactersFromScript(script: string): Character[] {
-  const characters: Character[] = [];
-  const lines = script.split('\n');
+// 대본에서 주요 캐릭터 분석
+function analyzeMainCharacters(scripts: string[]): { name: string; role: '주인공' | '조연' }[] {
+  const fullScript = scripts.join('\n');
+  const characters: { name: string; count: number }[] = [];
   
-  // 이름 패턴들 (한국어/영어)
-  const namePatterns = [
-    /^([가-힣]{2,4})\s*[:：]/gm,           // 홍길동:
-    /^([A-Z][a-z]+)\s*[:：]/gm,           // John:
-    /\[([가-힣]{2,4})\]/g,                // [홍길동]
-    /「([가-힣]{2,4})」/g,                // 「홍길동」
-    /"([가-힣]{2,4})"/g,                  // "홍길동"
-    /^([가-힣]{2,4})(이|가|은|는|을|를)\s/gm, // 홍길동이 말했다
+  // 대화 패턴에서 이름 추출
+  const dialoguePatterns = [
+    /^([가-힣]{2,4})\s*[:：]/gm,
+    /\[([가-힣]{2,4})\]/g,
+    /「([가-힣]{2,4})」/g,
   ];
-
-  const foundNames = new Set<string>();
   
-  // 패턴 매칭으로 이름 추출
-  namePatterns.forEach(pattern => {
+  const nameCounts = new Map<string, number>();
+  
+  dialoguePatterns.forEach(pattern => {
     let match;
-    while ((match = pattern.exec(script)) !== null) {
+    const tempScript = fullScript;
+    while ((match = pattern.exec(tempScript)) !== null) {
       const name = match[1].trim();
-      if (name.length >= 2 && name.length <= 10) {
-        foundNames.add(name);
+      if (name.length >= 2 && name.length <= 4) {
+        nameCounts.set(name, (nameCounts.get(name) || 0) + 1);
       }
     }
   });
-
-  // 일반 명사 제외 (간단한 필터)
-  const commonWords = new Set(['이것', '그것', '저것', '여기', '거기', '저기', '오늘', '내일', '어제']);
   
-  let index = 0;
-  foundNames.forEach(name => {
-    if (!commonWords.has(name)) {
-      characters.push({
-        id: `char-${index++}`,
-        name,
-        description: '',
-        appearance: '',
-        role: index === 1 ? '주인공' : '조연',
-        approved: false,
-      });
-    }
-  });
-
-  // 최소 1명의 캐릭터 (주인공)
-  if (characters.length === 0) {
-    characters.push({
-      id: 'char-0',
-      name: '주인공',
-      description: '영상의 주요 캐릭터',
-      appearance: '',
-      role: '주인공',
-      approved: false,
-    });
+  // 등장 빈도순 정렬
+  const sortedNames = Array.from(nameCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3); // 최대 3명
+  
+  // 결과 생성
+  const result = sortedNames.map(([ name ], index) => ({
+    name,
+    role: (index === 0 ? '주인공' : '조연') as '주인공' | '조연',
+  }));
+  
+  // 캐릭터가 없으면 기본값
+  if (result.length === 0) {
+    return [
+      { name: '주인공', role: '주인공' },
+      { name: '조연1', role: '조연' },
+    ];
   }
-
-  return characters.slice(0, 5); // 최대 5명
+  
+  return result;
 }
 
-// 배경 분석 (키워드 기반)
-function analyzeBackgroundFromScript(script: string): string {
-  const backgrounds: string[] = [];
+// 캐릭터 이미지 생성
+async function generateCharacterImage(
+  apiKey: string,
+  character: Character,
+  style: string = 'realistic'
+): Promise<string> {
+  const stylePrompts: Record<string, string> = {
+    'realistic': 'photorealistic portrait, professional photography, studio lighting, 8k uhd',
+    '2d-anime': 'anime style portrait, 2d illustration, vibrant colors, clean lines',
+    '3d-anime': '3d rendered anime portrait, pixar style, smooth shading',
+  };
   
-  // 장소 키워드
-  const locationKeywords = [
-    { keywords: ['학교', '교실', '운동장'], bg: '학교 교실 또는 운동장' },
-    { keywords: ['집', '방', '거실', '침실'], bg: '현대적인 집 내부' },
-    { keywords: ['회사', '사무실', '오피스'], bg: '현대적인 사무실' },
-    { keywords: ['카페', '커피숍', '스타벅스'], bg: '아늑한 카페 인테리어' },
-    { keywords: ['공원', '숲', '자연', '나무'], bg: '푸른 공원과 자연' },
-    { keywords: ['도시', '거리', '길', '도로'], bg: '현대 도시 거리' },
-    { keywords: ['밤', '야경', '어둠'], bg: '밤하늘과 도시 야경' },
-    { keywords: ['바다', '해변', '해수욕장'], bg: '맑은 바다와 해변' },
-    { keywords: ['산', '등산', '정상'], bg: '웅장한 산과 자연' },
-  ];
+  const prompt = `${character.appearance || `${character.name}, Korean ${character.role === '주인공' ? 'protagonist' : 'supporting'} character`}, ${character.description || 'friendly expression'}, ${stylePrompts[style] || stylePrompts['realistic']}, portrait shot, centered, looking at camera`;
   
-  const lowerScript = script.toLowerCase();
-  locationKeywords.forEach(({ keywords, bg }) => {
-    if (keywords.some(kw => lowerScript.includes(kw))) {
-      backgrounds.push(bg);
-    }
+  const response = await fetch('/api/generate-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      apiKey,
+      prompt,
+      aspectRatio: '1:1', // 캐릭터 프로필은 정사각형
+    }),
   });
   
-  return backgrounds.length > 0 
-    ? backgrounds.slice(0, 2).join(', ') 
-    : '현대적인 배경';
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || '이미지 생성 실패');
+  }
+  
+  const data = await response.json();
+  if (!data.imageUrl) {
+    throw new Error('이미지 URL을 받지 못했습니다');
+  }
+  
+  return data.imageUrl;
 }
 
 export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnalyzerProps) {
-  const { currentProject, updateProject } = useStore();
+  const { currentProject, settings, updateProject } = useStore();
+  const [step, setStep] = useState<'analyze' | 'generate' | 'review'>('analyze');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [background, setBackground] = useState('');
-  const [colorPalette, setColorPalette] = useState('');
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [hasAnalyzed, setHasAnalyzed] = useState(false);
+  const [selectedStyle, setSelectedStyle] = useState('realistic');
+  const [generatingAll, setGeneratingAll] = useState(false);
 
-  // 대본 분석 실행
+  const hasApiKey = !!settings.kieApiKey;
+
+  // 1단계: 대본 분석
   const handleAnalyze = useCallback(async () => {
     if (!currentProject) return;
     
     setIsAnalyzing(true);
+    await new Promise(resolve => setTimeout(resolve, 800));
     
-    // 모든 씬의 대본 합치기
-    const fullScript = currentProject.scenes
-      .map(s => s.script)
-      .join('\n');
+    const scripts = currentProject.scenes.map(s => s.script);
+    const analyzed = analyzeMainCharacters(scripts);
     
-    // 약간의 딜레이 (분석 중 느낌)
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    const chars: Character[] = analyzed.map((char, idx) => ({
+      id: `char-${idx}`,
+      name: char.name,
+      role: char.role,
+      description: '',
+      appearance: '',
+      approved: false,
+    }));
     
-    // 캐릭터 분석
-    const analyzedCharacters = analyzeCharactersFromScript(fullScript);
-    setCharacters(analyzedCharacters);
-    
-    // 배경 분석
-    const analyzedBg = analyzeBackgroundFromScript(fullScript);
-    setBackground(analyzedBg);
-    
-    // 기본 색상 팔레트
-    setColorPalette('밝고 선명한 색상');
-    
-    setHasAnalyzed(true);
+    setCharacters(chars);
+    setStep('generate');
     setIsAnalyzing(false);
   }, [currentProject]);
 
   // 캐릭터 추가
   const addCharacter = () => {
+    if (characters.length >= 5) return;
     setCharacters(prev => [
       ...prev,
       {
@@ -192,72 +185,152 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     );
   };
 
-  // 캐릭터 승인 토글
+  // 개별 캐릭터 이미지 생성
+  const generateSingleImage = async (charId: string) => {
+    if (!hasApiKey) {
+      alert('설정에서 KIE API 키를 입력하세요.');
+      return;
+    }
+    
+    const char = characters.find(c => c.id === charId);
+    if (!char) return;
+    
+    updateCharacter(charId, { isGenerating: true, error: undefined });
+    
+    try {
+      const imageUrl = await generateCharacterImage(settings.kieApiKey, char, selectedStyle);
+      updateCharacter(charId, { imageUrl, isGenerating: false });
+    } catch (error) {
+      updateCharacter(charId, { 
+        isGenerating: false, 
+        error: error instanceof Error ? error.message : '생성 실패' 
+      });
+    }
+  };
+
+  // 2단계: 모든 캐릭터 이미지 생성
+  const handleGenerateAll = async () => {
+    if (!hasApiKey) {
+      alert('설정에서 KIE API 키를 입력하세요.');
+      return;
+    }
+    
+    // 이름이 없는 캐릭터 확인
+    const invalidChars = characters.filter(c => !c.name.trim());
+    if (invalidChars.length > 0) {
+      alert('모든 캐릭터의 이름을 입력해주세요.');
+      return;
+    }
+    
+    setGeneratingAll(true);
+    
+    // 순차적으로 생성 (동시 요청 제한)
+    for (const char of characters) {
+      if (char.imageUrl) continue; // 이미 생성된 건 스킵
+      
+      updateCharacter(char.id, { isGenerating: true, error: undefined });
+      
+      try {
+        const imageUrl = await generateCharacterImage(settings.kieApiKey, char, selectedStyle);
+        updateCharacter(char.id, { imageUrl, isGenerating: false });
+      } catch (error) {
+        updateCharacter(char.id, { 
+          isGenerating: false, 
+          error: error instanceof Error ? error.message : '생성 실패' 
+        });
+      }
+      
+      // 요청 간 딜레이
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    
+    setGeneratingAll(false);
+    setStep('review');
+  };
+
+  // 캐릭터 승인/거부
   const toggleApprove = (id: string) => {
     setCharacters(prev =>
       prev.map(c => c.id === id ? { ...c, approved: !c.approved } : c)
     );
   };
 
-  // 모든 캐릭터 승인
-  const approveAll = () => {
-    setCharacters(prev => prev.map(c => ({ ...c, approved: true })));
-  };
-
-  // 최종 승인 및 이미지 생성 시작
+  // 3단계: 최종 승인 → 전체 씬 이미지 생성
   const handleFinalApprove = () => {
-    const approvedCharacters = characters.filter(c => c.approved);
+    const approvedCharacters = characters.filter(c => c.approved && c.imageUrl);
     
     if (approvedCharacters.length === 0) {
       alert('최소 1명의 캐릭터를 승인해주세요.');
       return;
     }
 
-    // 캐릭터 설명 조합
+    // 프로젝트에 캐릭터 일관성 정보 저장
     const characterDescription = approvedCharacters
-      .map(c => {
-        const parts = [c.name];
-        if (c.appearance) parts.push(c.appearance);
-        if (c.description) parts.push(c.description);
-        return parts.join(': ');
-      })
+      .map(c => `${c.name}(${c.role}): ${c.appearance || '기본 외형'}, ${c.description || ''}`)
       .join(' | ');
-
-    const consistencySettings: ConsistencySettings = {
-      characterDescription,
-      backgroundDescription: background,
-      colorPalette,
-    };
-
-    // 프로젝트에 저장
+    
     updateProject({
-      imageConsistency: consistencySettings,
+      imageConsistency: {
+        characterDescription,
+        artDirection: `캐릭터 일관성 유지: ${approvedCharacters.map(c => c.name).join(', ')}`,
+      },
     });
 
-    onApprove(approvedCharacters, consistencySettings);
+    onApprove(approvedCharacters);
   };
 
+  // 스타일 옵션
+  const styleOptions = [
+    { value: 'realistic', label: '실사 스타일', desc: '사진처럼 사실적인' },
+    { value: '2d-anime', label: '2D 애니메이션', desc: '일본 애니 스타일' },
+    { value: '3d-anime', label: '3D 애니메이션', desc: '픽사/디즈니 스타일' },
+  ];
+
+  const approvedCount = characters.filter(c => c.approved && c.imageUrl).length;
+  const generatedCount = characters.filter(c => c.imageUrl).length;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-h-[70vh] overflow-y-auto">
       {/* 헤더 */}
-      <div className="text-center">
+      <div className="text-center sticky top-0 bg-card pt-2 pb-4 z-10">
         <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mx-auto mb-4">
           <Users className="w-8 h-8 text-white" />
         </div>
         <h2 className="text-xl font-bold text-foreground mb-2">
-          캐릭터 & 배경 분석
+          캐릭터 분석 & 이미지 생성
         </h2>
         <p className="text-sm text-muted">
-          대본을 분석하여 캐릭터를 추출하고, 일관된 이미지를 생성합니다.
+          {step === 'analyze' && '대본을 분석하여 주요 캐릭터를 추출합니다.'}
+          {step === 'generate' && '캐릭터 정보를 입력하고 이미지를 생성하세요.'}
+          {step === 'review' && '마음에 드는 캐릭터를 승인하세요.'}
         </p>
+        
+        {/* 단계 표시 */}
+        <div className="flex items-center justify-center gap-2 mt-4">
+          {['analyze', 'generate', 'review'].map((s, i) => (
+            <React.Fragment key={s}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-colors ${
+                step === s ? 'bg-primary text-white' : 
+                ['analyze', 'generate', 'review'].indexOf(step) > i ? 'bg-success text-white' : 
+                'bg-muted/30 text-muted'
+              }`}>
+                {i + 1}
+              </div>
+              {i < 2 && <div className={`w-8 h-0.5 ${['analyze', 'generate', 'review'].indexOf(step) > i ? 'bg-success' : 'bg-muted/30'}`} />}
+            </React.Fragment>
+          ))}
+        </div>
       </div>
 
-      {/* 분석 시작 버튼 */}
-      {!hasAnalyzed && (
+      {/* 1단계: 분석 시작 */}
+      {step === 'analyze' && (
         <Card className="text-center py-8">
           <Wand2 className="w-12 h-12 text-primary mx-auto mb-4" />
-          <p className="text-muted mb-4">
-            대본에서 캐릭터와 배경을 자동으로 분석합니다.
+          <p className="text-muted mb-2">
+            대본에서 주요 캐릭터(2~3명)를 자동으로 추출합니다.
+          </p>
+          <p className="text-xs text-muted mb-6">
+            추출 후 캐릭터별로 이미지를 생성하고, 마음에 드는 걸 선택하세요.
           </p>
           <Button
             variant="primary"
@@ -271,9 +344,33 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
         </Card>
       )}
 
-      {/* 분석 결과 */}
-      {hasAnalyzed && (
+      {/* 2단계: 캐릭터 정보 입력 & 이미지 생성 */}
+      {step === 'generate' && (
         <>
+          {/* 스타일 선택 */}
+          <Card>
+            <h3 className="font-semibold mb-3 flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-primary" />
+              이미지 스타일
+            </h3>
+            <div className="grid grid-cols-3 gap-2">
+              {styleOptions.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => setSelectedStyle(opt.value)}
+                  className={`p-3 rounded-lg border text-left transition-colors ${
+                    selectedStyle === opt.value 
+                      ? 'border-primary bg-primary/10' 
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                >
+                  <div className="font-medium text-sm">{opt.label}</div>
+                  <div className="text-xs text-muted">{opt.desc}</div>
+                </button>
+              ))}
+            </div>
+          </Card>
+
           {/* 캐릭터 목록 */}
           <Card>
             <div className="flex items-center justify-between mb-4">
@@ -281,40 +378,60 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                 <Users className="w-5 h-5 text-primary" />
                 캐릭터 ({characters.length}명)
               </h3>
-              <div className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={approveAll}>
-                  모두 승인
-                </Button>
-                <Button variant="ghost" size="sm" onClick={addCharacter} icon={<Plus className="w-4 h-4" />}>
-                  추가
-                </Button>
-              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={addCharacter}
+                disabled={characters.length >= 5}
+                icon={<Plus className="w-4 h-4" />}
+              >
+                추가
+              </Button>
             </div>
 
-            <div className="space-y-3">
+            <div className="space-y-4">
               {characters.map((char, index) => (
                 <motion.div
                   key={char.id}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className={`p-3 rounded-lg border transition-colors ${
-                    char.approved 
-                      ? 'bg-success/10 border-success/30' 
-                      : 'bg-muted/10 border-border'
-                  }`}
+                  className="p-4 rounded-lg border border-border bg-muted/5"
                 >
-                  <div className="flex items-start gap-3">
-                    {/* 승인 체크박스 */}
-                    <button
-                      onClick={() => toggleApprove(char.id)}
-                      className={`mt-1 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                        char.approved
-                          ? 'bg-success border-success text-white'
-                          : 'border-muted hover:border-primary'
-                      }`}
-                    >
-                      {char.approved && <CheckCircle2 className="w-4 h-4" />}
-                    </button>
+                  <div className="flex items-start gap-4">
+                    {/* 이미지 미리보기 / 생성 버튼 */}
+                    <div className="w-24 h-24 rounded-lg bg-muted/20 flex-shrink-0 overflow-hidden relative">
+                      {char.imageUrl ? (
+                        <img 
+                          src={char.imageUrl} 
+                          alt={char.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : char.isGenerating ? (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => generateSingleImage(char.id)}
+                          disabled={!char.name.trim() || !hasApiKey}
+                          className="w-full h-full flex flex-col items-center justify-center gap-1 hover:bg-muted/30 transition-colors disabled:opacity-50"
+                        >
+                          <ImageIcon className="w-6 h-6 text-muted" />
+                          <span className="text-xs text-muted">생성</span>
+                        </button>
+                      )}
+                      
+                      {/* 재생성 버튼 */}
+                      {char.imageUrl && !char.isGenerating && (
+                        <button
+                          onClick={() => generateSingleImage(char.id)}
+                          className="absolute top-1 right-1 p-1 rounded bg-black/50 hover:bg-black/70 transition-colors"
+                          title="다시 생성"
+                        >
+                          <RefreshCw className="w-3 h-3 text-white" />
+                        </button>
+                      )}
+                    </div>
 
                     {/* 캐릭터 정보 */}
                     <div className="flex-1 space-y-2">
@@ -323,35 +440,40 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                           value={char.name}
                           onChange={(e) => updateCharacter(char.id, { name: e.target.value })}
                           placeholder="캐릭터 이름"
-                          className="font-semibold"
+                          className="flex-1"
                         />
-                        <span className={`text-xs px-2 py-1 rounded ${
+                        <span className={`text-xs px-2 py-1 rounded whitespace-nowrap ${
                           char.role === '주인공' ? 'bg-primary/20 text-primary' : 'bg-muted/50 text-muted'
                         }`}>
                           {char.role}
                         </span>
+                        <button
+                          onClick={() => removeCharacter(char.id)}
+                          className="text-muted hover:text-error transition-colors p-1"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
                       
                       <Input
                         value={char.appearance}
                         onChange={(e) => updateCharacter(char.id, { appearance: e.target.value })}
-                        placeholder="외형 (예: 검은 머리, 파란 눈, 청바지와 흰 티셔츠)"
+                        placeholder="외형 (예: 20대 여성, 긴 검은 머리, 안경)"
                       />
                       
                       <Input
                         value={char.description}
                         onChange={(e) => updateCharacter(char.id, { description: e.target.value })}
-                        placeholder="추가 설명 (성격, 특징 등)"
+                        placeholder="추가 설명 (예: 밝은 미소, 캐주얼 의상)"
                       />
+                      
+                      {char.error && (
+                        <div className="text-xs text-error flex items-center gap-1">
+                          <AlertCircle className="w-3 h-3" />
+                          {char.error}
+                        </div>
+                      )}
                     </div>
-
-                    {/* 삭제 버튼 */}
-                    <button
-                      onClick={() => removeCharacter(char.id)}
-                      className="text-muted hover:text-error transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
                   </div>
                 </motion.div>
               ))}
@@ -360,76 +482,147 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
             {characters.length === 0 && (
               <div className="text-center py-8 text-muted">
                 <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p>캐릭터가 없습니다. 추가해주세요.</p>
+                <p>캐릭터를 추가해주세요.</p>
               </div>
             )}
           </Card>
 
-          {/* 배경 & 색상 설정 */}
-          <Card>
-            <button
-              onClick={() => setShowAdvanced(!showAdvanced)}
-              className="w-full flex items-center justify-between"
-            >
-              <h3 className="font-semibold flex items-center gap-2">
-                <ImageIcon className="w-5 h-5 text-primary" />
-                배경 & 색상 설정
-              </h3>
-              {showAdvanced ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
-            </button>
+          {/* API 키 경고 */}
+          {!hasApiKey && (
+            <div className="bg-warning/10 border border-warning/30 rounded-lg p-3 text-sm text-warning flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />
+              설정에서 KIE API 키를 입력해주세요.
+            </div>
+          )}
 
-            <AnimatePresence>
-              {showAdvanced && (
+          {/* 액션 버튼 */}
+          <div className="flex items-center gap-3 sticky bottom-0 bg-card py-4">
+            <Button variant="ghost" onClick={() => setStep('analyze')}>
+              뒤로
+            </Button>
+            <Button variant="ghost" onClick={onClose}>
+              취소
+            </Button>
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={handleGenerateAll}
+              disabled={generatingAll || characters.length === 0 || !hasApiKey}
+              isLoading={generatingAll}
+              icon={<Sparkles className="w-4 h-4" />}
+            >
+              {generatingAll ? '생성 중...' : `캐릭터 이미지 생성 (${characters.length}명)`}
+            </Button>
+          </div>
+        </>
+      )}
+
+      {/* 3단계: 승인 */}
+      {step === 'review' && (
+        <>
+          <Card>
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-success" />
+              캐릭터 승인
+              <span className="text-sm text-muted ml-auto">
+                {approvedCount}/{generatedCount} 승인됨
+              </span>
+            </h3>
+
+            <p className="text-sm text-muted mb-4">
+              마음에 드는 캐릭터를 선택하세요. 선택한 캐릭터로 전체 씬 이미지가 생성됩니다.
+            </p>
+
+            <div className="grid grid-cols-2 gap-4">
+              {characters.filter(c => c.imageUrl).map((char) => (
                 <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  className="mt-4 space-y-3 overflow-hidden"
+                  key={char.id}
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  className={`relative rounded-lg overflow-hidden border-2 transition-colors cursor-pointer ${
+                    char.approved 
+                      ? 'border-success bg-success/5' 
+                      : 'border-border hover:border-primary/50'
+                  }`}
+                  onClick={() => toggleApprove(char.id)}
                 >
-                  <div>
-                    <label className="text-sm text-muted mb-1 block">배경 설명</label>
-                    <Input
-                      value={background}
-                      onChange={(e) => setBackground(e.target.value)}
-                      placeholder="예: 현대적인 도시 거리, 밤하늘"
-                    />
+                  <img 
+                    src={char.imageUrl} 
+                    alt={char.name}
+                    className="w-full aspect-square object-cover"
+                  />
+                  
+                  {/* 이름 오버레이 */}
+                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold text-white">{char.name}</div>
+                        <div className="text-xs text-white/70">{char.role}</div>
+                      </div>
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                        char.approved ? 'bg-success' : 'bg-white/20'
+                      }`}>
+                        {char.approved ? (
+                          <ThumbsUp className="w-4 h-4 text-white" />
+                        ) : (
+                          <ThumbsDown className="w-4 h-4 text-white/50" />
+                        )}
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-sm text-muted mb-1 block">색상 팔레트</label>
-                    <Input
-                      value={colorPalette}
-                      onChange={(e) => setColorPalette(e.target.value)}
-                      placeholder="예: 따뜻한 오렌지, 부드러운 파스텔"
-                    />
-                  </div>
+                  
+                  {/* 재생성 버튼 */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      generateSingleImage(char.id);
+                    }}
+                    disabled={char.isGenerating}
+                    className="absolute top-2 right-2 p-2 rounded-full bg-black/50 hover:bg-black/70 transition-colors disabled:opacity-50"
+                    title="다시 생성"
+                  >
+                    {char.isGenerating ? (
+                      <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 text-white" />
+                    )}
+                  </button>
                 </motion.div>
-              )}
-            </AnimatePresence>
+              ))}
+            </div>
+
+            {generatedCount === 0 && (
+              <div className="text-center py-8 text-muted">
+                <XCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                <p>생성된 캐릭터 이미지가 없습니다.</p>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={() => setStep('generate')}
+                  className="mt-2"
+                >
+                  다시 생성하기
+                </Button>
+              </div>
+            )}
           </Card>
 
           {/* 액션 버튼 */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              onClick={handleAnalyze}
-              icon={<RefreshCw className="w-4 h-4" />}
-            >
-              다시 분석
+          <div className="flex items-center gap-3 sticky bottom-0 bg-card py-4">
+            <Button variant="ghost" onClick={() => setStep('generate')}>
+              뒤로
             </Button>
-            <Button
-              variant="ghost"
-              onClick={onClose}
-            >
+            <Button variant="ghost" onClick={onClose}>
               취소
             </Button>
             <Button
               variant="primary"
               className="flex-1"
               onClick={handleFinalApprove}
-              disabled={characters.filter(c => c.approved).length === 0}
+              disabled={approvedCount === 0}
               icon={<Sparkles className="w-4 h-4" />}
             >
-              승인하고 이미지 생성 ({characters.filter(c => c.approved).length}명)
+              승인하고 전체 씬 이미지 생성 ({approvedCount}명)
             </Button>
           </div>
         </>
