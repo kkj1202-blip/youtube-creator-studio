@@ -268,7 +268,10 @@ export function generateConsistencyPrompt(settings: ConsistencySettings): string
 /**
  * 최종 이미지 프롬프트 생성
  * 스타일 프롬프트 + 일관성 설정 + 씬 설명을 조합
+ * KIE API 최대 프롬프트 길이: 약 1000자
  */
+const MAX_PROMPT_LENGTH = 950; // 여유분 포함
+
 export function buildFinalPrompt(
   sceneDescription: string,
   stylePrompt: string,
@@ -276,39 +279,34 @@ export function buildFinalPrompt(
 ): string {
   const parts: string[] = [];
   
-  // 1. 스타일 프롬프트 (가장 중요 - 맨 앞에 배치)
+  // 1. 스타일 프롬프트 (가장 중요 - 맨 앞에 배치, 최대 300자)
   if (stylePrompt) {
-    parts.push(stylePrompt);
+    parts.push(stylePrompt.slice(0, 300));
   }
   
-  // 2. 캐릭터 일관성 정보 (있는 경우)
+  // 2. 캐릭터 일관성 정보 - 간략화 (최대 200자)
   if (consistencySettings?.characterDescription) {
-    // 캐릭터 외형을 자연스러운 문장으로 변환
-    parts.push(`featuring characters: ${consistencySettings.characterDescription}`);
+    // 주인공 정보만 간략하게 추출
+    const charDesc = consistencySettings.characterDescription.slice(0, 200);
+    parts.push(`characters: ${charDesc}`);
   }
   
-  // 3. 아트 디렉션 (캐릭터별 세부 프롬프트)
-  if (consistencySettings?.artDirection) {
-    parts.push(consistencySettings.artDirection);
-  }
-  
-  // 4. 배경 설명 (있는 경우)
-  if (consistencySettings?.backgroundDescription) {
-    parts.push(`background: ${consistencySettings.backgroundDescription}`);
-  }
-  
-  // 5. 색상 팔레트 (있는 경우)
-  if (consistencySettings?.colorPalette) {
-    parts.push(`color palette: ${consistencySettings.colorPalette}`);
-  }
-  
-  // 6. 씬 설명 (대본 기반)
+  // 3. 씬 설명 (대본 기반, 최대 300자) - 우선순위 높임
   if (sceneDescription) {
-    parts.push(`scene depicting: ${sceneDescription}`);
+    const scene = sceneDescription.slice(0, 300);
+    parts.push(`scene: ${scene}`);
   }
   
-  // 7. 품질 키워드 추가
-  parts.push('highly detailed, masterpiece, best quality');
+  // 4. 품질 키워드 추가
+  parts.push('detailed, masterpiece');
   
-  return parts.join(', ');
+  // 최종 프롬프트 길이 제한
+  let finalPrompt = parts.join(', ');
+  
+  if (finalPrompt.length > MAX_PROMPT_LENGTH) {
+    console.warn(`[buildFinalPrompt] 프롬프트 길이 초과: ${finalPrompt.length}자 → ${MAX_PROMPT_LENGTH}자로 자름`);
+    finalPrompt = finalPrompt.slice(0, MAX_PROMPT_LENGTH);
+  }
+  
+  return finalPrompt;
 }
