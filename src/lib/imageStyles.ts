@@ -276,23 +276,39 @@ export function buildFinalPrompt(
 ): string {
   const parts: string[] = [];
   
-  // 1. 스타일 프롬프트 (가장 중요)
+  // 1. 스타일 프롬프트 (가장 중요 - 맨 앞에 배치)
   if (stylePrompt) {
     parts.push(stylePrompt);
   }
   
-  // 2. 일관성 설정
-  if (consistencySettings) {
-    const consistencyPrompt = generateConsistencyPrompt(consistencySettings);
-    if (consistencyPrompt) {
-      parts.push(consistencyPrompt);
-    }
+  // 2. 캐릭터 일관성 정보 (있는 경우)
+  if (consistencySettings?.characterDescription) {
+    // 캐릭터 외형을 자연스러운 문장으로 변환
+    parts.push(`featuring characters: ${consistencySettings.characterDescription}`);
   }
   
-  // 3. 씬 설명
+  // 3. 아트 디렉션 (캐릭터별 세부 프롬프트)
+  if (consistencySettings?.artDirection) {
+    parts.push(consistencySettings.artDirection);
+  }
+  
+  // 4. 배경 설명 (있는 경우)
+  if (consistencySettings?.backgroundDescription) {
+    parts.push(`background: ${consistencySettings.backgroundDescription}`);
+  }
+  
+  // 5. 색상 팔레트 (있는 경우)
+  if (consistencySettings?.colorPalette) {
+    parts.push(`color palette: ${consistencySettings.colorPalette}`);
+  }
+  
+  // 6. 씬 설명 (대본 기반)
   if (sceneDescription) {
-    parts.push(`Scene: ${sceneDescription}`);
+    parts.push(`scene depicting: ${sceneDescription}`);
   }
   
-  return parts.join(' | ');
+  // 7. 품질 키워드 추가
+  parts.push('highly detailed, masterpiece, best quality');
+  
+  return parts.join(', ');
 }

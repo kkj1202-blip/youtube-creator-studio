@@ -47,6 +47,7 @@ import {
   isDirectoryPickerSupported,
   isFileSavePickerSupported,
 } from '@/lib/api/renderService';
+import { imageStyleLibrary } from '@/lib/imageStyles';
 
 const emotionOptions = [
   { value: 'normal', label: '일반' },
@@ -1054,6 +1055,58 @@ const BatchActions: React.FC = () => {
         </Card>
       )}
 
+      {/* 승인된 메인 캐릭터 표시 */}
+      {currentProject.approvedCharacters && currentProject.approvedCharacters.length > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+              <Users className="w-4 h-4 text-primary" />
+              메인 캐릭터 ({currentProject.approvedCharacters.length}명)
+            </h3>
+            <span className="text-xs text-muted px-2 py-1 bg-primary/20 rounded">
+              {currentProject.masterImageStyleId ? 
+                imageStyleLibrary.flatMap(c => c.styles).find(s => s.id === currentProject.masterImageStyleId)?.name || '스타일' 
+                : '스타일 미설정'}
+            </span>
+          </div>
+          
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {currentProject.approvedCharacters.map((char) => (
+              <div 
+                key={char.id}
+                className="flex-shrink-0 w-20 text-center"
+              >
+                <div className="w-20 h-20 rounded-lg overflow-hidden border-2 border-primary/50 mb-1">
+                  <img 
+                    src={char.imageUrl} 
+                    alt={char.name}
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+                <div className="text-xs font-medium truncate">{char.name}</div>
+                <div className="text-[10px] text-muted">{char.role}</div>
+              </div>
+            ))}
+          </div>
+          
+          <div className="mt-2 pt-2 border-t border-border/50">
+            <p className="text-xs text-muted">
+              ✅ 이 캐릭터들의 외형이 전체 씬에 일관되게 적용됩니다
+            </p>
+          </div>
+          
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full mt-2"
+            onClick={() => setShowCharacterAnalyzer(true)}
+            icon={<RefreshCw className="w-3 h-3" />}
+          >
+            캐릭터 다시 설정
+          </Button>
+        </Card>
+      )}
+
       {/* Quick Actions */}
       <Card>
         <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
@@ -1073,21 +1126,36 @@ const BatchActions: React.FC = () => {
             전체 자동 처리
           </Button>
 
-          {/* 캐릭터 분석 후 이미지 생성 (권장) */}
-          <Button
-            variant="outline"
-            className="w-full border-primary/50 hover:bg-primary/10"
-            onClick={() => setShowCharacterAnalyzer(true)}
-            disabled={processingState.isRunning || !hasImageApiKey || stats.total === 0}
-            icon={<Users className="w-4 h-4" />}
-          >
-            <span className="flex items-center gap-2">
-              <Sparkles className="w-3 h-3 text-primary" />
-              캐릭터 분석 후 이미지 생성
-            </span>
-          </Button>
+          {/* 캐릭터 분석 후 이미지 생성 (권장) - 이미 설정된 경우 표시 변경 */}
+          {!currentProject.approvedCharacters?.length ? (
+            <Button
+              variant="outline"
+              className="w-full border-primary/50 hover:bg-primary/10"
+              onClick={() => setShowCharacterAnalyzer(true)}
+              disabled={processingState.isRunning || !hasImageApiKey || stats.total === 0}
+              icon={<Users className="w-4 h-4" />}
+            >
+              <span className="flex items-center gap-2">
+                <Sparkles className="w-3 h-3 text-primary" />
+                캐릭터 분석 후 이미지 생성
+              </span>
+            </Button>
+          ) : (
+            <Button
+              variant="ghost"
+              className="w-full"
+              onClick={handleGenerateAllImages}
+              disabled={processingState.isRunning || !hasImageApiKey}
+              isLoading={processingState.currentStage === 'image'}
+              icon={<ImageIcon className="w-4 h-4" />}
+            >
+              메인 캐릭터 스타일로 전체 이미지 생성
+            </Button>
+          )}
           <p className="text-xs text-muted text-center mb-2">
-            대본에서 캐릭터를 추출하고 일관된 스타일로 생성합니다
+            {currentProject.approvedCharacters?.length 
+              ? '승인된 캐릭터 스타일로 일관된 이미지를 생성합니다'
+              : '대본에서 캐릭터를 추출하고 일관된 스타일로 생성합니다'}
           </p>
 
           <div className="grid grid-cols-3 gap-2">

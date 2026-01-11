@@ -388,6 +388,18 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     console.log('  - 스타일 프롬프트:', stylePrompt);
     console.log('  - 캐릭터:', characterDescription);
     
+    // 승인된 캐릭터 정보를 저장 형식으로 변환
+    const savedCharacters = approvedCharacters.map(c => ({
+      id: c.id,
+      name: c.name,
+      role: c.role,
+      gender: c.gender,
+      ageRange: c.ageRange,
+      appearance: c.appearance,
+      imageUrl: c.imageUrl!,
+      generatedPrompt: c.generatedPrompt,
+    }));
+    
     updateProject({
       // 마스터 스타일 프롬프트 저장 (전체 씬에 적용)
       masterImageStylePrompt: stylePrompt,
@@ -397,6 +409,8 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
         characterDescription,
         artDirection: characterPrompts,
       },
+      // 승인된 캐릭터 정보 저장 (UI 표시용)
+      approvedCharacters: savedCharacters,
     });
 
     onApprove(approvedCharacters);

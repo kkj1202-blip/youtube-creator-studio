@@ -2,6 +2,18 @@
 
 export type AspectRatio = '16:9' | '9:16';
 
+// 승인된 캐릭터 정보
+export interface ApprovedCharacter {
+  id: string;
+  name: string;
+  role: '주인공' | '조연' | '단역';
+  gender: '남성' | '여성' | '불명';
+  ageRange: string;
+  appearance: string;
+  imageUrl: string;
+  generatedPrompt?: string;
+}
+
 export type ImageStyle = '2d-anime' | '3d-anime' | 'realistic' | 'cartoon' | 'watercolor' | 'custom';
 
 export type TransitionType = 'none' | 'fade' | 'slide';
@@ -109,6 +121,9 @@ export interface Project {
     colorPalette?: string;          // 색상 팔레트
     artDirection?: string;          // 아트 디렉션 추가 지시
   };
+  
+  // 승인된 메인 캐릭터 정보
+  approvedCharacters?: ApprovedCharacter[];
   
   // 씬 목록
   scenes: Scene[];
