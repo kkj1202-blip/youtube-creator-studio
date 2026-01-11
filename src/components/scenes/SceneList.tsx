@@ -153,25 +153,42 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
 
   // 이미지 생성 핸들러 (캐릭터 일관성 적용)
   const handleGenerateImage = useCallback(async (sceneId: string) => {
-    if (!currentProject || !settings.kieApiKey) {
+    console.log('[SceneList] handleGenerateImage 시작, sceneId:', sceneId);
+    
+    if (!currentProject) {
+      console.error('[SceneList] currentProject 없음');
+      alert('프로젝트를 먼저 선택하세요.');
+      return;
+    }
+    
+    if (!settings.kieApiKey) {
+      console.error('[SceneList] API 키 없음');
       alert('설정에서 이미지 생성 API 키를 입력하세요.');
       return;
     }
 
     const scene = currentProject.scenes.find((s) => s.id === sceneId);
-    if (!scene) return;
+    if (!scene) {
+      console.error('[SceneList] scene not found:', sceneId);
+      return;
+    }
+    
+    console.log('[SceneList] scene found:', { id: scene.id, script: scene.script?.slice(0, 50) });
 
     updateScene(sceneId, { isProcessing: true, error: undefined });
 
     try {
       // 마스터 스타일 프롬프트 (캐릭터 분석에서 설정된 스타일)
       const masterStylePrompt = currentProject.masterImageStylePrompt || '';
+      console.log('[SceneList] masterStylePrompt:', masterStylePrompt ? masterStylePrompt.slice(0, 50) + '...' : '(없음)');
       
       // 캐릭터 일관성 설정
       const consistencySettings = currentProject.imageConsistency;
+      console.log('[SceneList] consistencySettings:', consistencySettings);
       
       // 씬 설명
       const sceneDescription = scene.imagePrompt || scene.script;
+      console.log('[SceneList] sceneDescription:', sceneDescription?.slice(0, 50));
       
       let prompt: string;
       
@@ -182,7 +199,7 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
           masterStylePrompt,
           consistencySettings
         );
-        console.log('[SceneList] 마스터 스타일 적용:', prompt.slice(0, 100) + '...');
+        console.log('[SceneList] 마스터 스타일 적용된 최종 프롬프트:', prompt.slice(0, 200) + '...');
       } else {
         // 레거시 방식 (기존 스타일 프리셋)
         prompt = scene.imagePrompt || generateImagePrompt(
@@ -190,8 +207,10 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
           currentProject.imageStyle,
           currentProject.customStylePrompt
         );
+        console.log('[SceneList] 레거시 방식 프롬프트:', prompt.slice(0, 200) + '...');
       }
 
+      console.log('[SceneList] API 요청 시작...');
       const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -202,12 +221,17 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
         }),
       });
 
+      console.log('[SceneList] API 응답 상태:', response.status);
       const data = await response.json();
+      console.log('[SceneList] API 응답 데이터:', data);
 
       if (!response.ok) {
-        throw new Error(data.error || '이미지 생성 실패');
+        const errorMsg = data.error || data.originalMsg || '이미지 생성 실패';
+        console.error('[SceneList] API 에러:', errorMsg);
+        throw new Error(errorMsg);
       }
 
+      console.log('[SceneList] ✅ 이미지 생성 성공:', data.imageUrl?.slice(0, 50));
       updateScene(sceneId, {
         isProcessing: false,
         imageUrl: data.imageUrl,
@@ -215,9 +239,11 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
         imagePrompt: prompt,
       });
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '이미지 생성 중 오류';
+      console.error('[SceneList] ❌ 이미지 생성 실패:', errorMsg);
       updateScene(sceneId, {
         isProcessing: false,
-        error: error instanceof Error ? error.message : '이미지 생성 중 오류',
+        error: errorMsg,
       });
     }
   }, [currentProject, settings.kieApiKey, updateScene]);

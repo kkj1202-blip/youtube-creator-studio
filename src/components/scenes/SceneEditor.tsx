@@ -176,7 +176,16 @@ const SceneEditor: React.FC = () => {
 
   // 이미지 생성
   const handleGenerateImage = async () => {
-    if (!currentProject || !settings.kieApiKey) {
+    console.log('[SceneEditor] handleGenerateImage 시작');
+    
+    if (!currentProject) {
+      console.error('[SceneEditor] currentProject 없음');
+      setGenerationError('프로젝트를 먼저 선택하세요.');
+      return;
+    }
+    
+    if (!settings.kieApiKey) {
+      console.error('[SceneEditor] API 키 없음');
       setGenerationError('설정에서 이미지 생성 API 키를 입력하세요.');
       return;
     }
@@ -187,12 +196,15 @@ const SceneEditor: React.FC = () => {
     try {
       // 마스터 스타일 프롬프트 가져오기
       const masterStylePrompt = currentProject.masterImageStylePrompt || '';
+      console.log('[SceneEditor] masterStylePrompt:', masterStylePrompt ? masterStylePrompt.slice(0, 50) + '...' : '(없음)');
       
       // 일관성 설정 가져오기
       const consistencySettings = currentProject.imageConsistency;
+      console.log('[SceneEditor] consistencySettings:', consistencySettings);
       
       // 씬 설명 (사용자가 입력한 프롬프트 또는 대본 기반 생성)
       const sceneDescription = activeScene.imagePrompt || activeScene.script;
+      console.log('[SceneEditor] sceneDescription:', sceneDescription?.slice(0, 50));
       
       // 최종 프롬프트 조합: 스타일 + 일관성 + 씬 설명
       let finalPrompt: string;
@@ -204,6 +216,7 @@ const SceneEditor: React.FC = () => {
           masterStylePrompt,
           consistencySettings
         );
+        console.log('[SceneEditor] 마스터 스타일 적용된 최종 프롬프트:', finalPrompt.slice(0, 200) + '...');
       } else {
         // 레거시 방식 (기존 스타일 프리셋)
         finalPrompt = activeScene.imagePrompt || generateImagePrompt(
@@ -211,10 +224,10 @@ const SceneEditor: React.FC = () => {
           currentProject.imageStyle,
           currentProject.customStylePrompt
         );
+        console.log('[SceneEditor] 레거시 방식 프롬프트:', finalPrompt.slice(0, 200) + '...');
       }
 
-      console.log('[Image Generation] Final prompt:', finalPrompt);
-
+      console.log('[SceneEditor] API 요청 시작...');
       const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -225,12 +238,17 @@ const SceneEditor: React.FC = () => {
         }),
       });
 
+      console.log('[SceneEditor] API 응답 상태:', response.status);
       const data = await response.json();
+      console.log('[SceneEditor] API 응답 데이터:', data);
 
       if (!response.ok || !data.imageUrl) {
-        throw new Error(data.error || '이미지 생성에 실패했습니다.');
+        const errorMsg = data.error || data.originalMsg || '이미지 생성에 실패했습니다.';
+        console.error('[SceneEditor] API 에러:', errorMsg);
+        throw new Error(errorMsg);
       }
 
+      console.log('[SceneEditor] ✅ 이미지 생성 성공:', data.imageUrl?.slice(0, 50));
       handleUpdate({
         imageUrl: data.imageUrl,
         imageSource: 'generated',
@@ -243,6 +261,7 @@ const SceneEditor: React.FC = () => {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '이미지 생성 중 오류가 발생했습니다.';
+      console.error('[SceneEditor] ❌ 이미지 생성 실패:', message);
       setGenerationError(message);
       handleUpdate({ error: message });
     } finally {
