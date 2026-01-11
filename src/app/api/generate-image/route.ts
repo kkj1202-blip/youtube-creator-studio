@@ -178,13 +178,12 @@ export async function POST(request: NextRequest) {
     }
 
     // KIE Z-Image API 요청 페이로드
-    // aspect_ratio 형식: "16:9", "9:16", "1:1" 등
+    // 공식 문서 기준 필수 파라미터: model, input.prompt, input.aspect_ratio
     const createTaskPayload = {
       model: 'z-image',
       input: {
         prompt: prompt,
         aspect_ratio: aspectRatio || '16:9',
-        negative_prompt: 'low quality, blurry, distorted, ugly, bad anatomy, watermark, text, logo',
       },
     };
 
