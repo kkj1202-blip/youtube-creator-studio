@@ -447,71 +447,20 @@ const BatchActions: React.FC = () => {
 
   // ========== 기존 일괄 처리 함수 (시간 추적 추가) ==========
 
-  // 캐릭터 승인 후 전체 씬 이미지 생성
-  const handleCharacterApproved = useCallback(async (
+  // 캐릭터 승인 완료 (이미지 생성은 자동 시작하지 않음!)
+  const handleCharacterApproved = useCallback((
     characters: Array<{ name: string; appearance: string; description: string; imageUrl?: string }>
   ) => {
     setShowCharacterAnalyzer(false);
     
-    if (!hasImageApiKey) {
-      alert('설정에서 이미지 생성 API 키를 입력하세요.');
-      return;
-    }
-
     // 승인된 캐릭터 정보 로그
-    console.log('[BatchActions] Approved characters:', characters);
-    console.log('[BatchActions] Starting scene image generation with character consistency');
+    console.log('[BatchActions] 캐릭터 승인 완료:', characters.map(c => c.name).join(', '));
+    console.log('[BatchActions] 스타일 및 캐릭터 정보가 프로젝트에 저장되었습니다.');
+    console.log('[BatchActions] 이미지 생성은 사용자가 직접 버튼을 클릭해야 시작됩니다.');
 
-    // 이미지 일괄 생성 시작
-    setProcessingState(prev => ({
-      ...prev,
-      isRunning: true,
-      currentStage: 'image',
-      progress: null,
-      errors: [],
-      startTime: Date.now(),
-      currentSceneNumber: 0,
-    }));
-
-    try {
-      const result = await generateAllImages(
-        currentProject,
-        settings.kieApiKey,
-        (progress) => {
-          setProcessingState(prev => ({
-            ...prev,
-            progress,
-            errors: progress.errors,
-            currentSceneNumber: progress.completed + 1,
-          }));
-        },
-        updateScene
-      );
-
-      setProcessingState(prev => ({
-        ...prev,
-        isRunning: false,
-        currentStage: 'idle',
-        completed: { ...prev.completed, image: result.completed },
-        errors: result.errors,
-        startTime: null,
-      }));
-
-      if (result.errors.length > 0) {
-        alert(`이미지 생성 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
-      } else {
-        alert(`✅ 모든 씬 이미지 생성 완료! (${result.completed}개)\n\n승인된 캐릭터: ${characters.map(c => c.name).join(', ')}`);
-      }
-    } catch (error) {
-      setProcessingState(prev => ({
-        ...prev,
-        isRunning: false,
-        currentStage: 'idle',
-        errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
-        startTime: null,
-      }));
-    }
-  }, [currentProject, settings.kieApiKey, hasImageApiKey, updateScene]);
+    // 알림: 이미지 생성은 사용자가 직접 시작
+    alert(`✅ 캐릭터 ${characters.length}명이 승인되었습니다!\n\n승인된 캐릭터: ${characters.map(c => c.name).join(', ')}\n\n이제 "전체 이미지 생성" 버튼을 클릭하거나,\n각 씬에서 개별적으로 이미지를 생성할 수 있습니다.`);
+  }, []);
 
   const handleGenerateAllImages = useCallback(async () => {
     if (!hasImageApiKey) {

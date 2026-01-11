@@ -688,11 +688,14 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
               className="flex-1"
               onClick={handleFinalApprove}
               disabled={approvedCount === 0}
-              icon={<ThumbsUp className="w-4 h-4" />}
+              icon={<CheckCircle2 className="w-4 h-4" />}
             >
-              승인하고 전체 씬 생성 ({approvedCount}명)
+              캐릭터 확정 ({approvedCount}명)
             </Button>
           </div>
+          <p className="text-xs text-muted text-center mt-2">
+            확정 후 "전체 이미지 생성" 버튼으로 씬 이미지를 생성합니다
+          </p>
         </>
       )}
     </div>
