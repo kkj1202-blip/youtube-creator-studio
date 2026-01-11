@@ -349,7 +349,11 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     
     setGeneratingAll(false);
     
-    if (successCount > 0) {
+    // 이미지가 있는 캐릭터 수 확인
+    const charsWithImage = characters.filter(c => c.imageUrl).length;
+    
+    if (charsWithImage > 0) {
+      // 이미지가 있는 캐릭터가 있으면 다음 단계로
       setStep('review');
     } else if (failCount > 0) {
       alert('모든 이미지 생성 실패. 콘솔을 확인해주세요.');
@@ -615,16 +619,29 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
           <div className="flex gap-2 pt-2">
             <Button variant="ghost" onClick={() => setStep('analyze')}>뒤로</Button>
             <Button variant="ghost" onClick={onClose}>취소</Button>
-            <Button
-              variant="primary"
-              className="flex-1"
-              onClick={handleGenerateAll}
-              disabled={generatingAll || characters.length === 0 || !hasApiKey}
-              isLoading={generatingAll}
-              icon={<Sparkles className="w-4 h-4" />}
-            >
-              {generatingAll ? '생성 중...' : `전체 이미지 생성 (${characters.length}명)`}
-            </Button>
+            {/* 이미지가 없는 캐릭터가 있으면 생성 버튼 */}
+            {characters.some(c => !c.imageUrl) ? (
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={handleGenerateAll}
+                disabled={generatingAll || characters.length === 0 || !hasApiKey}
+                isLoading={generatingAll}
+                icon={<Sparkles className="w-4 h-4" />}
+              >
+                {generatingAll ? '생성 중...' : `이미지 생성 (${characters.filter(c => !c.imageUrl).length}명)`}
+              </Button>
+            ) : (
+              /* 모든 캐릭터에 이미지가 있으면 다음 단계 버튼 */
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={() => setStep('review')}
+                icon={<CheckCircle2 className="w-4 h-4" />}
+              >
+                다음 단계로 ({characters.length}명 완료)
+              </Button>
+            )}
           </div>
         </>
       )}
