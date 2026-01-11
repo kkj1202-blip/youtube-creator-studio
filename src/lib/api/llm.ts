@@ -211,7 +211,8 @@ ${characterRef}
 export async function generateCharacterImagePrompt(
   config: LLMConfig,
   character: Character,
-  style: string,
+  styleName: string,
+  stylePrompt: string,  // 실제 스타일 프롬프트 추가
   referenceDescription?: string
 ): Promise<string> {
   const prompt = `다음 캐릭터의 포트레이트 이미지를 위한 프롬프트를 생성해주세요.
@@ -224,18 +225,20 @@ export async function generateCharacterImagePrompt(
 - 외형: ${character.appearance}
 - 성격: ${character.personality}
 
-이미지 스타일: ${style}
+이미지 스타일: ${styleName}
+스타일 프롬프트 (반드시 포함): ${stylePrompt}
 
 ${referenceDescription ? `참조 이미지 설명: ${referenceDescription}` : ''}
 
 다음 형식으로 영어 프롬프트만 출력하세요 (다른 텍스트 없이):
-portrait of [상세한 캐릭터 외형 묘사], [표정], [의상], ${style} style, centered composition, looking at camera, highly detailed, professional lighting
+${stylePrompt}, portrait of [상세한 캐릭터 외형 묘사를 스타일에 맞게], [표정], [의상], centered composition, looking at camera, highly detailed
 
 주의사항:
-1. 캐릭터의 외형 특징을 구체적으로 묘사
-2. ${style} 스타일에 맞는 표현 사용
-3. 영어로만 작성
-4. 프롬프트만 출력`;
+1. 스타일 프롬프트를 반드시 맨 앞에 포함
+2. 캐릭터의 외형을 ${styleName} 스타일에 맞게 묘사 (예: 웹툰 스타일이면 '굵은 선화, 표현력 있는 큰 눈' 등)
+3. 실사 스타일이면 사실적으로, 애니메이션 스타일이면 애니메이션답게
+4. 영어로만 작성
+5. 프롬프트만 출력`;
 
   const response = await callLLM(config, prompt);
   return response.trim();

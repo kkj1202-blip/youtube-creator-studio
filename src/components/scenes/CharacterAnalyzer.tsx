@@ -213,9 +213,16 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     try {
       let prompt: string;
       
+      // 스타일 정보 가져오기
+      const style = getStyleById(selectedStyle);
+      const styleName = style?.name || '실사화';
+      const stylePrompt = style?.prompt || 'photorealistic portrait, highly detailed';
+      
+      console.log('[CharacterAnalyzer] 선택된 스타일:', styleName);
+      console.log('[CharacterAnalyzer] 스타일 프롬프트:', stylePrompt);
+      
       // LLM API 키가 있으면 LLM으로 프롬프트 생성
       if (hasLLMKey) {
-        const style = getStyleById(selectedStyle);
         const llmChar: LLMCharacter = {
           name: char.name,
           role: char.role,
@@ -229,14 +236,13 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
         prompt = await generateCharacterImagePrompt(
           getLLMConfig(),
           llmChar,
-          style?.name || 'photorealistic'
+          styleName,
+          stylePrompt  // 스타일 프롬프트 전달
         );
         console.log('[CharacterAnalyzer] LLM 생성 프롬프트:', prompt);
       } else {
-        // LLM 없이 기본 프롬프트
-        const style = getStyleById(selectedStyle);
-        const stylePrompt = style?.prompt || 'photorealistic portrait';
-        prompt = `portrait of ${char.appearance || char.name}, ${char.gender}, ${char.ageRange}, ${stylePrompt}, centered, looking at camera, highly detailed`;
+        // LLM 없이 기본 프롬프트 - 스타일 프롬프트를 맨 앞에 배치
+        prompt = `${stylePrompt}, portrait of ${char.appearance || char.name}, ${char.gender}, ${char.ageRange}, centered, looking at camera, highly detailed`;
       }
       
       updateCharacter(charId, { status: '이미지 생성 중...', generatedPrompt: prompt });
@@ -289,8 +295,12 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       try {
         let prompt: string;
         
+        // 스타일 정보 가져오기
+        const style = getStyleById(selectedStyle);
+        const styleName = style?.name || '실사화';
+        const stylePrompt = style?.prompt || 'photorealistic portrait, highly detailed';
+        
         if (hasLLMKey) {
-          const style = getStyleById(selectedStyle);
           const llmChar: LLMCharacter = {
             name: char.name,
             role: char.role,
@@ -304,12 +314,12 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
           prompt = await generateCharacterImagePrompt(
             getLLMConfig(),
             llmChar,
-            style?.name || 'photorealistic'
+            styleName,
+            stylePrompt  // 스타일 프롬프트 전달
           );
         } else {
-          const style = getStyleById(selectedStyle);
-          const stylePrompt = style?.prompt || 'photorealistic portrait';
-          prompt = `portrait of ${char.appearance || char.name}, ${char.gender}, ${char.ageRange}, ${stylePrompt}, centered, looking at camera`;
+          // LLM 없이 기본 프롬프트 - 스타일 프롬프트를 맨 앞에 배치
+          prompt = `${stylePrompt}, portrait of ${char.appearance || char.name}, ${char.gender}, ${char.ageRange}, centered, looking at camera, highly detailed`;
         }
         
         updateCharacter(char.id, { status: `${i+1}/${characters.length} 이미지 생성 중...`, generatedPrompt: prompt });
