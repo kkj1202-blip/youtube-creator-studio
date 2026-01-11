@@ -24,11 +24,15 @@ import {
   AlertTriangle,
   Eye,
   EyeOff,
+  Users,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, Card, Select, Toggle, Slider, Modal } from '@/components/ui';
 import ImageUploader from './ImageUploader';
+import CharacterAnalyzer from './CharacterAnalyzer';
 import type { Scene, EmotionTag, TransitionType, KenBurnsEffect } from '@/types';
+import type { ConsistencySettings } from '@/lib/imageStyles';
 import {
   generateAllImages,
   generateAllVoices,
@@ -119,6 +123,7 @@ const BatchActions: React.FC = () => {
 
   const [showBulkSettings, setShowBulkSettings] = useState(false);
   const [showBatchImageUploader, setShowBatchImageUploader] = useState(false);
+  const [showCharacterAnalyzer, setShowCharacterAnalyzer] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [processingState, setProcessingState] = useState<ProgressState>({
     isRunning: false,
@@ -441,6 +446,73 @@ const BatchActions: React.FC = () => {
   }, [currentProject, stats.failedScenes.render, updateScene]);
 
   // ========== 기존 일괄 처리 함수 (시간 추적 추가) ==========
+
+  // 캐릭터 분석 후 이미지 생성 시작
+  const handleCharacterApproved = useCallback(async (
+    characters: Array<{ name: string; appearance: string; description: string }>,
+    consistencySettings: ConsistencySettings
+  ) => {
+    setShowCharacterAnalyzer(false);
+    
+    if (!hasImageApiKey) {
+      alert('설정에서 이미지 생성 API 키를 입력하세요.');
+      return;
+    }
+
+    // 캐릭터 정보로 일관성 설정이 이미 저장됨 (CharacterAnalyzer에서)
+    console.log('[BatchActions] Starting image generation with characters:', characters);
+    console.log('[BatchActions] Consistency settings:', consistencySettings);
+
+    // 이미지 일괄 생성 시작
+    setProcessingState(prev => ({
+      ...prev,
+      isRunning: true,
+      currentStage: 'image',
+      progress: null,
+      errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
+    }));
+
+    try {
+      const result = await generateAllImages(
+        currentProject,
+        settings.kieApiKey,
+        (progress) => {
+          setProcessingState(prev => ({
+            ...prev,
+            progress,
+            errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
+          }));
+        },
+        updateScene
+      );
+
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        completed: { ...prev.completed, image: result.completed },
+        errors: result.errors,
+        startTime: null,
+      }));
+
+      if (result.errors.length > 0) {
+        alert(`이미지 생성 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
+      } else {
+        alert(`✅ 모든 이미지 생성 완료! (${result.completed}개)`);
+      }
+    } catch (error) {
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
+      }));
+    }
+  }, [currentProject, settings.kieApiKey, hasImageApiKey, updateScene]);
 
   const handleGenerateAllImages = useCallback(async () => {
     if (!hasImageApiKey) {
@@ -1003,6 +1075,23 @@ const BatchActions: React.FC = () => {
             전체 자동 처리
           </Button>
 
+          {/* 캐릭터 분석 후 이미지 생성 (권장) */}
+          <Button
+            variant="outline"
+            className="w-full border-primary/50 hover:bg-primary/10"
+            onClick={() => setShowCharacterAnalyzer(true)}
+            disabled={processingState.isRunning || !hasImageApiKey || stats.total === 0}
+            icon={<Users className="w-4 h-4" />}
+          >
+            <span className="flex items-center gap-2">
+              <Sparkles className="w-3 h-3 text-primary" />
+              캐릭터 분석 후 이미지 생성
+            </span>
+          </Button>
+          <p className="text-xs text-muted text-center mb-2">
+            대본에서 캐릭터를 추출하고 일관된 스타일로 생성합니다
+          </p>
+
           <div className="grid grid-cols-3 gap-2">
             <Button
               variant="ghost"
@@ -1011,6 +1100,7 @@ const BatchActions: React.FC = () => {
               disabled={processingState.isRunning || !hasImageApiKey}
               isLoading={processingState.currentStage === 'image'}
               icon={<ImageIcon className="w-4 h-4" />}
+              title="캐릭터 분석 없이 바로 생성"
             >
               이미지
             </Button>
@@ -1328,6 +1418,19 @@ const BatchActions: React.FC = () => {
           onClose={() => setShowBatchImageUploader(false)}
           totalScenes={stats.total}
           existingSceneImages={existingSceneImages}
+        />
+      </Modal>
+
+      {/* Character Analyzer Modal */}
+      <Modal
+        isOpen={showCharacterAnalyzer}
+        onClose={() => setShowCharacterAnalyzer(false)}
+        title="캐릭터 분석 & 이미지 생성"
+        size="lg"
+      >
+        <CharacterAnalyzer
+          onApprove={handleCharacterApproved}
+          onClose={() => setShowCharacterAnalyzer(false)}
         />
       </Modal>
     </div>
