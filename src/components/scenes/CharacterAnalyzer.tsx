@@ -21,6 +21,7 @@ import { useStore } from '@/store/useStore';
 import Button from '@/components/ui/Button';
 import Card from '@/components/ui/Card';
 import Input from '@/components/ui/Input';
+import { imageStyleLibrary, getStyleById, type ImageStyle, type StyleCategory } from '@/lib/imageStyles';
 
 interface Character {
   id: string;
@@ -90,15 +91,13 @@ function analyzeMainCharacters(scripts: string[]): { name: string; role: '주인
 async function generateCharacterImage(
   apiKey: string,
   character: Character,
-  style: string = 'realistic'
+  styleId: string = 'hyper-photo'
 ): Promise<string> {
-  const stylePrompts: Record<string, string> = {
-    'realistic': 'photorealistic portrait, professional photography, studio lighting, 8k uhd',
-    '2d-anime': 'anime style portrait, 2d illustration, vibrant colors, clean lines',
-    '3d-anime': '3d rendered anime portrait, pixar style, smooth shading',
-  };
+  // 스타일 라이브러리에서 프롬프트 가져오기
+  const style = getStyleById(styleId);
+  const stylePrompt = style?.prompt || 'photorealistic portrait, professional photography, studio lighting, 8k uhd';
   
-  const prompt = `${character.appearance || `${character.name}, Korean ${character.role === '주인공' ? 'protagonist' : 'supporting'} character`}, ${character.description || 'friendly expression'}, ${stylePrompts[style] || stylePrompts['realistic']}, portrait shot, centered, looking at camera`;
+  const prompt = `${character.appearance || `${character.name}, Korean ${character.role === '주인공' ? 'protagonist' : 'supporting'} character`}, ${character.description || 'friendly expression'}, ${stylePrompt}, portrait shot, centered, looking at camera`;
   
   const response = await fetch('/api/generate-image', {
     method: 'POST',
@@ -128,7 +127,8 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
   const [step, setStep] = useState<'analyze' | 'generate' | 'review'>('analyze');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [selectedStyle, setSelectedStyle] = useState('realistic');
+  const [selectedStyle, setSelectedStyle] = useState('hyper-photo');
+  const [selectedCategory, setSelectedCategory] = useState('cinematic');
   const [generatingAll, setGeneratingAll] = useState(false);
 
   const hasApiKey = !!settings.kieApiKey;
@@ -279,12 +279,9 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     onApprove(approvedCharacters);
   };
 
-  // 스타일 옵션
-  const styleOptions = [
-    { value: 'realistic', label: '실사 스타일', desc: '사진처럼 사실적인' },
-    { value: '2d-anime', label: '2D 애니메이션', desc: '일본 애니 스타일' },
-    { value: '3d-anime', label: '3D 애니메이션', desc: '픽사/디즈니 스타일' },
-  ];
+  // 현재 선택된 카테고리의 스타일 목록
+  const currentCategory = imageStyleLibrary.find(c => c.id === selectedCategory);
+  const currentStyles = currentCategory?.styles || [];
 
   const approvedCount = characters.filter(c => c.approved && c.imageUrl).length;
   const generatedCount = characters.filter(c => c.imageUrl).length;
@@ -351,24 +348,55 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
           <Card>
             <h3 className="font-semibold mb-3 flex items-center gap-2">
               <ImageIcon className="w-5 h-5 text-primary" />
-              이미지 스타일
+              이미지 스타일 ({imageStyleLibrary.reduce((acc, c) => acc + c.styles.length, 0)}개)
             </h3>
-            <div className="grid grid-cols-3 gap-2">
-              {styleOptions.map(opt => (
+            
+            {/* 카테고리 탭 */}
+            <div className="flex gap-2 mb-3 overflow-x-auto pb-2">
+              {imageStyleLibrary.map(cat => (
                 <button
-                  key={opt.value}
-                  onClick={() => setSelectedStyle(opt.value)}
+                  key={cat.id}
+                  onClick={() => {
+                    setSelectedCategory(cat.id);
+                    // 카테고리 변경 시 첫 번째 스타일 선택
+                    if (cat.styles.length > 0) {
+                      setSelectedStyle(cat.styles[0].id);
+                    }
+                  }}
+                  className={`px-3 py-2 rounded-lg whitespace-nowrap text-sm transition-colors ${
+                    selectedCategory === cat.id 
+                      ? 'bg-primary text-white' 
+                      : 'bg-muted/20 hover:bg-muted/30'
+                  }`}
+                >
+                  {cat.icon} {cat.name}
+                </button>
+              ))}
+            </div>
+
+            {/* 스타일 그리드 */}
+            <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+              {currentStyles.map(style => (
+                <button
+                  key={style.id}
+                  onClick={() => setSelectedStyle(style.id)}
                   className={`p-3 rounded-lg border text-left transition-colors ${
-                    selectedStyle === opt.value 
+                    selectedStyle === style.id 
                       ? 'border-primary bg-primary/10' 
                       : 'border-border hover:border-primary/50'
                   }`}
                 >
-                  <div className="font-medium text-sm">{opt.label}</div>
-                  <div className="text-xs text-muted">{opt.desc}</div>
+                  <div className="font-medium text-sm truncate">{style.name}</div>
                 </button>
               ))}
             </div>
+            
+            {/* 선택된 스타일 미리보기 */}
+            {selectedStyle && (
+              <div className="mt-3 p-2 bg-muted/10 rounded-lg">
+                <div className="text-xs text-muted">선택됨: <span className="text-primary font-medium">{getStyleById(selectedStyle)?.name}</span></div>
+              </div>
+            )}
           </Card>
 
           {/* 캐릭터 목록 */}
