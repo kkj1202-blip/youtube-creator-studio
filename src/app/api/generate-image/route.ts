@@ -148,11 +148,21 @@ async function pollTaskResult(taskId: string, apiKey: string): Promise<string | 
 }
 
 export async function POST(request: NextRequest) {
+  console.log('[KIE API] ========================================');
+  console.log('[KIE API] POST 요청 수신 시각:', new Date().toISOString());
+  
   try {
     const body = await request.json();
     const { apiKey, prompt, aspectRatio, style } = body;
+    
+    console.log('[KIE API] 요청 파라미터:');
+    console.log('[KIE API]   - API Key:', apiKey ? `${apiKey.slice(0, 8)}... (길이: ${apiKey.length})` : 'MISSING');
+    console.log('[KIE API]   - Prompt 길이:', prompt?.length || 0);
+    console.log('[KIE API]   - Aspect Ratio:', aspectRatio);
+    console.log('[KIE API]   - Style:', style);
 
     if (!apiKey) {
+      console.error('[KIE API] 오류: API 키 누락');
       return NextResponse.json(
         { error: 'API 키가 필요합니다.' },
         { status: 400 }
@@ -160,6 +170,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!prompt) {
+      console.error('[KIE API] 오류: 프롬프트 누락');
       return NextResponse.json(
         { error: '프롬프트가 필요합니다.' },
         { status: 400 }
@@ -191,21 +202,36 @@ export async function POST(request: NextRequest) {
       },
     };
 
-    console.log('[KIE] ========== Create Task ==========');
-    console.log('[KIE] Payload:', JSON.stringify(createTaskPayload, null, 2));
+    console.log('[KIE API] ========== Create Task ==========');
+    console.log('[KIE API] 대상 URL:', `${KIE_API_BASE}/createTask`);
+    console.log('[KIE API] Payload:', JSON.stringify(createTaskPayload, null, 2));
+    console.log('[KIE API] Authorization:', `Bearer ${apiKey.slice(0, 8)}...`);
 
     // 작업 생성 요청
-    const createResponse = await fetch(`${KIE_API_BASE}/createTask`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(createTaskPayload),
-    });
+    let createResponse;
+    try {
+      console.log('[KIE API] fetch 시작...');
+      createResponse = await fetch(`${KIE_API_BASE}/createTask`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(createTaskPayload),
+      });
+      console.log('[KIE API] fetch 완료. Status:', createResponse.status);
+    } catch (fetchError) {
+      console.error('[KIE API] fetch 실패:', fetchError);
+      return NextResponse.json(
+        { error: 'KIE 서버 연결 실패: ' + (fetchError instanceof Error ? fetchError.message : String(fetchError)) },
+        { status: 503 }
+      );
+    }
 
     const responseText = await createResponse.text();
-    console.log('[KIE] Raw response:', responseText);
+    console.log('[KIE API] Response Status:', createResponse.status);
+    console.log('[KIE API] Response Headers:', Object.fromEntries(createResponse.headers.entries()));
+    console.log('[KIE API] Raw response:', responseText.slice(0, 500));
 
     let createData: KieCreateResponse;
     try {
@@ -276,7 +302,10 @@ export async function POST(request: NextRequest) {
       success: true,
     });
   } catch (error) {
-    console.error('[KIE] Image generation error:', error);
+    console.error('[KIE API] ========== 에러 발생 ==========');
+    console.error('[KIE API] Error Type:', error?.constructor?.name);
+    console.error('[KIE API] Error Message:', error instanceof Error ? error.message : String(error));
+    console.error('[KIE API] Error Stack:', error instanceof Error ? error.stack : 'N/A');
     return NextResponse.json(
       { error: '서버 오류: ' + (error instanceof Error ? error.message : String(error)) },
       { status: 500 }

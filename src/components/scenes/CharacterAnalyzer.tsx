@@ -32,6 +32,7 @@ interface Character {
   isGenerating?: boolean;
   approved: boolean;
   error?: string;
+  status?: string; // API 상태 표시
 }
 
 interface CharacterAnalyzerProps {
@@ -84,7 +85,8 @@ function analyzeMainCharacters(scripts: string[]): { name: string; role: '주인
 async function generateCharacterImage(
   apiKey: string,
   character: Character,
-  styleId: string = 'hyper-photo'
+  styleId: string = 'hyper-photo',
+  onStatusChange?: (status: string) => void
 ): Promise<string> {
   const style = getStyleById(styleId);
   const stylePrompt = style?.prompt || 'photorealistic portrait, professional photography, studio lighting, 8k uhd';
@@ -93,35 +95,62 @@ async function generateCharacterImage(
   const extraDesc = character.description || 'friendly expression';
   const prompt = `${characterDesc}, ${extraDesc}, ${stylePrompt}, portrait shot, centered, looking at camera`;
   
-  console.log('[CharacterAnalyzer] === API 호출 시작 ===');
-  console.log('[CharacterAnalyzer] Prompt:', prompt.slice(0, 100) + '...');
-  console.log('[CharacterAnalyzer] Style:', style?.name);
+  console.log('[CharacterAnalyzer] ========== API 호출 시작 ==========');
+  console.log('[CharacterAnalyzer] Character:', character.name);
+  console.log('[CharacterAnalyzer] Prompt:', prompt);
+  console.log('[CharacterAnalyzer] Style:', style?.name || styleId);
+  console.log('[CharacterAnalyzer] API Key (first 8 chars):', apiKey?.slice(0, 8) + '...');
+  
+  onStatusChange?.('API 요청 중...');
 
-  const response = await fetch('/api/generate-image', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      apiKey,
-      prompt,
-      aspectRatio: '1:1',
-    }),
-  });
-  
-  console.log('[CharacterAnalyzer] Response status:', response.status);
-  
-  const data = await response.json();
-  console.log('[CharacterAnalyzer] Response data:', data);
-  
-  if (!response.ok) {
-    throw new Error(data.error || `HTTP ${response.status}`);
+  try {
+    const response = await fetch('/api/generate-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey,
+        prompt,
+        aspectRatio: '1:1',
+      }),
+    });
+    
+    console.log('[CharacterAnalyzer] Response status:', response.status);
+    console.log('[CharacterAnalyzer] Response headers:', Object.fromEntries(response.headers.entries()));
+    
+    const responseText = await response.text();
+    console.log('[CharacterAnalyzer] Raw response:', responseText);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error('[CharacterAnalyzer] JSON 파싱 실패:', parseError);
+      throw new Error(`응답 파싱 실패: ${responseText.slice(0, 100)}`);
+    }
+    
+    console.log('[CharacterAnalyzer] Parsed response:', JSON.stringify(data, null, 2));
+    
+    if (!response.ok) {
+      const errorMsg = data.error || `HTTP 오류 ${response.status}`;
+      console.error('[CharacterAnalyzer] API 에러:', errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    if (!data.imageUrl) {
+      console.error('[CharacterAnalyzer] imageUrl 없음. 전체 응답:', data);
+      throw new Error('이미지 URL을 받지 못했습니다. taskId: ' + (data.taskId || 'none'));
+    }
+    
+    console.log('[CharacterAnalyzer] ========== 성공! ==========');
+    console.log('[CharacterAnalyzer] Image URL:', data.imageUrl);
+    onStatusChange?.('완료!');
+    return data.imageUrl;
+  } catch (error) {
+    console.error('[CharacterAnalyzer] ========== 에러 발생 ==========');
+    console.error('[CharacterAnalyzer] Error:', error);
+    onStatusChange?.('실패');
+    throw error;
   }
-  
-  if (!data.imageUrl) {
-    throw new Error('이미지 URL 없음');
-  }
-  
-  console.log('[CharacterAnalyzer] === 성공! ===');
-  return data.imageUrl;
 }
 
 export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnalyzerProps) {
@@ -191,16 +220,23 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       return;
     }
     
-    updateCharacter(charId, { isGenerating: true, error: undefined });
+    console.log('[CharacterAnalyzer] 시작: 캐릭터', char.name);
+    updateCharacter(charId, { isGenerating: true, error: undefined, status: '시작 중...' });
     
     try {
-      const imageUrl = await generateCharacterImage(settings.kieApiKey, char, selectedStyle);
-      updateCharacter(charId, { imageUrl, isGenerating: false });
+      const imageUrl = await generateCharacterImage(
+        settings.kieApiKey, 
+        char, 
+        selectedStyle,
+        (status) => updateCharacter(charId, { status })
+      );
+      updateCharacter(charId, { imageUrl, isGenerating: false, status: undefined });
     } catch (error) {
       console.error('[CharacterAnalyzer] Error:', error);
       updateCharacter(charId, { 
         isGenerating: false, 
-        error: error instanceof Error ? error.message : '생성 실패' 
+        error: error instanceof Error ? error.message : '생성 실패',
+        status: undefined
       });
     }
   };
@@ -218,32 +254,61 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       return;
     }
     
+    console.log('[CharacterAnalyzer] ========== 전체 생성 시작 ==========');
+    console.log('[CharacterAnalyzer] 캐릭터 수:', characters.length);
+    console.log('[CharacterAnalyzer] 선택된 스타일:', selectedStyle);
+    console.log('[CharacterAnalyzer] API Key:', settings.kieApiKey ? '설정됨' : '없음');
+    
     setGeneratingAll(true);
     
-    for (const char of characters) {
-      if (char.imageUrl) continue;
+    let successCount = 0;
+    let failCount = 0;
+    
+    for (let i = 0; i < characters.length; i++) {
+      const char = characters[i];
+      if (char.imageUrl) {
+        console.log(`[CharacterAnalyzer] ${char.name}: 이미 이미지 있음, 스킵`);
+        continue;
+      }
       
-      updateCharacter(char.id, { isGenerating: true, error: undefined });
+      console.log(`[CharacterAnalyzer] ${i+1}/${characters.length} 생성 중: ${char.name}`);
+      updateCharacter(char.id, { isGenerating: true, error: undefined, status: `${i+1}/${characters.length} 생성 중...` });
       
       try {
-        const imageUrl = await generateCharacterImage(settings.kieApiKey, char, selectedStyle);
-        updateCharacter(char.id, { imageUrl, isGenerating: false });
+        const imageUrl = await generateCharacterImage(
+          settings.kieApiKey, 
+          char, 
+          selectedStyle,
+          (status) => updateCharacter(char.id, { status })
+        );
+        updateCharacter(char.id, { imageUrl, isGenerating: false, status: undefined });
+        successCount++;
+        console.log(`[CharacterAnalyzer] ${char.name}: 성공!`);
       } catch (error) {
+        failCount++;
+        const errMsg = error instanceof Error ? error.message : '생성 실패';
+        console.error(`[CharacterAnalyzer] ${char.name}: 실패 -`, errMsg);
         updateCharacter(char.id, { 
           isGenerating: false, 
-          error: error instanceof Error ? error.message : '생성 실패' 
+          error: errMsg,
+          status: undefined
         });
       }
       
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // 다음 요청 전 대기
+      if (i < characters.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+      }
     }
     
+    console.log(`[CharacterAnalyzer] ========== 완료: 성공 ${successCount}, 실패 ${failCount} ==========`);
     setGeneratingAll(false);
     
     // 하나라도 성공하면 review로
-    const hasAnyImage = characters.some(c => c.imageUrl);
-    if (hasAnyImage) {
+    if (successCount > 0) {
       setStep('review');
+    } else if (failCount > 0) {
+      alert(`모든 이미지 생성 실패. 콘솔을 확인해주세요.`);
     }
   };
 
@@ -359,9 +424,9 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                   {char.imageUrl ? (
                     <img src={char.imageUrl} alt={char.name} className="w-full h-full object-cover" />
                   ) : char.isGenerating ? (
-                    <div className="w-full h-full flex flex-col items-center justify-center">
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-primary/5 to-primary/10">
                       <Loader2 className="w-8 h-8 animate-spin text-primary mb-2" />
-                      <span className="text-xs text-muted">생성 중...</span>
+                      <span className="text-xs text-muted">{char.status || '생성 중...'}</span>
                     </div>
                   ) : (
                     <button
