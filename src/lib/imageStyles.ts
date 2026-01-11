@@ -266,6 +266,86 @@ export function generateConsistencyPrompt(settings: ConsistencySettings): string
 }
 
 /**
+ * 한글 대본을 영어 씬 설명으로 변환
+ * 간단한 키워드 기반 변환 (LLM 없이)
+ */
+function convertScriptToEnglishScene(script: string): string {
+  // 핵심 키워드 추출 및 영어 변환
+  const keywords: string[] = [];
+  
+  // 장소/상황 키워드
+  if (script.includes('통장') || script.includes('은행') || script.includes('돈')) {
+    keywords.push('bank office scene');
+  }
+  if (script.includes('회사') || script.includes('사무실') || script.includes('업체') || script.includes('거래')) {
+    keywords.push('corporate office meeting');
+  }
+  if (script.includes('집') || script.includes('방')) {
+    keywords.push('home interior');
+  }
+  if (script.includes('거리') || script.includes('길')) {
+    keywords.push('street scene');
+  }
+  
+  // 감정/상황 키워드
+  if (script.includes('화') || script.includes('분노') || script.includes('짜증')) {
+    keywords.push('angry expression');
+  }
+  if (script.includes('슬') || script.includes('우울') || script.includes('눈물')) {
+    keywords.push('sad emotional');
+  }
+  if (script.includes('놀') || script.includes('충격') || script.includes('깜짝')) {
+    keywords.push('shocked surprised');
+  }
+  if (script.includes('행복') || script.includes('기쁨') || script.includes('웃')) {
+    keywords.push('happy smiling');
+  }
+  if (script.includes('걱정') || script.includes('불안') || script.includes('고민')) {
+    keywords.push('worried anxious');
+  }
+  
+  // 행동 키워드
+  if (script.includes('말') || script.includes('대화') || script.includes('이야기')) {
+    keywords.push('talking conversation');
+  }
+  if (script.includes('앉') || script.includes('의자')) {
+    keywords.push('sitting');
+  }
+  if (script.includes('서') || script.includes('일어')) {
+    keywords.push('standing');
+  }
+  if (script.includes('걸') || script.includes('이동')) {
+    keywords.push('walking');
+  }
+  
+  // 인물 수
+  if (script.includes('혼자') || script.includes('나')) {
+    keywords.push('single person');
+  }
+  if (script.includes('둘') || script.includes('함께') || script.includes('같이')) {
+    keywords.push('two people');
+  }
+  if (script.includes('여러') || script.includes('모두') || script.includes('다같이')) {
+    keywords.push('group of people');
+  }
+  
+  // 시간대
+  if (script.includes('아침') || script.includes('오전')) {
+    keywords.push('morning light');
+  }
+  if (script.includes('저녁') || script.includes('밤') || script.includes('야간')) {
+    keywords.push('evening night');
+  }
+  
+  // 기본 씬 설명 추가
+  if (keywords.length === 0) {
+    keywords.push('character scene');
+  }
+  
+  return keywords.join(', ');
+}
+
+/**
  * 최종 이미지 프롬프트 생성
  * 스타일 프롬프트 + 일관성 설정 + 씬 설명을 조합
  * KIE API 최대 프롬프트 길이: 약 1000자
@@ -279,26 +359,32 @@ export function buildFinalPrompt(
 ): string {
   const parts: string[] = [];
   
-  // 1. 스타일 프롬프트 (가장 중요 - 맨 앞에 배치, 최대 300자)
+  // 1. 스타일 프롬프트 (가장 중요 - 맨 앞에 배치, 전체 사용)
+  // 스타일이 핵심이므로 자르지 않음
   if (stylePrompt) {
-    parts.push(stylePrompt.slice(0, 300));
+    parts.push(stylePrompt);
   }
   
-  // 2. 캐릭터 일관성 정보 - 간략화 (최대 200자)
+  // 2. 스타일 강조 (반복하여 강화)
+  const styleKeywords = extractStyleKeywords(stylePrompt);
+  if (styleKeywords) {
+    parts.push(styleKeywords);
+  }
+  
+  // 3. 캐릭터 일관성 정보 - 간략화 (최대 150자)
   if (consistencySettings?.characterDescription) {
-    // 주인공 정보만 간략하게 추출
-    const charDesc = consistencySettings.characterDescription.slice(0, 200);
-    parts.push(`characters: ${charDesc}`);
+    const charDesc = consistencySettings.characterDescription.slice(0, 150);
+    parts.push(`character: ${charDesc}`);
   }
   
-  // 3. 씬 설명 (대본 기반, 최대 300자) - 우선순위 높임
+  // 4. 씬 설명 (한글 대본을 영어로 변환)
   if (sceneDescription) {
-    const scene = sceneDescription.slice(0, 300);
-    parts.push(`scene: ${scene}`);
+    const englishScene = convertScriptToEnglishScene(sceneDescription);
+    parts.push(englishScene);
   }
   
-  // 4. 품질 키워드 추가
-  parts.push('detailed, masterpiece');
+  // 5. 일관성 강화 키워드
+  parts.push('consistent style, same art style throughout');
   
   // 최종 프롬프트 길이 제한
   let finalPrompt = parts.join(', ');
@@ -308,5 +394,43 @@ export function buildFinalPrompt(
     finalPrompt = finalPrompt.slice(0, MAX_PROMPT_LENGTH);
   }
   
+  console.log('[buildFinalPrompt] 최종 프롬프트:', finalPrompt);
   return finalPrompt;
+}
+
+/**
+ * 스타일 프롬프트에서 핵심 키워드 추출 (스타일 강화용)
+ */
+function extractStyleKeywords(stylePrompt: string): string {
+  if (!stylePrompt) return '';
+  
+  const keywords: string[] = [];
+  
+  // 스타일 유형 감지 및 강화 키워드 추가
+  if (stylePrompt.toLowerCase().includes('stickman') || stylePrompt.toLowerCase().includes('minimalist')) {
+    keywords.push('stickman style only', 'simple line art', 'no realistic rendering');
+  }
+  if (stylePrompt.toLowerCase().includes('3d') || stylePrompt.toLowerCase().includes('pixar')) {
+    keywords.push('3D rendered', 'CGI animation style');
+  }
+  if (stylePrompt.toLowerCase().includes('2d') || stylePrompt.toLowerCase().includes('vector')) {
+    keywords.push('2D flat style', 'vector illustration');
+  }
+  if (stylePrompt.toLowerCase().includes('anime') || stylePrompt.toLowerCase().includes('manga')) {
+    keywords.push('anime art style', 'Japanese animation');
+  }
+  if (stylePrompt.toLowerCase().includes('webtoon') || stylePrompt.toLowerCase().includes('manhwa')) {
+    keywords.push('Korean webtoon style', 'digital manhwa');
+  }
+  if (stylePrompt.toLowerCase().includes('lego')) {
+    keywords.push('LEGO brick style', 'plastic toy aesthetic');
+  }
+  if (stylePrompt.toLowerCase().includes('pixel')) {
+    keywords.push('pixel art only', 'retro game style');
+  }
+  if (stylePrompt.toLowerCase().includes('watercolor') || stylePrompt.toLowerCase().includes('ghibli')) {
+    keywords.push('hand-painted watercolor', 'Ghibli aesthetic');
+  }
+  
+  return keywords.join(', ');
 }
