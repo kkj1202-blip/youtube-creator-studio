@@ -355,11 +355,28 @@ function convertScriptToEnglishScene(script: string): string {
 }
 
 /**
- * 최종 이미지 프롬프트 생성 v2.0
- * 스타일 프롬프트 + 품질 접미사 + 일관성 설정 + 씬 설명을 조합
+ * 최종 이미지 프롬프트 생성 v3.0
+ * 스마트 프롬프트 예산 분배 시스템
+ * 
+ * 프롬프트 구성 (우선순위 순):
+ * 1. 캐릭터 일관성 (최중요 - 200자)
+ * 2. 씬 설명 (중요 - 150자)  
+ * 3. 스타일 프롬프트 (나머지 - 최대 400자)
+ * 4. 품질 키워드 (50자)
+ * 5. 일관성 키워드 (50자)
+ * 
  * KIE API 최대 프롬프트 길이: 약 1000자
  */
-const MAX_PROMPT_LENGTH = 950; // 여유분 포함
+const MAX_PROMPT_LENGTH = 900; // 안전 마진
+
+// 예산 할당 (우선순위 기반)
+const BUDGET = {
+  character: 200,   // 캐릭터 일관성 (가장 중요)
+  scene: 150,       // 씬 설명
+  style: 400,       // 스타일 프롬프트
+  quality: 50,      // 품질 키워드
+  consistency: 50,  // 일관성 키워드
+};
 
 export function buildFinalPrompt(
   sceneDescription: string,
@@ -367,45 +384,68 @@ export function buildFinalPrompt(
   consistencySettings?: ConsistencySettings
 ): string {
   const parts: string[] = [];
+  let usedLength = 0;
   
-  // 1. 스타일 프롬프트 (가장 중요 - 맨 앞에 배치)
-  if (stylePrompt) {
-    parts.push(stylePrompt);
-  }
-  
-  // 2. 품질 접미사 자동 추가
-  parts.push(QUALITY_SUFFIX);
-  
-  // 3. 스타일 강조 키워드
-  const styleKeywords = extractStyleKeywords(stylePrompt);
-  if (styleKeywords) {
-    parts.push(styleKeywords);
-  }
-  
-  // 4. 캐릭터 일관성 정보 (최대 150자)
+  // ============ 1. 캐릭터 일관성 (최우선) ============
+  // 캐릭터가 없으면 다른 요소에 예산 재분배
+  let characterPart = '';
   if (consistencySettings?.characterDescription) {
-    const charDesc = consistencySettings.characterDescription.slice(0, 150);
-    parts.push(`same character: ${charDesc}`);
+    characterPart = consistencySettings.characterDescription.slice(0, BUDGET.character);
+    parts.push(`[Character: ${characterPart}]`);
+    usedLength += characterPart.length + 15; // "[Character: ]" 오버헤드
   }
   
-  // 5. 씬 설명 (한글 대본을 영어로 변환)
+  // ============ 2. 씬 설명 (중요) ============
+  let scenePart = '';
   if (sceneDescription) {
     const englishScene = convertScriptToEnglishScene(sceneDescription);
-    parts.push(englishScene);
+    scenePart = englishScene.slice(0, BUDGET.scene);
+    parts.push(scenePart);
+    usedLength += scenePart.length;
   }
   
-  // 6. 일관성 강화 키워드
-  parts.push('consistent style throughout, same art direction');
+  // ============ 3. 스타일 프롬프트 (남은 예산 사용) ============
+  // 캐릭터/씬에서 사용하지 않은 예산을 스타일에 추가
+  const unusedBudget = (BUDGET.character - (characterPart.length || 0)) + 
+                       (BUDGET.scene - (scenePart.length || 0));
+  const styleBudget = BUDGET.style + unusedBudget;
   
-  // 최종 프롬프트 길이 제한
+  if (stylePrompt) {
+    // 스타일 프롬프트 핵심 부분 추출 (앞부분이 가장 중요)
+    const trimmedStyle = stylePrompt.slice(0, styleBudget);
+    parts.unshift(trimmedStyle); // 맨 앞에 배치
+    usedLength += trimmedStyle.length;
+  }
+  
+  // ============ 4. 품질 키워드 (간소화) ============
+  const qualityKeywords = 'masterpiece, 8k, highly detailed';
+  parts.push(qualityKeywords);
+  usedLength += qualityKeywords.length;
+  
+  // ============ 5. 일관성 키워드 ============
+  if (characterPart) {
+    parts.push('same character, consistent style');
+  } else {
+    parts.push('consistent style');
+  }
+  
+  // 최종 조합
   let finalPrompt = parts.join(', ');
   
+  // 안전망: 여전히 초과하면 자름
   if (finalPrompt.length > MAX_PROMPT_LENGTH) {
     console.warn(`[buildFinalPrompt] 프롬프트 길이 초과: ${finalPrompt.length}자 → ${MAX_PROMPT_LENGTH}자로 자름`);
     finalPrompt = finalPrompt.slice(0, MAX_PROMPT_LENGTH);
   }
   
-  console.log('[buildFinalPrompt] 최종 프롬프트:', finalPrompt);
+  // 디버그 로그
+  console.log('[buildFinalPrompt] 예산 분배:');
+  console.log(`  - 캐릭터: ${characterPart.length}/${BUDGET.character}자`);
+  console.log(`  - 씬: ${scenePart.length}/${BUDGET.scene}자`);
+  console.log(`  - 스타일: ${stylePrompt?.length || 0} → ${Math.min(stylePrompt?.length || 0, styleBudget)}자`);
+  console.log(`  - 총: ${finalPrompt.length}/${MAX_PROMPT_LENGTH}자`);
+  console.log('[buildFinalPrompt] 최종:', finalPrompt.slice(0, 100) + '...');
+  
   return finalPrompt;
 }
 
