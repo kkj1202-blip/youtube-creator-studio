@@ -17,18 +17,16 @@ import {
   Eye,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
-import { Button, TextArea, Select, Slider, Toggle, Tabs, Card, Modal } from '@/components/ui';
+import { Button, TextArea, Select, Slider, Tabs, Card, Modal } from '@/components/ui';
 import AudioPlayer from './AudioPlayer';
 import ScenePreview from './ScenePreview';
 import ImageUploader from './ImageUploader';
 import { generateImagePrompt } from '@/lib/api/imageGeneration';
 import { estimateAudioDuration } from '@/lib/api/voiceGeneration';
 import { buildFinalPrompt } from '@/lib/imageStyles';
-import type { Scene, KenBurnsEffect, MotionEffect } from '@/types';
-import MotionEffects from './MotionEffects';
+import type { Scene, MotionEffect } from '@/types';
 
 import {
-  kenBurnsOptions,
   motionEffectOptions,
 } from '@/constants/options';
 
@@ -558,48 +556,7 @@ const SceneEditor: React.FC = () => {
                   )}
                 </div>
               </Card>
-
-              {/* Ken Burns Effect - 세부 설정 추가 */}
-              <Card>
-                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  🎥 카메라 모션 (Ken Burns)
-                </h3>
-                
-                <Select
-                  label="효과 종류"
-                  options={kenBurnsOptions}
-                  value={activeScene.kenBurns}
-                  onChange={(value) => handleUpdate({ kenBurns: value as KenBurnsEffect })}
-                />
-
-                {activeScene.kenBurns !== 'none' && (
-                  <div className="mt-4 space-y-4">
-                    <Slider
-                      label="속도"
-                      value={activeScene.kenBurnsSpeed || 1.0}
-                      onChange={(value) => handleUpdate({ kenBurnsSpeed: value })}
-                      min={0.3}
-                      max={3.0}
-                      step={0.1}
-                      unit="x"
-                    />
-                    
-                    {(activeScene.kenBurns === 'zoom-in' || activeScene.kenBurns === 'zoom-out') && (
-                      <Slider
-                        label="줌 비율"
-                        value={activeScene.kenBurnsZoom || 20}
-                        onChange={(value) => handleUpdate({ kenBurnsZoom: value })}
-                        min={5}
-                        max={50}
-                        step={5}
-                        unit="%"
-                      />
-                    )}
-                  </div>
-                )}
-              </Card>
-
-              {/* 새로운 모션 효과 */}
+              {/* 모션 효과 (무료) */}
               <Card>
                 <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
                   ✨ 모션 효과 (무료)
@@ -629,48 +586,11 @@ const SceneEditor: React.FC = () => {
                     />
                   </div>
                 )}
+                
+                <p className="text-xs text-muted mt-3">
+                  💡 카메라 모션(Ken Burns)은 프로젝트 설정에서 변경
+                </p>
               </Card>
-
-              {/* 효과 조합 설정 */}
-              {(activeScene.kenBurns !== 'none' || (activeScene.motionEffect && activeScene.motionEffect !== 'none')) && (
-                <Card className="bg-primary/5 border-primary/20">
-                  <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                    🔀 효과 조합
-                  </h3>
-                  
-                  <Toggle
-                    label="Ken Burns + 모션 효과 동시 사용"
-                    checked={activeScene.combineEffects !== false}
-                    onChange={(checked) => handleUpdate({ combineEffects: checked })}
-                  />
-                  
-                  <p className="text-xs text-muted mt-2">
-                    {activeScene.combineEffects !== false 
-                      ? '✅ 두 효과가 함께 적용됩니다' 
-                      : '⚠️ Ken Burns만 적용됩니다'}
-                  </p>
-
-                  {/* 통합 미리보기 */}
-                  {activeScene.imageUrl && (
-                    <div className="mt-3">
-                      <label className="block text-sm font-medium text-muted-foreground mb-2">
-                        효과 미리보기
-                      </label>
-                      <div className="rounded-lg overflow-hidden border border-border">
-                        <MotionEffects
-                          imageUrl={activeScene.imageUrl}
-                          effect={activeScene.combineEffects !== false ? (activeScene.motionEffect || 'none') : 'none'}
-                          intensity={activeScene.motionIntensity || 1.0}
-                          isPlaying={true}
-                          duration={5}
-                          aspectRatio={currentProject?.aspectRatio}
-                          className="max-h-[200px]"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </Card>
-              )}
             </motion.div>
           )}
 
