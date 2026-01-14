@@ -32,9 +32,10 @@ export const kenBurnsOptions: Array<{ value: KenBurnsEffect; label: string }> = 
   { value: 'pan-down', label: '⬇️ 아래로 패닝' },
 ];
 
-// 간소화된 버전 (ProjectSettings용)
+// 프로젝트 설정용 (랜덤 포함)
 export const kenBurnsOptionsSimple: Array<{ value: KenBurnsEffect; label: string }> = [
   { value: 'none', label: '없음' },
+  { value: 'random', label: '🎲 랜덤' },
   { value: 'zoom-in', label: '줌 인' },
   { value: 'zoom-out', label: '줌 아웃' },
   { value: 'pan-left', label: '왼쪽 패닝' },

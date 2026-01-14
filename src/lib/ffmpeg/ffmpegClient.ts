@@ -181,15 +181,39 @@ function getRandomKenBurns(): KenBurnsEffect {
   return effects[Math.floor(Math.random() * effects.length)];
 }
 
+/**
+ * Ken Burns 효과 계산
+ * @param effect - 효과 종류
+ * @param progress - 진행률 (0 ~ 1)
+ * @param intensity - 기본 강도 (5 ~ 50)
+ * @param duration - 영상 길이 (초) - 자동 스케일링용
+ */
 function calculateKenBurns(
   effect: KenBurnsEffect,
   progress: number,  // 0 ~ 1
-  intensity: number = 15  // 5 ~ 50
+  intensity: number = 15,  // 5 ~ 50
+  duration: number = 5  // 영상 길이 (초)
 ): { scale: number; translateX: number; translateY: number } {
-  // intensity를 0.05 ~ 0.5 범위로 변환 (5% ~ 50% 효과)
-  const power = Math.max(0.05, Math.min(0.5, intensity / 100));
+  // ============ 영상 길이 기반 자동 스케일링 ============
+  // 기준: 5초 영상에서 기본 intensity가 적용됨
+  // - 짧은 영상(2초): 효과량 증가 (같은 시간에 더 많이 움직임 = 체감 속도 유지)
+  // - 긴 영상(10초): 효과량 증가 (더 많이 움직여야 속도감 유지)
   
-  // ease-in-out 곡선 (더 부드러운 움직임)
+  const baseDuration = 5;  // 기준 영상 길이 (초)
+  
+  // 스케일 팩터: 영상 길이에 비례 (더 긴 영상 = 더 많은 효과량)
+  // 예: 10초 영상 = 2배 효과, 2.5초 영상 = 0.5배 효과
+  // 단, 너무 극단적이지 않게 0.5 ~ 3.0 범위로 제한
+  const durationScale = Math.max(0.5, Math.min(3.0, duration / baseDuration));
+  
+  // 최종 intensity 계산 (영상 길이에 비례)
+  const scaledIntensity = intensity * durationScale;
+  
+  // intensity를 0.05 ~ 1.5 범위로 변환 (5% ~ 150% 효과)
+  // 기존보다 max를 늘려서 긴 영상에서도 충분한 움직임 보장
+  const power = Math.max(0.05, Math.min(1.5, scaledIntensity / 100));
+  
+  // ease-in-out 곡선 (부드러운 움직임)
   const t = progress < 0.5 
     ? 2 * progress * progress 
     : 1 - Math.pow(-2 * progress + 2, 2) / 2;
@@ -198,47 +222,39 @@ function calculateKenBurns(
   let translateX = 0;
   let translateY = 0;
   
-  // 검은 테두리 방지: 모든 효과에서 최소 scale 보장
-  // 패닝 시 이미지가 충분히 커야 이동해도 테두리가 안 보임
-  const minScaleForPan = 1.0 + power * 2; // 패닝용 최소 scale
+  // 검은 테두리 방지: 패닝 시 최소 scale 보장
+  const minScaleForPan = 1.0 + power * 2;
   
   switch (effect) {
     case 'zoom-in':
-      // 1.0 -> 1.0 + power*1.5 (예: 1.0 -> 1.225)
-      // 시작부터 살짝 확대해서 테두리 방지
+      // 1.0 -> 1.0 + power*1.5
       scale = 1.02 + t * power * 1.5;
       break;
       
     case 'zoom-out':
-      // 1.0 + power*1.5 -> 1.02 (끝에서 살짝 확대 유지)
+      // 1.0 + power*1.5 -> 1.02
       scale = (1.02 + power * 1.5) - t * power * 1.5;
       break;
       
     case 'pan-left':
-      // 오른쪽에서 왼쪽으로 이동
-      // 충분히 확대해서 이동 시 테두리가 안 보이게
       scale = minScaleForPan;
-      // 이동 범위: (scale - 1) / 2 * 100 이내로 제한
-      const maxTranslateX = (scale - 1) / 2 * 80; // 80%만 사용 (안전 마진)
-      translateX = (0.5 - t) * maxTranslateX * 2;  // 양수 -> 음수
+      const maxTranslateX = (scale - 1) / 2 * 80;
+      translateX = (0.5 - t) * maxTranslateX * 2;
       break;
       
     case 'pan-right':
-      // 왼쪽에서 오른쪽으로 이동
       scale = minScaleForPan;
       const maxTranslateXR = (scale - 1) / 2 * 80;
-      translateX = (t - 0.5) * maxTranslateXR * 2;  // 음수 -> 양수
+      translateX = (t - 0.5) * maxTranslateXR * 2;
       break;
       
     case 'pan-up':
-      // 아래에서 위로 이동
       scale = minScaleForPan;
       const maxTranslateY = (scale - 1) / 2 * 80;
       translateY = (0.5 - t) * maxTranslateY * 2;
       break;
       
     case 'pan-down':
-      // 위에서 아래로 이동
       scale = minScaleForPan;
       const maxTranslateYD = (scale - 1) / 2 * 80;
       translateY = (t - 0.5) * maxTranslateYD * 2;
@@ -353,8 +369,8 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     // 투명도 적용
     ctx.globalAlpha = Math.max(0.01, Math.min(1.0, alpha));
     
-    // Ken Burns 변환 계산
-    const { scale, translateX, translateY } = calculateKenBurns(actualKenBurns, progress, kenBurnsIntensity);
+    // Ken Burns 변환 계산 (영상 길이에 맞게 자동 조절)
+    const { scale, translateX, translateY } = calculateKenBurns(actualKenBurns, progress, kenBurnsIntensity, duration);
     
     // 최종 크기
     const drawW = baseWidth * scale;
