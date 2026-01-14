@@ -49,29 +49,11 @@ import {
 } from '@/lib/api/renderService';
 import { imageStyleLibrary } from '@/lib/imageStyles';
 
-const emotionOptions = [
-  { value: 'normal', label: '일반' },
-  { value: 'emphasis', label: '강조' },
-  { value: 'whisper', label: '속삭임' },
-  { value: 'excited', label: '흥분' },
-];
-
-const transitionOptions = [
-  { value: 'none', label: '없음' },
-  { value: 'fade', label: '페이드' },
-  { value: 'slide', label: '슬라이드' },
-];
-
-const kenBurnsOptions = [
-  { value: 'none', label: '없음' },
-  { value: 'random', label: '🎲 랜덤 (매번 다른 효과)' },
-  { value: 'zoom-in', label: '🔍 줌 인' },
-  { value: 'zoom-out', label: '🔎 줌 아웃' },
-  { value: 'pan-left', label: '⬅️ 왼쪽 패닝' },
-  { value: 'pan-right', label: '➡️ 오른쪽 패닝' },
-  { value: 'pan-up', label: '⬆️ 위로 패닝' },
-  { value: 'pan-down', label: '⬇️ 아래로 패닝' },
-];
+import {
+  emotionOptions,
+  transitionOptions,
+  kenBurnsOptions,
+} from '@/constants/options';
 
 interface ProgressState {
   isRunning: boolean;

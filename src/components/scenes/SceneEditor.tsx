@@ -30,59 +30,14 @@ import type { Scene, EmotionTag, TransitionType, KenBurnsEffect, MotionEffect, T
 import MotionEffects from './MotionEffects';
 import { useBrowserTTS } from '@/hooks/useBrowserTTS';
 
-const emotionOptions = [
-  { value: 'normal', label: '일반' },
-  { value: 'emphasis', label: '강조' },
-  { value: 'whisper', label: '속삭임' },
-  { value: 'excited', label: '흥분' },
-];
-
-const transitionOptions = [
-  { value: 'none', label: '없음' },
-  { value: 'fade', label: '페이드' },
-  { value: 'slide', label: '슬라이드' },
-];
-
-const kenBurnsOptions = [
-  { value: 'none', label: '없음' },
-  { value: 'random', label: '🎲 랜덤 (매번 다른 효과)' },
-  { value: 'zoom-in', label: '🔍 줌 인' },
-  { value: 'zoom-out', label: '🔎 줌 아웃' },
-  { value: 'pan-left', label: '⬅️ 왼쪽 패닝' },
-  { value: 'pan-right', label: '➡️ 오른쪽 패닝' },
-  { value: 'pan-up', label: '⬆️ 위로 패닝' },
-  { value: 'pan-down', label: '⬇️ 아래로 패닝' },
-];
-
-// 새로운 모션 효과 옵션
-const motionEffectOptions = [
-  { value: 'none', label: '없음' },
-  { value: 'breathing', label: '🫁 호흡 효과 (부드러운 확대/축소)' },
-  { value: 'pulse', label: '💓 펄스 효과 (심장 박동)' },
-  { value: 'float', label: '🎈 떠다니기 (상하 움직임)' },
-  { value: 'shake', label: '📳 미세 흔들림' },
-  { value: 'parallax-soft', label: '🎭 3D 효과 (약하게)' },
-  { value: 'parallax-medium', label: '🎭 3D 효과 (보통)' },
-  { value: 'parallax-strong', label: '🎭 3D 효과 (강하게)' },
-];
-
-// TTS 엔진 옵션
-const ttsEngineOptions = [
-  { value: 'edge-tts', label: '🆓 Edge TTS (무료, 한국어)' },
-  { value: 'elevenlabs', label: '💎 ElevenLabs (유료, 고품질)' },
-  { value: 'browser', label: '🌐 브라우저 TTS (무료, 즉시)' },
-];
-
-// 무료 한국어 보이스 옵션 (Edge TTS)
-const freeKoreanVoices = [
-  { value: 'ko-KR-SunHiNeural', label: '선희 (여성, 밝은)' },
-  { value: 'ko-KR-InJoonNeural', label: '인준 (남성, 전문적)' },
-  { value: 'ko-KR-BongJinNeural', label: '봉진 (남성, 따뜻한)' },
-  { value: 'ko-KR-GookMinNeural', label: '국민 (남성, 차분한)' },
-  { value: 'ko-KR-JiMinNeural', label: '지민 (여성, 활발한)' },
-  { value: 'ko-KR-SeoHyeonNeural', label: '서현 (여성, 차분한)' },
-  { value: 'ko-KR-YuJinNeural', label: '유진 (여성, 젊은)' },
-];
+import {
+  emotionOptions,
+  transitionOptions,
+  kenBurnsOptions,
+  motionEffectOptions,
+  ttsEngineOptions,
+  freeKoreanVoices,
+} from '@/constants/options';
 
 const SceneEditor: React.FC = () => {
   const {

@@ -19,40 +19,14 @@ import { ImageStyleSelector } from '@/components/ImageStyleSelector';
 import { getStyleById, ImageStyle as MasterImageStyle, ConsistencySettings } from '@/lib/imageStyles';
 import type { AspectRatio, ImageStyle, TransitionType, KenBurnsEffect, EmotionTag } from '@/types';
 
-const aspectRatioOptions = [
-  { value: '16:9', label: '16:9 (롱폼 - 가로)' },
-  { value: '9:16', label: '9:16 (쇼츠 - 세로)' },
-];
-
-const imageStyleOptions = [
-  { value: '2d-anime', label: '2D 애니메이션' },
-  { value: '3d-anime', label: '3D 애니메이션' },
-  { value: 'realistic', label: '실사/사실적' },
-  { value: 'cartoon', label: '카툰' },
-  { value: 'watercolor', label: '수채화' },
-  { value: 'custom', label: '커스텀 (직접 입력)' },
-];
-
-const transitionOptions = [
-  { value: 'none', label: '없음' },
-  { value: 'fade', label: '페이드' },
-  { value: 'slide', label: '슬라이드' },
-];
-
-const kenBurnsOptions = [
-  { value: 'none', label: '없음' },
-  { value: 'zoom-in', label: '줌 인' },
-  { value: 'zoom-out', label: '줌 아웃' },
-  { value: 'pan-left', label: '왼쪽 패닝' },
-  { value: 'pan-right', label: '오른쪽 패닝' },
-];
-
-const emotionOptions = [
-  { value: 'normal', label: '일반' },
-  { value: 'emphasis', label: '강조' },
-  { value: 'whisper', label: '속삭임' },
-  { value: 'excited', label: '흥분' },
-];
+import {
+  aspectRatioOptions,
+  imageStyleOptions,
+  transitionOptions,
+  kenBurnsOptionsSimple as kenBurnsOptions,
+  emotionOptions,
+  renderQualityOptions,
+} from '@/constants/options';
 
 const ProjectSettings: React.FC = () => {
   const { currentProject, updateProject, settings, applyToAllScenes } = useStore();

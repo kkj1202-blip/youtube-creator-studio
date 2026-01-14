@@ -498,18 +498,127 @@ export const useStore = create<AppState>()(
       // ==================== 일괄 작업 액션 ====================
 
       generateAllImages: async () => {
-        // TODO: 실제 API 연동
-        console.log('Generating all images...');
+        const { currentProject, settings } = get();
+        if (!currentProject) {
+          console.error('[Store] generateAllImages: No current project');
+          return;
+        }
+        if (!settings.kieApiKey) {
+          console.error('[Store] generateAllImages: No API key');
+          alert('설정에서 이미지 생성 API 키를 입력하세요.');
+          return;
+        }
+
+        console.log('[Store] generateAllImages: Starting...');
+        try {
+          const { generateAllImages } = await import('@/lib/api/batchProcessor');
+          const result = await generateAllImages(
+            currentProject,
+            settings.kieApiKey,
+            (progress) => {
+              console.log(`[Store] Image progress: ${progress.completed}/${progress.total}`);
+            },
+            (sceneId, updates) => {
+              get().updateScene(sceneId, updates);
+            }
+          );
+          console.log(`[Store] generateAllImages complete: ${result.completed} success, ${result.failed} failed`);
+          if (result.failed > 0) {
+            alert(`이미지 생성 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
+          }
+        } catch (error) {
+          console.error('[Store] generateAllImages error:', error);
+          alert('이미지 생성 중 오류가 발생했습니다.');
+        }
       },
 
       generateAllAudio: async () => {
-        // TODO: 실제 API 연동
-        console.log('Generating all audio...');
+        const { currentProject, settings } = get();
+        if (!currentProject) {
+          console.error('[Store] generateAllAudio: No current project');
+          return;
+        }
+
+        // 활성 ElevenLabs 계정 찾기
+        const activeAccountIndex = settings.elevenLabsAccounts.findIndex(
+          (acc) => acc.isActive && acc.apiKey
+        );
+        if (activeAccountIndex === -1) {
+          console.error('[Store] generateAllAudio: No active ElevenLabs account');
+          alert('설정에서 ElevenLabs API 키를 입력하고 계정을 활성화하세요.');
+          return;
+        }
+
+        const apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
+        const defaultVoiceId = currentProject.defaultVoiceId ||
+          settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id ||
+          settings.favoriteVoices?.[0]?.id;
+
+        if (!defaultVoiceId) {
+          alert('기본 보이스를 선택하세요.');
+          return;
+        }
+
+        console.log('[Store] generateAllAudio: Starting...');
+        try {
+          const { generateAllVoices } = await import('@/lib/api/batchProcessor');
+          const result = await generateAllVoices(
+            currentProject,
+            apiKey,
+            defaultVoiceId,
+            (progress) => {
+              console.log(`[Store] Audio progress: ${progress.completed}/${progress.total}`);
+            },
+            (sceneId, updates) => {
+              get().updateScene(sceneId, updates);
+            }
+          );
+          console.log(`[Store] generateAllAudio complete: ${result.completed} success, ${result.failed} failed`);
+          if (result.failed > 0) {
+            alert(`음성 생성 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
+          }
+        } catch (error) {
+          console.error('[Store] generateAllAudio error:', error);
+          alert('음성 생성 중 오류가 발생했습니다.');
+        }
       },
 
       renderAllScenes: async () => {
-        // TODO: 실제 렌더링 로직
-        console.log('Rendering all scenes...');
+        const { currentProject } = get();
+        if (!currentProject) {
+          console.error('[Store] renderAllScenes: No current project');
+          return;
+        }
+
+        // 브라우저 환경 체크
+        if (typeof window === 'undefined') {
+          console.error('[Store] renderAllScenes: Not in browser environment');
+          alert('렌더링은 브라우저에서만 가능합니다.');
+          return;
+        }
+
+        console.log('[Store] renderAllScenes: Starting...');
+        try {
+          const { renderAllScenes } = await import('@/lib/api/batchProcessor');
+          const result = await renderAllScenes(
+            currentProject,
+            (progress) => {
+              console.log(`[Store] Render progress: ${progress.completed}/${progress.total}`);
+            },
+            (sceneId, updates) => {
+              get().updateScene(sceneId, updates);
+            }
+          );
+          console.log(`[Store] renderAllScenes complete: ${result.completed} success, ${result.failed} failed`);
+          if (result.failed > 0) {
+            alert(`렌더링 완료: ${result.completed}개 성공, ${result.failed}개 실패`);
+          } else if (result.completed > 0) {
+            alert('모든 씬 렌더링이 완료되었습니다!');
+          }
+        } catch (error) {
+          console.error('[Store] renderAllScenes error:', error);
+          alert('렌더링 중 오류가 발생했습니다.');
+        }
       },
 
       applyToAllScenes: (updates) => {
