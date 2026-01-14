@@ -13,30 +13,23 @@ import {
   Play,
   Download,
   RefreshCw,
-  Loader2,
   AlertCircle,
-  CheckCircle2,
   Eye,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
-import { Button, TextArea, Select, Slider, Toggle, Input, Tabs, Card, Modal } from '@/components/ui';
+import { Button, TextArea, Select, Slider, Toggle, Tabs, Card, Modal } from '@/components/ui';
 import AudioPlayer from './AudioPlayer';
 import ScenePreview from './ScenePreview';
 import ImageUploader from './ImageUploader';
-import { generateImagePrompt, stylePresets } from '@/lib/api/imageGeneration';
+import { generateImagePrompt } from '@/lib/api/imageGeneration';
 import { estimateAudioDuration } from '@/lib/api/voiceGeneration';
-import { buildFinalPrompt, getStyleById } from '@/lib/imageStyles';
-import type { Scene, EmotionTag, TransitionType, KenBurnsEffect, MotionEffect, TTSEngine } from '@/types';
+import { buildFinalPrompt } from '@/lib/imageStyles';
+import type { Scene, KenBurnsEffect, MotionEffect } from '@/types';
 import MotionEffects from './MotionEffects';
-import { useBrowserTTS } from '@/hooks/useBrowserTTS';
 
 import {
-  emotionOptions,
-  transitionOptions,
   kenBurnsOptions,
   motionEffectOptions,
-  ttsEngineOptions,
-  freeKoreanVoices,
 } from '@/constants/options';
 
 const SceneEditor: React.FC = () => {
@@ -54,11 +47,8 @@ const SceneEditor: React.FC = () => {
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [generationError, setGenerationError] = useState<string | null>(null);
-  const [freeVoices, setFreeVoices] = useState<Array<{id: string; name: string; gender: string; description: string}>>([]);
-  const [isPreviewingVoice, setIsPreviewingVoice] = useState(false);
-
-  // 브라우저 TTS 훅
-  const browserTTS = useBrowserTTS();
+  const [renderProgress, setRenderProgress] = useState<{ percent: number; message: string } | null>(null);
+  const [lastVideoBlob, setLastVideoBlob] = useState<Blob | null>(null);
 
   const activeScene = currentProject?.scenes.find((s) => s.id === activeSceneId);
 
@@ -73,22 +63,6 @@ const SceneEditor: React.FC = () => {
   useEffect(() => {
     setGenerationError(null);
   }, [activeSceneId, activeTab]);
-
-  // 무료 보이스 목록 로드
-  useEffect(() => {
-    const loadFreeVoices = async () => {
-      try {
-        const response = await fetch('/api/generate-voice-free');
-        const data = await response.json();
-        if (data.voices) {
-          setFreeVoices(data.voices);
-        }
-      } catch (error) {
-        console.error('Failed to load free voices:', error);
-      }
-    };
-    loadFreeVoices();
-  }, []);
 
   if (!activeScene) {
     return (
@@ -227,12 +201,24 @@ const SceneEditor: React.FC = () => {
     }
   };
 
-  // 음성 생성
+  // 음성 생성 (ElevenLabs만 지원)
   const handleGenerateAudio = async () => {
-    const ttsEngine = activeScene.ttsEngine || 'edge-tts';
-    
     if (!activeScene.script.trim()) {
       setGenerationError('대본을 입력하세요.');
+      return;
+    }
+
+    // ElevenLabs API 키 확인
+    const accountIndex = currentProject?.elevenLabsAccountIndex || 0;
+    const apiKey = settings.elevenLabsAccounts[accountIndex]?.apiKey;
+    
+    if (!apiKey) {
+      setGenerationError('설정에서 ElevenLabs API 키를 입력하세요.');
+      return;
+    }
+
+    if (!activeScene.voiceId && !currentProject?.defaultVoiceId) {
+      setGenerationError('보이스를 선택하세요.');
       return;
     }
 
@@ -240,94 +226,32 @@ const SceneEditor: React.FC = () => {
     setGenerationError(null);
 
     try {
-      if (ttsEngine === 'elevenlabs') {
-        // ElevenLabs (유료)
-        const accountIndex = currentProject?.elevenLabsAccountIndex || 0;
-        const apiKey = settings.elevenLabsAccounts[accountIndex]?.apiKey;
-        
-        if (!apiKey) {
-          setGenerationError('설정에서 ElevenLabs API 키를 입력하세요.');
-          setIsGeneratingAudio(false);
-          return;
-        }
+      const response = await fetch('/api/generate-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey,
+          voiceId: activeScene.voiceId || currentProject?.defaultVoiceId,
+          text: activeScene.script,
+          speed: activeScene.voiceSpeed,
+          emotion: activeScene.emotion,
+        }),
+      });
 
-        if (!activeScene.voiceId && !currentProject?.defaultVoiceId) {
-          setGenerationError('보이스를 선택하세요.');
-          setIsGeneratingAudio(false);
-          return;
-        }
+      const data = await response.json();
 
-        const response = await fetch('/api/generate-voice', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey,
-            voiceId: activeScene.voiceId || currentProject?.defaultVoiceId,
-            text: activeScene.script,
-            speed: activeScene.voiceSpeed,
-            emotion: activeScene.emotion,
-          }),
-        });
+      if (!response.ok || !data.audioUrl) {
+        throw new Error(data.error || '음성 생성에 실패했습니다.');
+      }
 
-        const data = await response.json();
+      handleUpdate({
+        audioUrl: data.audioUrl,
+        audioGenerated: true,
+        error: undefined,
+      });
 
-        if (!response.ok || !data.audioUrl) {
-          throw new Error(data.error || '음성 생성에 실패했습니다.');
-        }
-
-        handleUpdate({
-          audioUrl: data.audioUrl,
-          audioGenerated: true,
-          error: undefined,
-        });
-
-        if (data.demo) {
-          setGenerationError('데모 모드: 실제 API 키를 입력하면 실제 음성이 생성됩니다.');
-        }
-      } else if (ttsEngine === 'edge-tts') {
-        // Edge TTS (무료)
-        const response = await fetch('/api/generate-voice-free', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            voiceId: activeScene.voiceId || 'ko-KR-SunHiNeural',
-            text: activeScene.script,
-            speed: activeScene.voiceSpeed,
-            emotion: activeScene.emotion,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (data.useBrowserTTS) {
-          // 브라우저 TTS 폴백
-          setGenerationError('서버 TTS 사용 불가. 브라우저 TTS로 미리듣기만 가능합니다.');
-          handleUpdate({
-            audioUrl: undefined,
-            audioGenerated: false,
-          });
-        } else if (data.audioUrl) {
-          handleUpdate({
-            audioUrl: data.audioUrl,
-            audioGenerated: true,
-            error: undefined,
-          });
-        } else {
-          throw new Error(data.error || '음성 생성에 실패했습니다.');
-        }
-      } else {
-        // 브라우저 TTS
-        if (!browserTTS.isSupported) {
-          setGenerationError('이 브라우저는 TTS를 지원하지 않습니다.');
-          setIsGeneratingAudio(false);
-          return;
-        }
-
-        // 브라우저 TTS는 오디오 파일을 생성하지 않음
-        setGenerationError('브라우저 TTS는 미리듣기만 가능합니다. 렌더링을 위해 Edge TTS 또는 ElevenLabs를 사용하세요.');
-        handleUpdate({
-          audioGenerated: false,
-        });
+      if (data.demo) {
+        setGenerationError('데모 모드: 실제 API 키를 입력하면 실제 음성이 생성됩니다.');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : '음성 생성 중 오류가 발생했습니다.';
@@ -338,37 +262,6 @@ const SceneEditor: React.FC = () => {
     }
   };
 
-  // 음성 미리듣기 (브라우저 TTS)
-  const handlePreviewVoice = async () => {
-    if (!activeScene.script.trim()) {
-      setGenerationError('대본을 입력하세요.');
-      return;
-    }
-
-    if (!browserTTS.isSupported) {
-      setGenerationError('이 브라우저는 TTS를 지원하지 않습니다.');
-      return;
-    }
-
-    setIsPreviewingVoice(true);
-    try {
-      // 처음 100자만 미리듣기
-      const previewText = activeScene.script.slice(0, 100) + (activeScene.script.length > 100 ? '...' : '');
-      await browserTTS.speak(previewText, undefined, activeScene.voiceSpeed);
-    } finally {
-      setIsPreviewingVoice(false);
-    }
-  };
-
-  // 브라우저 TTS 중지
-  const handleStopPreview = () => {
-    browserTTS.stop();
-    setIsPreviewingVoice(false);
-  };
-
-  // 렌더링 진행률 상태
-  const [renderProgress, setRenderProgress] = useState<{ percent: number; message: string } | null>(null);
-  const [lastVideoBlob, setLastVideoBlob] = useState<Blob | null>(null);
 
   // 렌더링 (브라우저에서 직접 - 설치 필요 없음)
   const handleRender = async () => {
@@ -403,9 +296,9 @@ const SceneEditor: React.FC = () => {
         onProgress: (percent, message) => {
           setRenderProgress({ percent, message });
         },
-        // 효과 설정
-        kenBurns: activeScene.kenBurns || 'none',
-        kenBurnsIntensity: activeScene.kenBurnsZoom || 15, // 기본 15%
+        // 효과 설정 (씬 → 프로젝트 기본값 → 'none')
+        kenBurns: activeScene.kenBurns || currentProject?.defaultKenBurns || 'none',
+        kenBurnsIntensity: activeScene.kenBurnsZoom || currentProject?.defaultKenBurnsZoom || 15,
         transition: activeScene.transition || 'fade',
         // 품질 설정
         resolution: renderSettings?.resolution || '1080p',
@@ -478,7 +371,7 @@ const SceneEditor: React.FC = () => {
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (error) {
+    } catch (_error) {
       setGenerationError('다운로드 중 오류가 발생했습니다.');
     }
   };
@@ -818,129 +711,27 @@ const SceneEditor: React.FC = () => {
                 </Button>
               </Card>
 
-              {/* TTS Engine Selection */}
-              <Card className="bg-gradient-to-br from-primary/5 to-transparent border-primary/20">
-                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  🎤 TTS 엔진 선택
-                </h3>
-                <Select
-                  label=""
-                  options={ttsEngineOptions}
-                  value={activeScene.ttsEngine || 'edge-tts'}
-                  onChange={(value) => handleUpdate({ ttsEngine: value as TTSEngine })}
-                />
-                <p className="text-xs text-muted mt-2">
-                  {activeScene.ttsEngine === 'elevenlabs' 
-                    ? '💎 고품질 음성 (API 키 필요)' 
-                    : activeScene.ttsEngine === 'browser'
-                    ? '🌐 브라우저 내장 TTS (미리듣기만)'
-                    : '🆓 무료 한국어 음성 (API 키 불필요)'}
-                </p>
-              </Card>
-
-              {/* Voice Settings */}
+              {/* Voice Settings - 목소리 선택만 */}
               <Card>
-                <h3 className="text-sm font-semibold text-foreground mb-3">
-                  음성 설정
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  🎤 목소리 선택
                 </h3>
-                <div className="space-y-4">
-                  {/* 무료 TTS 보이스 선택 */}
-                  {(activeScene.ttsEngine === 'edge-tts' || !activeScene.ttsEngine) && (
-                    <Select
-                      label="무료 한국어 목소리"
-                      options={freeVoices.map(v => ({ 
-                        value: v.id, 
-                        label: `${v.name} - ${v.description}` 
-                      }))}
-                      value={activeScene.voiceId || 'ko-KR-SunHiNeural'}
-                      onChange={(value) => handleUpdate({ voiceId: value })}
-                    />
-                  )}
-
-                  {/* ElevenLabs 보이스 선택 (즐겨찾기만 표시) */}
-                  {activeScene.ttsEngine === 'elevenlabs' && (
-                    <div className="space-y-2">
-                      <Select
-                        label="ElevenLabs 목소리"
-                        options={
-                          favoriteVoiceOptions.length > 0 
-                            ? favoriteVoiceOptions 
-                            : [{ value: '', label: '설정에서 즐겨찾기 보이스를 추가하세요' }]
-                        }
-                        value={activeScene.voiceId || currentProject?.defaultVoiceId || ''}
-                        onChange={(value) => handleUpdate({ voiceId: value })}
-                      />
-                      <p className="text-xs text-muted">
-                        ⭐ 즐겨찾기 {favoriteVoiceOptions.length}개 | 설정 → API 키 설정에서 보이스 추가
-                      </p>
-                    </div>
-                  )}
-
-                  {/* 브라우저 TTS 보이스 */}
-                  {activeScene.ttsEngine === 'browser' && (
-                    <Select
-                      label="브라우저 한국어 목소리"
-                      options={browserTTS.koreanVoices.length > 0 
-                        ? browserTTS.koreanVoices.map(v => ({ value: v.id, label: v.name })) 
-                        : [{ value: '', label: '한국어 보이스 없음' }]}
-                      value={activeScene.voiceId || ''}
-                      onChange={(value) => handleUpdate({ voiceId: value })}
-                    />
-                  )}
-
+                <div className="space-y-3">
                   <Select
-                    label="감정"
-                    options={emotionOptions}
-                    value={activeScene.emotion}
-                    onChange={(value) => handleUpdate({ emotion: value as EmotionTag })}
+                    label="이 씬의 목소리"
+                    options={
+                      favoriteVoiceOptions.length > 0 
+                        ? favoriteVoiceOptions 
+                        : [{ value: '', label: '설정에서 즐겨찾기 보이스를 추가하세요' }]
+                    }
+                    value={activeScene.voiceId || currentProject?.defaultVoiceId || ''}
+                    onChange={(value) => handleUpdate({ voiceId: value })}
                   />
-
-                  <Slider
-                    label="속도"
-                    value={activeScene.voiceSpeed}
-                    onChange={(value) => handleUpdate({ voiceSpeed: value })}
-                    min={0.5}
-                    max={2.0}
-                    step={0.1}
-                    unit="x"
-                  />
+                  <p className="text-xs text-muted">
+                    ⭐ 즐겨찾기 {favoriteVoiceOptions.length}개 | 감정/속도는 프로젝트 설정에서 변경
+                  </p>
                 </div>
               </Card>
-
-              {/* 미리듣기 (브라우저 TTS) */}
-              {browserTTS.isSupported && (
-                <Card className="bg-card-hover">
-                  <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                    👂 즉시 미리듣기
-                    <span className="text-xs font-normal text-success">무료</span>
-                  </h3>
-                  <p className="text-xs text-muted mb-3">
-                    브라우저 TTS로 대본을 바로 들어볼 수 있습니다 (처음 100자)
-                  </p>
-                  <div className="flex gap-2">
-                    {!isPreviewingVoice && !browserTTS.isSpeaking ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handlePreviewVoice}
-                        disabled={!activeScene.script}
-                        icon={<Play className="w-4 h-4" />}
-                      >
-                        미리듣기
-                      </Button>
-                    ) : (
-                      <Button
-                        variant="danger"
-                        size="sm"
-                        onClick={handleStopPreview}
-                        icon={<AlertCircle className="w-4 h-4" />}
-                      >
-                        중지
-                      </Button>
-                    )}
-                  </div>
-                </Card>
-              )}
             </motion.div>
           )}
 
@@ -1053,39 +844,12 @@ const SceneEditor: React.FC = () => {
                 </div>
               </Card>
 
-              {/* Video Settings */}
+              {/* Video Settings - 추가 지속시간만 */}
               <Card>
                 <h3 className="text-sm font-semibold text-foreground mb-3">
-                  영상 설정
+                  ⏱️ 추가 지속시간
                 </h3>
-                <div className="space-y-4">
-                  <Select
-                    label="씬 전환 효과"
-                    options={transitionOptions}
-                    value={activeScene.transition || 'fade'}
-                    onChange={(value) => handleUpdate({ transition: value as TransitionType })}
-                  />
-
-                  <Select
-                    label="🎬 Ken Burns 효과 (이미지 움직임)"
-                    options={kenBurnsOptions}
-                    value={activeScene.kenBurns || 'none'}
-                    onChange={(value) => handleUpdate({ kenBurns: value as KenBurnsEffect })}
-                  />
-
-                  {/* Ken Burns 효과가 선택된 경우에만 강도 슬라이더 표시 */}
-                  {activeScene.kenBurns && activeScene.kenBurns !== 'none' && (
-                    <Slider
-                      label="📐 Ken Burns 강도 (영상 길이에 맞게 조절)"
-                      value={activeScene.kenBurnsZoom || 15}
-                      onChange={(value) => handleUpdate({ kenBurnsZoom: value })}
-                      min={5}
-                      max={50}
-                      step={5}
-                      unit="%"
-                    />
-                  )}
-
+                <div className="space-y-3">
                   <Slider
                     label="이미지 추가 지속시간"
                     value={activeScene.imageDuration || 0}
@@ -1095,171 +859,12 @@ const SceneEditor: React.FC = () => {
                     step={0.5}
                     unit="초"
                   />
-
-                  <Slider
-                    label="음성 후 여백"
-                    value={activeScene.postAudioGap}
-                    onChange={(value) => handleUpdate({ postAudioGap: value })}
-                    min={0}
-                    max={3}
-                    step={0.1}
-                    unit="초"
-                  />
-
-                  <Toggle
-                    label="자막 표시"
-                    checked={activeScene.subtitleEnabled}
-                    onChange={(checked) => handleUpdate({ subtitleEnabled: checked })}
-                  />
+                  <p className="text-xs text-muted">
+                    💡 씬 전환/음성 후 여백은 프로젝트 설정에서 변경
+                  </p>
                 </div>
               </Card>
 
-              {/* 렌더링 품질 설정 */}
-              <Card className="bg-gradient-to-br from-warning/5 to-transparent border-warning/20">
-                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  ⚙️ 렌더링 품질 설정
-                  <span className="text-xs font-normal text-warning bg-warning/10 px-2 py-0.5 rounded">PRO</span>
-                </h3>
-                <div className="space-y-4">
-                  <Select
-                    label="해상도"
-                    options={[
-                      { value: '720p', label: '720p HD (빠름)' },
-                      { value: '1080p', label: '1080p Full HD (권장)' },
-                      { value: '4k', label: '4K Ultra HD (느림)' },
-                    ]}
-                    value={currentProject?.renderSettings?.resolution || '1080p'}
-                    onChange={(value) => {
-                      if (currentProject) {
-                        const { updateProject } = useStore.getState();
-                        updateProject({
-                          renderSettings: {
-                            ...currentProject.renderSettings,
-                            resolution: value as '720p' | '1080p' | '4k',
-                          },
-                        });
-                      }
-                    }}
-                  />
-
-                  <Select
-                    label="프레임레이트"
-                    options={[
-                      { value: '24', label: '24 FPS (영화)' },
-                      { value: '30', label: '30 FPS (표준)' },
-                      { value: '60', label: '60 FPS (부드러움)' },
-                    ]}
-                    value={String(currentProject?.renderSettings?.fps || 30)}
-                    onChange={(value) => {
-                      if (currentProject) {
-                        const { updateProject } = useStore.getState();
-                        updateProject({
-                          renderSettings: {
-                            ...currentProject.renderSettings,
-                            fps: Number(value) as 24 | 30 | 60,
-                          },
-                        });
-                      }
-                    }}
-                  />
-
-                  <Select
-                    label="비트레이트 (화질)"
-                    options={[
-                      { value: 'low', label: '낮음 (2Mbps) - 파일 작음' },
-                      { value: 'medium', label: '중간 (4Mbps)' },
-                      { value: 'high', label: '높음 (8Mbps) - 권장' },
-                      { value: 'ultra', label: '최고 (12Mbps) - 파일 큼' },
-                    ]}
-                    value={currentProject?.renderSettings?.bitrate || 'high'}
-                    onChange={(value) => {
-                      if (currentProject) {
-                        const { updateProject } = useStore.getState();
-                        updateProject({
-                          renderSettings: {
-                            ...currentProject.renderSettings,
-                            bitrate: value as 'low' | 'medium' | 'high' | 'ultra',
-                          },
-                        });
-                      }
-                    }}
-                  />
-
-                  <div className="pt-2 border-t border-border">
-                    <h4 className="text-xs font-medium text-muted mb-3">품질 향상 옵션</h4>
-                    
-                    <Toggle
-                      label="🎯 화면 안정화 (떨림 제거)"
-                      checked={currentProject?.renderSettings?.stabilization ?? true}
-                      onChange={(checked) => {
-                        if (currentProject) {
-                          const { updateProject } = useStore.getState();
-                          updateProject({
-                            renderSettings: {
-                              ...currentProject.renderSettings,
-                              stabilization: checked,
-                            },
-                          });
-                        }
-                      }}
-                    />
-
-                    <Toggle
-                      label="🔇 오디오 잡음 제거"
-                      checked={currentProject?.renderSettings?.denoiseAudio ?? true}
-                      onChange={(checked) => {
-                        if (currentProject) {
-                          const { updateProject } = useStore.getState();
-                          updateProject({
-                            renderSettings: {
-                              ...currentProject.renderSettings,
-                              denoiseAudio: checked,
-                            },
-                          });
-                        }
-                      }}
-                    />
-
-                    <Toggle
-                      label="🖼️ 비디오 노이즈 제거"
-                      checked={currentProject?.renderSettings?.denoiseVideo ?? false}
-                      onChange={(checked) => {
-                        if (currentProject) {
-                          const { updateProject } = useStore.getState();
-                          updateProject({
-                            renderSettings: {
-                              ...currentProject.renderSettings,
-                              denoiseVideo: checked,
-                            },
-                          });
-                        }
-                      }}
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <Slider
-                      label="선명도"
-                      value={currentProject?.renderSettings?.sharpness ?? 50}
-                      onChange={(value) => {
-                        if (currentProject) {
-                          const { updateProject } = useStore.getState();
-                          updateProject({
-                            renderSettings: {
-                              ...currentProject.renderSettings,
-                              sharpness: value,
-                            },
-                          });
-                        }
-                      }}
-                      min={0}
-                      max={100}
-                      step={10}
-                      unit="%"
-                    />
-                  </div>
-                </div>
-              </Card>
             </motion.div>
           )}
         </AnimatePresence>

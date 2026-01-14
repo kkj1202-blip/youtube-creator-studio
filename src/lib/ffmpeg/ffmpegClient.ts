@@ -75,9 +75,46 @@ async function loadImageSafe(url: string): Promise<HTMLImageElement> {
   });
 }
 
-// ============ 오디오 로딩 ============
+// ============ 오디오 로딩 (볼륨 정규화 포함) ============
 
-async function loadAudioSafe(url: string): Promise<{ duration: number; arrayBuffer: ArrayBuffer }> {
+/**
+ * 오디오 피크 볼륨 분석
+ * 가장 큰 샘플값을 찾아 반환 (0.0 ~ 1.0)
+ */
+function analyzePeakVolume(audioBuffer: AudioBuffer): number {
+  let peak = 0;
+  
+  for (let channel = 0; channel < audioBuffer.numberOfChannels; channel++) {
+    const data = audioBuffer.getChannelData(channel);
+    for (let i = 0; i < data.length; i++) {
+      const absValue = Math.abs(data[i]);
+      if (absValue > peak) {
+        peak = absValue;
+      }
+    }
+  }
+  
+  return peak;
+}
+
+/**
+ * 목표 볼륨까지 정규화할 gain 값 계산
+ * targetPeak: 목표 피크 (기본 0.9 = -0.9dB, 클리핑 방지)
+ */
+function calculateNormalizationGain(currentPeak: number, targetPeak: number = 0.9): number {
+  if (currentPeak <= 0) return 1.0;
+  
+  const gain = targetPeak / currentPeak;
+  
+  // 너무 과도한 증폭 방지 (최대 3배)
+  return Math.min(gain, 3.0);
+}
+
+async function loadAudioSafe(url: string): Promise<{ 
+  duration: number; 
+  arrayBuffer: ArrayBuffer;
+  normalizationGain: number;
+}> {
   console.log('[Audio] 로딩 시작:', url.substring(0, 100));
   
   try {
@@ -89,14 +126,23 @@ async function loadAudioSafe(url: string): Promise<{ duration: number; arrayBuff
     const arrayBuffer = await response.arrayBuffer();
     console.log('[Audio] 다운로드 완료:', (arrayBuffer.byteLength / 1024).toFixed(1), 'KB');
     
-    // 임시 AudioContext로 duration 확인
+    // 임시 AudioContext로 분석
     const tempCtx = new AudioContext();
     try {
+      // 복사본으로 디코딩 (원본 보존)
       const decoded = await tempCtx.decodeAudioData(arrayBuffer.slice(0));
       const duration = decoded.duration;
+      
+      // 피크 볼륨 분석
+      const peak = analyzePeakVolume(decoded);
+      const normalizationGain = calculateNormalizationGain(peak, 0.85); // 목표 85%
+      
       console.log('[Audio] 디코딩 완료:', duration.toFixed(2), '초');
+      console.log('[Audio] 피크 볼륨:', (peak * 100).toFixed(1) + '%');
+      console.log('[Audio] 정규화 Gain:', normalizationGain.toFixed(2) + 'x');
+      
       await tempCtx.close();
-      return { duration, arrayBuffer };
+      return { duration, arrayBuffer, normalizationGain };
     } catch (e) {
       await tempCtx.close();
       throw e;
@@ -140,10 +186,10 @@ function calculateKenBurns(
   progress: number,  // 0 ~ 1
   intensity: number = 15  // 5 ~ 50
 ): { scale: number; translateX: number; translateY: number } {
-  // 더 강한 효과를 위해 intensity 증폭
-  const power = intensity / 100 * 1.5;
+  // intensity를 0.05 ~ 0.5 범위로 변환 (5% ~ 50% 효과)
+  const power = Math.max(0.05, Math.min(0.5, intensity / 100));
   
-  // ease-in-out 곡선
+  // ease-in-out 곡선 (더 부드러운 움직임)
   const t = progress < 0.5 
     ? 2 * progress * progress 
     : 1 - Math.pow(-2 * progress + 2, 2) / 2;
@@ -152,43 +198,57 @@ function calculateKenBurns(
   let translateX = 0;
   let translateY = 0;
   
+  // 검은 테두리 방지: 모든 효과에서 최소 scale 보장
+  // 패닝 시 이미지가 충분히 커야 이동해도 테두리가 안 보임
+  const minScaleForPan = 1.0 + power * 2; // 패닝용 최소 scale
+  
   switch (effect) {
     case 'zoom-in':
-      // 1.0 -> 1.0 + power (예: 1.0 -> 1.225)
-      scale = 1.0 + t * power;
+      // 1.0 -> 1.0 + power*1.5 (예: 1.0 -> 1.225)
+      // 시작부터 살짝 확대해서 테두리 방지
+      scale = 1.02 + t * power * 1.5;
       break;
       
     case 'zoom-out':
-      // 1.0 + power -> 1.0 (예: 1.225 -> 1.0)
-      scale = (1.0 + power) - t * power;
+      // 1.0 + power*1.5 -> 1.02 (끝에서 살짝 확대 유지)
+      scale = (1.02 + power * 1.5) - t * power * 1.5;
       break;
       
     case 'pan-left':
       // 오른쪽에서 왼쪽으로 이동
-      scale = 1.0 + power * 0.5;
-      translateX = (0.5 - t) * power * 100;  // 양수 -> 음수
+      // 충분히 확대해서 이동 시 테두리가 안 보이게
+      scale = minScaleForPan;
+      // 이동 범위: (scale - 1) / 2 * 100 이내로 제한
+      const maxTranslateX = (scale - 1) / 2 * 80; // 80%만 사용 (안전 마진)
+      translateX = (0.5 - t) * maxTranslateX * 2;  // 양수 -> 음수
       break;
       
     case 'pan-right':
       // 왼쪽에서 오른쪽으로 이동
-      scale = 1.0 + power * 0.5;
-      translateX = (t - 0.5) * power * 100;  // 음수 -> 양수
+      scale = minScaleForPan;
+      const maxTranslateXR = (scale - 1) / 2 * 80;
+      translateX = (t - 0.5) * maxTranslateXR * 2;  // 음수 -> 양수
       break;
       
     case 'pan-up':
       // 아래에서 위로 이동
-      scale = 1.0 + power * 0.5;
-      translateY = (0.5 - t) * power * 100;
+      scale = minScaleForPan;
+      const maxTranslateY = (scale - 1) / 2 * 80;
+      translateY = (0.5 - t) * maxTranslateY * 2;
       break;
       
     case 'pan-down':
       // 위에서 아래로 이동
-      scale = 1.0 + power * 0.5;
-      translateY = (t - 0.5) * power * 100;
+      scale = minScaleForPan;
+      const maxTranslateYD = (scale - 1) / 2 * 80;
+      translateY = (t - 0.5) * maxTranslateYD * 2;
       break;
       
+    case 'none':
     default:
       scale = 1.0;
+      translateX = 0;
+      translateY = 0;
   }
   
   return { scale, translateX, translateY };
@@ -224,6 +284,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
   let img: HTMLImageElement;
   let audioDuration: number;
   let audioArrayBuffer: ArrayBuffer;
+  let audioNormalizationGain: number;
 
   try {
     const [imgResult, audioResult] = await Promise.all([
@@ -233,6 +294,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     img = imgResult;
     audioDuration = audioResult.duration;
     audioArrayBuffer = audioResult.arrayBuffer;
+    audioNormalizationGain = audioResult.normalizationGain;
   } catch (error) {
     console.error('[Render] 리소스 로드 실패:', error);
     throw error;
@@ -325,9 +387,10 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
   const audioSource = audioContext.createBufferSource();
   audioSource.buffer = audioBuffer;
   
-  // Gain 노드 (볼륨)
+  // Gain 노드 (볼륨 정규화 적용)
   const gainNode = audioContext.createGain();
-  gainNode.gain.value = 1.0;
+  gainNode.gain.value = audioNormalizationGain; // 볼륨 정규화
+  console.log('[Render] 오디오 Gain 적용:', audioNormalizationGain.toFixed(2) + 'x');
   
   // MediaStream 출력
   const audioDestination = audioContext.createMediaStreamDestination();

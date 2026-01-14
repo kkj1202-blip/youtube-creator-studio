@@ -25,7 +25,6 @@ import {
   transitionOptions,
   kenBurnsOptionsSimple as kenBurnsOptions,
   emotionOptions,
-  renderQualityOptions,
 } from '@/constants/options';
 
 const ProjectSettings: React.FC = () => {
@@ -373,20 +372,106 @@ const ProjectSettings: React.FC = () => {
         </div>
       </Card>
 
-      {/* 렌더링 품질 */}
+      {/* 렌더링 품질 설정 */}
       <Card>
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
           <Settings2 className="w-5 h-5 text-primary" />
-          렌더링 품질
+          렌더링 품질 설정
         </h3>
-        <Select
-          options={[
-            { value: 'preview', label: '미리보기 (480p, 빠름)' },
-            { value: 'high', label: '고화질 (1080p)' },
-          ]}
-          value={currentProject.renderQuality}
-          onChange={(value) => updateProject({ renderQuality: value as 'preview' | 'high' })}
-        />
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Select
+              label="해상도"
+              options={[
+                { value: '720p', label: '720p HD (빠름)' },
+                { value: '1080p', label: '1080p Full HD (권장)' },
+                { value: '4k', label: '4K Ultra HD (느림)' },
+              ]}
+              value={currentProject.renderSettings?.resolution || '1080p'}
+              onChange={(value) => updateProject({
+                renderSettings: {
+                  ...currentProject.renderSettings,
+                  resolution: value as '720p' | '1080p' | '4k',
+                },
+              })}
+            />
+
+            <Select
+              label="프레임레이트"
+              options={[
+                { value: '24', label: '24 FPS (영화)' },
+                { value: '30', label: '30 FPS (표준)' },
+                { value: '60', label: '60 FPS (부드러움)' },
+              ]}
+              value={String(currentProject.renderSettings?.fps || 30)}
+              onChange={(value) => updateProject({
+                renderSettings: {
+                  ...currentProject.renderSettings,
+                  fps: Number(value) as 24 | 30 | 60,
+                },
+              })}
+            />
+
+            <Select
+              label="비트레이트 (화질)"
+              options={[
+                { value: 'low', label: '낮음 (2Mbps)' },
+                { value: 'medium', label: '중간 (4Mbps)' },
+                { value: 'high', label: '높음 (8Mbps)' },
+                { value: 'ultra', label: '최고 (12Mbps)' },
+              ]}
+              value={currentProject.renderSettings?.bitrate || 'high'}
+              onChange={(value) => updateProject({
+                renderSettings: {
+                  ...currentProject.renderSettings,
+                  bitrate: value as 'low' | 'medium' | 'high' | 'ultra',
+                },
+              })}
+            />
+          </div>
+
+          <div className="pt-3 border-t border-border">
+            <h4 className="text-sm font-medium text-muted mb-3">품질 향상 옵션</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <Toggle
+                label="🎯 화면 안정화 (떨림 제거)"
+                checked={currentProject.renderSettings?.stabilization ?? true}
+                onChange={(checked) => updateProject({
+                  renderSettings: {
+                    ...currentProject.renderSettings,
+                    stabilization: checked,
+                  },
+                })}
+              />
+
+              <Toggle
+                label="🔇 오디오 잡음 제거"
+                checked={currentProject.renderSettings?.denoiseAudio ?? true}
+                onChange={(checked) => updateProject({
+                  renderSettings: {
+                    ...currentProject.renderSettings,
+                    denoiseAudio: checked,
+                  },
+                })}
+              />
+            </div>
+          </div>
+
+          <Slider
+            label="선명도"
+            value={currentProject.renderSettings?.sharpness ?? 50}
+            onChange={(value) => updateProject({
+              renderSettings: {
+                ...currentProject.renderSettings,
+                sharpness: value,
+              },
+            })}
+            min={0}
+            max={100}
+            step={10}
+            unit="%"
+          />
+        </div>
       </Card>
     </motion.div>
   );

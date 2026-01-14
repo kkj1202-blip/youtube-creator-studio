@@ -1,51 +1,23 @@
 /**
  * 보이스 옵션 관리 훅
- * 즐겨찾기 보이스 + 계정 보이스 통합 관리
+ * ElevenLabs (유료) + Browser TTS (무료) 통합 관리
  */
 
 'use client';
 
-import { useMemo, useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import { useStore } from '@/store/useStore';
 
 export interface VoiceOption {
   value: string;
   label: string;
-  type: 'favorite' | 'account' | 'free';
-}
-
-export interface FreeVoice {
-  id: string;
-  name: string;
-  gender: string;
-  description: string;
+  type: 'favorite' | 'account';
 }
 
 export function useVoiceOptions() {
   const { settings, currentProject } = useStore();
-  const [freeVoices, setFreeVoices] = useState<FreeVoice[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
 
-  // 무료 보이스 목록 로드
-  useEffect(() => {
-    const loadFreeVoices = async () => {
-      setIsLoading(true);
-      try {
-        const response = await fetch('/api/generate-voice-free');
-        const data = await response.json();
-        if (data.voices) {
-          setFreeVoices(data.voices);
-        }
-      } catch (error) {
-        console.error('[useVoiceOptions] Failed to load free voices:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    loadFreeVoices();
-  }, []);
-
-  // 즐겨찾기 보이스 옵션
+  // 즐겨찾기 보이스 옵션 (ElevenLabs 직접 등록)
   const favoriteVoiceOptions = useMemo<VoiceOption[]>(() => {
     return (settings.favoriteVoices || []).map((voice) => ({
       value: voice.id,
@@ -54,7 +26,7 @@ export function useVoiceOptions() {
     }));
   }, [settings.favoriteVoices]);
 
-  // 계정별 보이스 옵션
+  // 계정별 보이스 옵션 (ElevenLabs)
   const accountVoiceOptions = useMemo<VoiceOption[]>(() => {
     return settings.elevenLabsAccounts.flatMap((account, idx) =>
       account.voices.map((voice) => ({
@@ -65,19 +37,10 @@ export function useVoiceOptions() {
     );
   }, [settings.elevenLabsAccounts]);
 
-  // 무료 보이스 옵션
-  const freeVoiceOptions = useMemo<VoiceOption[]>(() => {
-    return freeVoices.map((voice) => ({
-      value: voice.id,
-      label: `🆓 ${voice.name} (${voice.gender})`,
-      type: 'free' as const,
-    }));
-  }, [freeVoices]);
-
-  // 전체 보이스 옵션 (즐겨찾기 우선)
+  // 전체 보이스 옵션 (즐겨찾기 → 계정)
   const allVoiceOptions = useMemo<VoiceOption[]>(() => {
-    return [...favoriteVoiceOptions, ...accountVoiceOptions, ...freeVoiceOptions];
-  }, [favoriteVoiceOptions, accountVoiceOptions, freeVoiceOptions]);
+    return [...favoriteVoiceOptions, ...accountVoiceOptions];
+  }, [favoriteVoiceOptions, accountVoiceOptions]);
 
   // ElevenLabs 보이스만 (유료)
   const elevenLabsVoiceOptions = useMemo<VoiceOption[]>(() => {
@@ -101,31 +64,19 @@ export function useVoiceOptions() {
     if (currentProject?.defaultVoiceId) {
       return currentProject.defaultVoiceId;
     }
-    // 즐겨찾기 첫 번째
-    if (favoriteVoiceOptions.length > 0) {
-      return favoriteVoiceOptions[0].value;
-    }
-    // 활성 계정의 첫 번째 보이스
-    if (activeAccountInfo) {
-      const accountVoices = activeAccountInfo.account.voices;
-      if (accountVoices.length > 0) {
-        return accountVoices[0].id;
-      }
+    // 첫 번째 사용 가능한 보이스
+    if (allVoiceOptions.length > 0) {
+      return allVoiceOptions[0].value;
     }
     return undefined;
-  }, [currentProject?.defaultVoiceId, favoriteVoiceOptions, activeAccountInfo]);
+  }, [currentProject?.defaultVoiceId, allVoiceOptions]);
 
   return {
     // 옵션 목록
     favoriteVoiceOptions,
     accountVoiceOptions,
-    freeVoiceOptions,
     allVoiceOptions,
     elevenLabsVoiceOptions,
-    
-    // 상태
-    isLoading,
-    freeVoices,
     
     // 계정 정보
     activeAccountInfo,

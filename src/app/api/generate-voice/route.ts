@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
           text: text,
           model_id: 'eleven_multilingual_v2', // 한국어 지원 모델
           voice_settings: {
-            stability: stability ?? 0.5,
+            stability: stability ?? 0.65, // 높은 안정성 (뭉개짐 방지)
             similarity_boost: similarityBoost ?? 0.75,
             style: style ?? 0,
             use_speaker_boost: true,

@@ -47,6 +47,8 @@ const defaultSettings: Settings = {
   geminiApiKey: '',
   openaiApiKey: '',
   llmProvider: 'gemini',
+  // Replicate API 키
+  replicateApiKey: '',
   defaultAspectRatio: '16:9',
   defaultImageStyle: 'realistic',
   defaultVoiceId: undefined,
@@ -135,7 +137,7 @@ const createDefaultProject = (name: string = '새 프로젝트'): Project => ({
   defaultMotionIntensity: 1.0,
   defaultCombineEffects: true,
   defaultPostAudioGap: 0.5,
-  defaultTTSEngine: 'edge-tts',
+  defaultTTSEngine: 'elevenlabs',
   bgmEnabled: false,
   bgmVolume: 0.3,
   subtitleEnabled: true,

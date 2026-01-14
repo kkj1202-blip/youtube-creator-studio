@@ -27,8 +27,8 @@ export type EmotionTag = 'normal' | 'emphasis' | 'whisper' | 'excited';
 
 export type RenderQuality = 'preview' | 'high' | 'ultra';
 
-// TTS 엔진 타입
-export type TTSEngine = 'elevenlabs' | 'edge-tts' | 'browser' | 'coqui';
+// TTS 엔진 타입 (ElevenLabs만 지원)
+export type TTSEngine = 'elevenlabs';
 
 // Ken Burns 세부 설정
 export interface KenBurnsSettings {
@@ -214,6 +214,9 @@ export interface Settings {
   geminiApiKey: string;
   openaiApiKey: string;
   llmProvider: 'gemini' | 'openai';
+  
+  // Replicate API 키
+  replicateApiKey: string;
   
   // 기본 설정
   defaultAspectRatio: AspectRatio;

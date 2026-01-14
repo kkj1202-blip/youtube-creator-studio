@@ -635,13 +635,14 @@ export async function renderAllScenes(
       await delay(500);
 
       // 브라우저 기반 렌더링 실행
+      // 씬별 설정이 없으면 프로젝트 기본값 사용
       const result = await renderVideo({
         imageUrl: scene.imageUrl!,
         audioUrl: scene.audioUrl!,
         aspectRatio: project.aspectRatio,
-        // 효과 설정
-        kenBurns: scene.kenBurns || 'none',
-        kenBurnsIntensity: scene.kenBurnsZoom || 15,
+        // 효과 설정 (씬 → 프로젝트 기본값 → 'none')
+        kenBurns: scene.kenBurns || project.defaultKenBurns || 'none',
+        kenBurnsIntensity: scene.kenBurnsZoom || project.defaultKenBurnsZoom || 15,
         transition: scene.transition || 'fade',
         // 품질 설정
         resolution: renderSettings?.resolution || '1080p',

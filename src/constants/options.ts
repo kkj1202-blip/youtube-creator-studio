@@ -53,23 +53,12 @@ export const motionEffectOptions: Array<{ value: MotionEffect; label: string }> 
   { value: 'parallax-strong', label: '🎭 3D 효과 (강하게)' },
 ];
 
-// ==================== TTS 엔진 옵션 ====================
+// ==================== TTS 엔진 옵션 (ElevenLabs만 지원) ====================
 export const ttsEngineOptions: Array<{ value: TTSEngine; label: string }> = [
-  { value: 'edge-tts', label: '🆓 Edge TTS (무료, 한국어)' },
-  { value: 'elevenlabs', label: '💎 ElevenLabs (유료, 고품질)' },
-  { value: 'browser', label: '🌐 브라우저 TTS (무료, 즉시)' },
+  { value: 'elevenlabs', label: '💎 ElevenLabs (고품질 음성)' },
 ];
 
-// ==================== 무료 한국어 보이스 (Edge TTS) ====================
-export const freeKoreanVoices: Array<{ value: string; label: string }> = [
-  { value: 'ko-KR-SunHiNeural', label: '선희 (여성, 밝은)' },
-  { value: 'ko-KR-InJoonNeural', label: '인준 (남성, 전문적)' },
-  { value: 'ko-KR-BongJinNeural', label: '봉진 (남성, 따뜻한)' },
-  { value: 'ko-KR-GookMinNeural', label: '국민 (남성, 차분한)' },
-  { value: 'ko-KR-JiMinNeural', label: '지민 (여성, 활발한)' },
-  { value: 'ko-KR-SeoHyeonNeural', label: '서현 (여성, 차분한)' },
-  { value: 'ko-KR-YuJinNeural', label: '유진 (여성, 젊은)' },
-];
+
 
 // ==================== 화면 비율 옵션 ====================
 export const aspectRatioOptions: Array<{ value: '16:9' | '9:16'; label: string }> = [
