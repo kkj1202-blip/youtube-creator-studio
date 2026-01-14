@@ -103,7 +103,6 @@ const BatchActions: React.FC = () => {
     applyToAllScenes,
   } = useStore();
 
-  const [showBulkSettings, setShowBulkSettings] = useState(false);
   const [showBatchImageUploader, setShowBatchImageUploader] = useState(false);
   const [showCharacterAnalyzer, setShowCharacterAnalyzer] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
@@ -116,15 +115,7 @@ const BatchActions: React.FC = () => {
     startTime: null,
     currentSceneNumber: 0,
   });
-  const [bulkSettings, setBulkSettings] = useState({
-    voiceSpeed: 1.0,
-    emotion: 'normal' as EmotionTag,
-    transition: 'fade' as TransitionType,
-    kenBurns: 'random' as KenBurnsEffect,
-    kenBurnsZoom: 15, // Ken Burns 강도 (기본 15%)
-    postAudioGap: 0.5,
-    subtitleEnabled: true,
-  });
+  // bulkSettings 제거됨 - 프로젝트 설정으로 통합
 
   if (!currentProject) return null;
 
@@ -705,10 +696,7 @@ const BatchActions: React.FC = () => {
     }
   }, [currentProject, settings, activeAccountIndex, hasImageApiKey, hasVoiceApiKey, hasDefaultVoice, updateScene]);
 
-  const handleApplyBulkSettings = () => {
-    applyToAllScenes(bulkSettings);
-    alert('모든 씬에 설정이 적용되었습니다.');
-  };
+  // handleApplyBulkSettings 제거됨 - 프로젝트 설정으로 통합
 
   const handleClearErrors = () => {
     scenes.forEach((scene) => {
@@ -1211,130 +1199,7 @@ const BatchActions: React.FC = () => {
         </div>
       </Card>
 
-      {/* Bulk Settings */}
-      <Card>
-        <button
-          className="w-full flex items-center justify-between text-left"
-          onClick={() => setShowBulkSettings(!showBulkSettings)}
-        >
-          <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-            <Settings2 className="w-4 h-4 text-primary" />
-            일괄 설정
-          </h3>
-          {showBulkSettings ? (
-            <ChevronUp className="w-4 h-4 text-muted" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-muted" />
-          )}
-        </button>
-
-        <AnimatePresence>
-          {showBulkSettings && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
-              <div className="mt-4 space-y-4">
-                <Slider
-                  label="음성 속도"
-                  value={bulkSettings.voiceSpeed}
-                  onChange={(value) =>
-                    setBulkSettings((prev) => ({ ...prev, voiceSpeed: value }))
-                  }
-                  min={0.8}
-                  max={1.3}
-                  step={0.1}
-                  unit="x"
-                />
-
-                <Select
-                  label="감정"
-                  options={emotionOptions}
-                  value={bulkSettings.emotion}
-                  onChange={(value) =>
-                    setBulkSettings((prev) => ({
-                      ...prev,
-                      emotion: value as EmotionTag,
-                    }))
-                  }
-                />
-
-                <Select
-                  label="씬 전환"
-                  options={transitionOptions}
-                  value={bulkSettings.transition}
-                  onChange={(value) =>
-                    setBulkSettings((prev) => ({
-                      ...prev,
-                      transition: value as TransitionType,
-                    }))
-                  }
-                />
-
-                <Select
-                  label="🎬 Ken Burns 효과"
-                  options={kenBurnsOptions}
-                  value={bulkSettings.kenBurns}
-                  onChange={(value) =>
-                    setBulkSettings((prev) => ({
-                      ...prev,
-                      kenBurns: value as KenBurnsEffect,
-                    }))
-                  }
-                />
-
-                {/* Ken Burns 강도 (효과 선택 시에만 표시) */}
-                {bulkSettings.kenBurns !== 'none' && (
-                  <Slider
-                    label="📐 Ken Burns 강도"
-                    value={bulkSettings.kenBurnsZoom}
-                    onChange={(value) =>
-                      setBulkSettings((prev) => ({ ...prev, kenBurnsZoom: value }))
-                    }
-                    min={5}
-                    max={50}
-                    step={5}
-                    unit="%"
-                  />
-                )}
-
-                <Slider
-                  label="음성 후 여백"
-                  value={bulkSettings.postAudioGap}
-                  onChange={(value) =>
-                    setBulkSettings((prev) => ({ ...prev, postAudioGap: value }))
-                  }
-                  min={0}
-                  max={3}
-                  step={0.1}
-                  unit="초"
-                />
-
-                <Toggle
-                  label="자막 표시"
-                  checked={bulkSettings.subtitleEnabled}
-                  onChange={(checked) =>
-                    setBulkSettings((prev) => ({
-                      ...prev,
-                      subtitleEnabled: checked,
-                    }))
-                  }
-                />
-
-                <Button
-                  variant="primary"
-                  className="w-full"
-                  onClick={handleApplyBulkSettings}
-                >
-                  모든 씬에 적용
-                </Button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </Card>
+      {/* 일괄 설정은 "프로젝트 설정"으로 이동됨 - UI 단순화 */}
 
       {/* Reset Actions */}
       <Card>
