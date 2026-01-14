@@ -71,7 +71,7 @@ export async function generateImage(
         prompt: params.prompt,
         style: params.style,
         aspectRatio: params.aspectRatio,
-        negativePrompt: params.negativePrompt || 'low quality, blurry, distorted, ugly, bad anatomy',
+        negativePrompt: params.negativePrompt || 'text, watermark, signature, logo, words, letters, blurry, low quality, distorted, deformed, ugly, bad anatomy, cropped',
       }),
     });
 
