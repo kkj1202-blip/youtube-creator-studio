@@ -108,6 +108,48 @@ const MotionEffects: React.FC<MotionEffectsProps> = ({
           transform: `translate(${shakeX}px, ${shakeY}px) rotate(${shakeRotate}deg)`,
         };
 
+      // ============ 캐릭터 애니메이션 효과 (NEW) ============
+      case 'eye-blink':
+        // 눈 깜빡임: 주기적으로 세로로 살짝 찌그러짐 (눈 감는 효과)
+        // 3~5초마다 깜빡임 발생
+        const blinkCycle = 4; // 4초 주기
+        const blinkPhase = (t % blinkCycle);
+        // 깜빡임 순간 (0.15초)
+        const isBlinking = blinkPhase < 0.15;
+        const blinkScaleY = isBlinking ? 0.95 : 1.0;
+        const blinkScaleX = isBlinking ? 1.01 : 1.0; // 살짝 넓어짐
+        return {
+          transform: `scale(${blinkScaleX}, ${blinkScaleY})`,
+          transformOrigin: 'center 40%', // 눈 위치 (상단 40%)
+          transition: isBlinking ? 'transform 0.05s ease-in' : 'transform 0.1s ease-out',
+        };
+
+      case 'head-bob':
+        // 고개 끄덕임: 상하 + 미세한 회전
+        const bobY = Math.sin(t * 1.2) * 3 * i;
+        const bobRotate = Math.sin(t * 0.8) * 0.8 * i;
+        const bobScale = 1 + Math.sin(t * 0.6) * 0.005 * i;
+        return {
+          transform: `translateY(${bobY}px) rotate(${bobRotate}deg) scale(${bobScale})`,
+          transformOrigin: 'center bottom',
+          transition: 'transform 0.15s ease-out',
+        };
+
+      case 'subtle-life':
+        // 미세한 생동감: 호흡 + 눈 깜빡임 조합
+        const lifeBreath = 1 + Math.sin(t * 0.5) * 0.015 * i;
+        const lifeBlinkCycle = 3.5;
+        const lifeBlinkPhase = (t % lifeBlinkCycle);
+        const lifeIsBlinking = lifeBlinkPhase < 0.12;
+        const lifeScaleY = lifeIsBlinking ? lifeBreath * 0.97 : lifeBreath;
+        // 미세한 좌우 흔들림
+        const lifeSway = Math.sin(t * 0.3) * 0.3 * i;
+        return {
+          transform: `scale(${lifeBreath}, ${lifeScaleY}) translateX(${lifeSway}px)`,
+          transformOrigin: 'center 40%',
+          transition: lifeIsBlinking ? 'transform 0.04s ease-in' : 'transform 0.2s ease-out',
+        };
+
       case 'parallax-soft':
       case 'parallax-medium':
       case 'parallax-strong':

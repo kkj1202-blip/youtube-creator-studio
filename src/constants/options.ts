@@ -45,13 +45,19 @@ export const kenBurnsOptionsSimple: Array<{ value: KenBurnsEffect; label: string
 // ==================== 모션 효과 옵션 ====================
 export const motionEffectOptions: Array<{ value: MotionEffect; label: string }> = [
   { value: 'none', label: '없음' },
+  // 기본 효과
   { value: 'breathing', label: '🫁 호흡 효과 (부드러운 확대/축소)' },
   { value: 'pulse', label: '💓 펄스 효과 (심장 박동)' },
   { value: 'float', label: '🎈 떠다니기 (상하 움직임)' },
   { value: 'shake', label: '📳 미세 흔들림' },
+  // 3D 효과
   { value: 'parallax-soft', label: '🎭 3D 효과 (약하게)' },
   { value: 'parallax-medium', label: '🎭 3D 효과 (보통)' },
   { value: 'parallax-strong', label: '🎭 3D 효과 (강하게)' },
+  // 캐릭터 애니메이션 (NEW)
+  { value: 'eye-blink', label: '👁️ 눈 깜빡임 (캐릭터용)' },
+  { value: 'head-bob', label: '🙂 고개 끄덕임 (캐릭터용)' },
+  { value: 'subtle-life', label: '✨ 미세 생동감 (눈깜빡임+호흡)' },
 ];
 
 // ==================== TTS 엔진 옵션 (ElevenLabs만 지원) ====================

@@ -20,8 +20,20 @@ export type TransitionType = 'none' | 'fade' | 'slide';
 
 export type KenBurnsEffect = 'none' | 'random' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down';
 
-// 새로운 모션 효과 타입
-export type MotionEffect = 'none' | 'breathing' | 'pulse' | 'float' | 'shake' | 'parallax-soft' | 'parallax-medium' | 'parallax-strong';
+// 새로운 모션 효과 타입 (캐릭터 애니메이션 포함)
+export type MotionEffect = 
+  | 'none' 
+  | 'breathing' 
+  | 'pulse' 
+  | 'float' 
+  | 'shake' 
+  | 'parallax-soft' 
+  | 'parallax-medium' 
+  | 'parallax-strong'
+  // 캐릭터 애니메이션 효과 (NEW)
+  | 'eye-blink'      // 눈 깜빡임
+  | 'head-bob'       // 고개 끄덕임
+  | 'subtle-life';   // 미세한 생동감 (눈깜빡임 + 호흡)
 
 export type EmotionTag = 'normal' | 'emphasis' | 'whisper' | 'excited';
 
@@ -155,6 +167,12 @@ export interface Project {
   // 자막 설정
   subtitleEnabled: boolean;
   subtitleStyle: SubtitleStyle;
+  
+  // SadTalker 설정 (캐릭터 얼굴 애니메이션)
+  sadTalkerEnabled?: boolean;          // SadTalker 사용 여부
+  sadTalkerMode?: 'local' | 'replicate'; // 처리 모드
+  sadTalkerLocalUrl?: string;          // 로컬 서버 URL
+  sadTalkerReplicateKey?: string;      // Replicate API 키
   
   // 렌더링 설정
   renderSettings: RenderSettings;

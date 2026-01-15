@@ -59,8 +59,8 @@ export const imageStyleLibrary: StyleCategory[] = [
       },
       {
         id: 'stickman',
-        name: '졸라맨 (Premium Expressive Stickman)',
-        prompt: 'Premium minimalist stickman character with highly expressive integrated facial features, sleek fluid motion lines suggesting movement, clean professional 2D motion graphics aesthetic, pure vector art on clean dark studio background, dynamic action poses, cinematic single-point lighting highlighting character form, bold contrasting colors',
+        name: '졸라맨 (Expressive Stickman)',
+        prompt: 'Simple black stick figure character with round head, highly expressive body language, clean minimal line art style, cartoon stickman with action poses, bold black lines on colorful illustrated background matching the scene, comic strip aesthetic, dynamic motion lines',
       },
       {
         id: 'claymation',
@@ -275,80 +275,151 @@ export function generateConsistencyPrompt(settings: ConsistencySettings): string
 }
 
 /**
- * 한글 대본을 영어 씬 설명으로 변환
- * 간단한 키워드 기반 변환 (LLM 없이)
+ * 한글 대본을 영어 씬 설명으로 변환 v2.0
+ * 더 많은 배경/행동/감정 키워드 지원
  */
 function convertScriptToEnglishScene(script: string): string {
-  // 핵심 키워드 추출 및 영어 변환
   const keywords: string[] = [];
   
-  // 장소/상황 키워드
+  // ========== 장소/배경 (가장 중요!) ==========
+  // 자연
+  if (script.includes('숲') || script.includes('나무') || script.includes('산')) {
+    keywords.push('lush green forest background');
+  }
+  if (script.includes('바다') || script.includes('해변') || script.includes('모래')) {
+    keywords.push('beach scenery with ocean');
+  }
+  if (script.includes('하늘') || script.includes('구름')) {
+    keywords.push('blue sky with clouds');
+  }
+  if (script.includes('공원') || script.includes('잔디')) {
+    keywords.push('park with green grass');
+  }
+  if (script.includes('도시') || script.includes('빌딩') || script.includes('건물')) {
+    keywords.push('urban city with buildings');
+  }
+  
+  // 실내
+  if (script.includes('집') || script.includes('방') || script.includes('거실')) {
+    keywords.push('cozy home interior');
+  }
+  if (script.includes('사무실') || script.includes('회사') || script.includes('업무') || script.includes('업체')) {
+    keywords.push('modern office interior');
+  }
+  if (script.includes('학교') || script.includes('교실') || script.includes('수업')) {
+    keywords.push('school classroom');
+  }
+  if (script.includes('카페') || script.includes('커피') || script.includes('음료')) {
+    keywords.push('cozy cafe');
+  }
+  if (script.includes('식당') || script.includes('음식') || script.includes('밥')) {
+    keywords.push('restaurant setting');
+  }
+  if (script.includes('병원') || script.includes('의사')) {
+    keywords.push('hospital setting');
+  }
   if (script.includes('통장') || script.includes('은행') || script.includes('돈')) {
-    keywords.push('bank office scene');
+    keywords.push('bank office');
   }
-  if (script.includes('회사') || script.includes('사무실') || script.includes('업체') || script.includes('거래')) {
-    keywords.push('corporate office meeting');
-  }
-  if (script.includes('집') || script.includes('방')) {
-    keywords.push('home interior');
-  }
-  if (script.includes('거리') || script.includes('길')) {
+  
+  // 기타 장소
+  if (script.includes('길') || script.includes('거리') || script.includes('골목')) {
     keywords.push('street scene');
   }
-  
-  // 감정/상황 키워드
-  if (script.includes('화') || script.includes('분노') || script.includes('짜증')) {
-    keywords.push('angry expression');
-  }
-  if (script.includes('슬') || script.includes('우울') || script.includes('눈물')) {
-    keywords.push('sad emotional');
-  }
-  if (script.includes('놀') || script.includes('충격') || script.includes('깜짝')) {
-    keywords.push('shocked surprised');
-  }
-  if (script.includes('행복') || script.includes('기쁨') || script.includes('웃')) {
-    keywords.push('happy smiling');
-  }
-  if (script.includes('걱정') || script.includes('불안') || script.includes('고민')) {
-    keywords.push('worried anxious');
+  if (script.includes('차') || script.includes('자동차') || script.includes('운전')) {
+    keywords.push('car interior');
   }
   
-  // 행동 키워드
-  if (script.includes('말') || script.includes('대화') || script.includes('이야기')) {
-    keywords.push('talking conversation');
+  // ========== 행동 ==========
+  if (script.includes('걷') || script.includes('걸') || script.includes('산책')) {
+    keywords.push('walking');
+  }
+  if (script.includes('뛰') || script.includes('달리')) {
+    keywords.push('running');
   }
   if (script.includes('앉') || script.includes('의자')) {
     keywords.push('sitting');
   }
-  if (script.includes('서') || script.includes('일어')) {
+  if (script.includes('서') || script.includes('서있') || script.includes('일어')) {
     keywords.push('standing');
   }
-  if (script.includes('걸') || script.includes('이동')) {
-    keywords.push('walking');
+  if (script.includes('말') || script.includes('대화') || script.includes('이야기') || script.includes('얘기')) {
+    keywords.push('talking');
+  }
+  if (script.includes('먹') || script.includes('식사') || script.includes('마시')) {
+    keywords.push('eating');
+  }
+  if (script.includes('울') || script.includes('눈물')) {
+    keywords.push('crying');
+  }
+  if (script.includes('웃') || script.includes('미소')) {
+    keywords.push('laughing smiling');
+  }
+  if (script.includes('포옹') || script.includes('안')) {
+    keywords.push('hugging');
+  }
+  if (script.includes('싸') || script.includes('다투')) {
+    keywords.push('arguing');
   }
   
-  // 인물 수
-  if (script.includes('혼자') || script.includes('나')) {
-    keywords.push('single person');
+  // ========== 감정 ==========
+  if (script.includes('행복') || script.includes('기쁨') || script.includes('좋')) {
+    keywords.push('happy expression');
   }
-  if (script.includes('둘') || script.includes('함께') || script.includes('같이')) {
-    keywords.push('two people');
+  if (script.includes('슬') || script.includes('우울') || script.includes('속상')) {
+    keywords.push('sad expression');
   }
-  if (script.includes('여러') || script.includes('모두') || script.includes('다같이')) {
-    keywords.push('group of people');
+  if (script.includes('화') || script.includes('분노') || script.includes('짜증') || script.includes('열받')) {
+    keywords.push('angry expression');
+  }
+  if (script.includes('놀') || script.includes('충격') || script.includes('깜짝') || script.includes('헉')) {
+    keywords.push('shocked surprised');
+  }
+  if (script.includes('걱정') || script.includes('불안') || script.includes('고민')) {
+    keywords.push('worried thinking');
+  }
+  if (script.includes('사랑') || script.includes('좋아') || script.includes('설레')) {
+    keywords.push('romantic feeling');
   }
   
-  // 시간대
+  // ========== 시간대/날씨 ==========
   if (script.includes('아침') || script.includes('오전')) {
     keywords.push('morning light');
   }
-  if (script.includes('저녁') || script.includes('밤') || script.includes('야간')) {
-    keywords.push('evening night');
+  if (script.includes('저녁') || script.includes('노을')) {
+    keywords.push('evening sunset');
+  }
+  if (script.includes('밤') || script.includes('야간') || script.includes('어두')) {
+    keywords.push('nighttime');
+  }
+  if (script.includes('비') || script.includes('우산')) {
+    keywords.push('rainy weather');
   }
   
-  // 기본 씬 설명 추가
+  // ========== 인물 수 ==========
+  if (script.includes('혼자') || script.includes('홀로')) {
+    keywords.push('single person');
+  } else if (script.includes('둘') || script.includes('함께') || script.includes('같이')) {
+    keywords.push('two people');
+  } else if (script.includes('여러') || script.includes('모두') || script.includes('다같이')) {
+    keywords.push('group of people');
+  }
+  
+  // ========== 기본값 + 배경 보정 ==========
   if (keywords.length === 0) {
-    keywords.push('character scene');
+    keywords.push('character in colorful illustrated scene');
+  }
+  
+  // 배경이 없으면 기본 배경 추가
+  const hasBackground = keywords.some(k => 
+    k.includes('interior') || k.includes('background') || k.includes('scene') || 
+    k.includes('setting') || k.includes('cafe') || k.includes('office') ||
+    k.includes('park') || k.includes('forest') || k.includes('beach') ||
+    k.includes('city') || k.includes('street') || k.includes('school')
+  );
+  
+  if (!hasBackground) {
+    keywords.push('with colorful illustrated background');
   }
   
   return keywords.join(', ');
