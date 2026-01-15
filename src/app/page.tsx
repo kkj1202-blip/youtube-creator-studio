@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -26,19 +27,19 @@ import {
   ScriptInput,
   ProjectSettings,
   BatchActions,
-  FullPreviewPlayer,
 } from '@/components/scenes';
 import { Button, Card, Modal, Input, Tabs } from '@/components/ui';
-import {
-  SEOOptimizer,
-  BrandingPresets,
-  PerformancePredictor,
-  ScriptAssistant,
-  MultiPlatformExport,
-  KeyboardShortcutsHelp,
-} from '@/components/tools';
 import { useStore } from '@/store/useStore';
 import { useKeyboardShortcuts, ShortcutConfig } from '@/hooks/useKeyboardShortcuts';
+
+// 🚀 Dynamic imports for heavy modal components (loads on demand)
+const FullPreviewPlayer = dynamic(() => import('@/components/scenes/FullPreviewPlayer'), { ssr: false });
+const SEOOptimizer = dynamic(() => import('@/components/tools/SEOOptimizer'), { ssr: false });
+const BrandingPresets = dynamic(() => import('@/components/tools/BrandingPresets'), { ssr: false });
+const PerformancePredictor = dynamic(() => import('@/components/tools/PerformancePredictor'), { ssr: false });
+const ScriptAssistant = dynamic(() => import('@/components/tools/ScriptAssistant'), { ssr: false });
+const MultiPlatformExport = dynamic(() => import('@/components/tools/MultiPlatformExport'), { ssr: false });
+const KeyboardShortcutsHelp = dynamic(() => import('@/components/tools/KeyboardShortcutsHelp'), { ssr: false });
 
 type EditorView = 'input' | 'editor';
 type EditorTab = 'scenes' | 'settings';

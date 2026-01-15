@@ -1,6 +1,16 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // 🚀 번들 최적화: barrel import 자동 최적화
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'framer-motion',
+      'date-fns',
+      '@radix-ui/react-icons',
+    ],
+  },
+  
   // FFmpeg WASM을 위한 헤더 설정
   async headers() {
     return [
