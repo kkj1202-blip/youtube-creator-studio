@@ -261,6 +261,18 @@ const ProjectSettings: React.FC = () => {
             />
           </div>
           <Slider
+            label="카메라 모션 강도"
+            value={currentProject.defaultKenBurnsZoom || 15}
+            onChange={(value) => updateProject({ defaultKenBurnsZoom: value })}
+            min={5}
+            max={40}
+            step={5}
+            unit="%"
+          />
+          <p className="text-xs text-muted -mt-2">
+            낮을수록 느리고 부드럽게, 높을수록 빠르고 역동적으로
+          </p>
+          <Slider
             label="기본 음성 후 여백"
             value={currentProject.defaultPostAudioGap}
             onChange={(value) => updateProject({ defaultPostAudioGap: value })}
@@ -275,6 +287,7 @@ const ProjectSettings: React.FC = () => {
             onClick={() => {
               handleApplyToAll('transition', currentProject.defaultTransition);
               handleApplyToAll('kenBurns', currentProject.defaultKenBurns);
+              handleApplyToAll('kenBurnsZoom', currentProject.defaultKenBurnsZoom);
               handleApplyToAll('postAudioGap', currentProject.defaultPostAudioGap);
             }}
           >
