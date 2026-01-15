@@ -330,65 +330,128 @@ function convertScriptToEnglishScene(script: string): string {
     keywords.push('car interior');
   }
   
-  // ========== 행동 ==========
+  // ========== 행동 (대폭 확장!) ==========
+  // 이동
   if (script.includes('걷') || script.includes('걸') || script.includes('산책')) {
     keywords.push('walking');
   }
   if (script.includes('뛰') || script.includes('달리')) {
     keywords.push('running');
   }
+  
+  // 자세
   if (script.includes('앉') || script.includes('의자')) {
     keywords.push('sitting');
   }
   if (script.includes('서') || script.includes('서있') || script.includes('일어')) {
     keywords.push('standing');
   }
+  if (script.includes('누') || script.includes('눕')) {
+    keywords.push('lying down');
+  }
+  
+  // 소통
   if (script.includes('말') || script.includes('대화') || script.includes('이야기') || script.includes('얘기')) {
-    keywords.push('talking');
+    keywords.push('talking speaking');
   }
+  if (script.includes('듣') || script.includes('들었') || script.includes('경청')) {
+    keywords.push('listening attentively');
+  }
+  if (script.includes('전화') || script.includes('통화')) {
+    keywords.push('on the phone calling');
+  }
+  
+  // 시선/관찰
+  if (script.includes('보') || script.includes('쳐다') || script.includes('바라')) {
+    keywords.push('looking at watching');
+  }
+  if (script.includes('찾') || script.includes('발견')) {
+    keywords.push('searching finding');
+  }
+  
+  // 음식
   if (script.includes('먹') || script.includes('식사') || script.includes('마시')) {
-    keywords.push('eating');
+    keywords.push('eating drinking');
   }
+  
+  // 감정 표현
   if (script.includes('울') || script.includes('눈물')) {
-    keywords.push('crying');
+    keywords.push('crying tears');
   }
   if (script.includes('웃') || script.includes('미소')) {
-    keywords.push('laughing smiling');
+    keywords.push('laughing smiling joyful');
   }
-  // "안기", "포옹"만 포함 (단순 "안"은 제외)
+  
+  // 신체 접촉
   if (script.includes('포옹') || script.includes('안기') || script.includes('안아')) {
-    keywords.push('hugging');
+    keywords.push('hugging embracing');
   }
+  if (script.includes('손잡') || script.includes('손을 잡')) {
+    keywords.push('holding hands together');
+  }
+  if (script.includes('악수')) {
+    keywords.push('handshake greeting');
+  }
+  
+  // 갈등
   if (script.includes('싸') || script.includes('다투')) {
-    keywords.push('arguing');
+    keywords.push('arguing conflict');
   }
-  // 추가: 손 흔들기, 인사
+  
+  // 인사/이별
   if (script.includes('손을 흔') || script.includes('흔들') || script.includes('인사')) {
-    keywords.push('waving goodbye');
+    keywords.push('waving hand greeting');
   }
-  // 추가: 떠나기, 떠남
   if (script.includes('떠나') || script.includes('떠났') || script.includes('출발')) {
-    keywords.push('departing leaving');
+    keywords.push('leaving departing');
   }
-  // 추가: 새로운 시작
-  if (script.includes('시작') || script.includes('새로운')) {
-    keywords.push('new beginning');
+  if (script.includes('헤어') || script.includes('이별') || script.includes('작별')) {
+    keywords.push('parting farewell goodbye');
   }
-  // 추가: 마을 관련
+  if (script.includes('만나') || script.includes('만났') || script.includes('재회')) {
+    keywords.push('meeting reunion greeting');
+  }
+  
+  // 지시/동작
+  if (script.includes('가리') || script.includes('가르') || script.includes('알려')) {
+    keywords.push('pointing showing teaching');
+  }
+  if (script.includes('끄덕') || script.includes('고개')) {
+    keywords.push('nodding head');
+  }
+  if (script.includes('도') || script.includes('도움') || script.includes('도와')) {
+    keywords.push('helping assisting');
+  }
+  
+  // 기다림/생각
+  if (script.includes('기다') || script.includes('대기')) {
+    keywords.push('waiting patiently');
+  }
+  if (script.includes('생각') || script.includes('고민') || script.includes('고려')) {
+    keywords.push('thinking contemplating');
+  }
+  
+  // 시작/새로움
+  if (script.includes('시작') || script.includes('새로운') || script.includes('첫')) {
+    keywords.push('new beginning starting fresh');
+  }
+  
+  // 마을/장소
   if (script.includes('마을') || script.includes('동네') || script.includes('주민')) {
-    keywords.push('village town scene');
+    keywords.push('village town community');
   }
-  // 추가: 해, 아침
+  
+  // 시간대
   if (script.includes('해가') || script.includes('해 뜨') || script.includes('떠오')) {
-    keywords.push('sunrise morning');
+    keywords.push('sunrise morning dawn');
   }
   
   // ========== 감정 ==========
-  if (script.includes('행복') || script.includes('기쁨') || script.includes('좋')) {
-    keywords.push('happy expression');
+  if (script.includes('행복') || script.includes('기쁨') || script.includes('좋') || script.includes('신나')) {
+    keywords.push('happy joyful expression');
   }
-  if (script.includes('슬') || script.includes('우울') || script.includes('속상')) {
-    keywords.push('sad expression');
+  if (script.includes('슬') || script.includes('우울') || script.includes('속상') || script.includes('외로')) {
+    keywords.push('sad melancholy expression');
   }
   if (script.includes('화') || script.includes('분노') || script.includes('짜증') || script.includes('열받')) {
     keywords.push('angry expression');
@@ -447,27 +510,25 @@ function convertScriptToEnglishScene(script: string): string {
 }
 
 /**
- * 최종 이미지 프롬프트 생성 v3.0
- * 스마트 프롬프트 예산 분배 시스템
+ * 최종 이미지 프롬프트 생성 v4.0
+ * 씬 중심 프롬프트 시스템
  * 
  * 프롬프트 구성 (우선순위 순):
- * 1. 캐릭터 일관성 (최중요 - 200자)
- * 2. 씬 설명 (중요 - 150자)  
- * 3. 스타일 프롬프트 (나머지 - 최대 400자)
- * 4. 품질 키워드 (50자)
- * 5. 일관성 키워드 (50자)
+ * 1. 스타일 핵심 (짧게) - 100자
+ * 2. 씬 설명 (가장 중요!) - 300자
+ * 3. 캐릭터 일관성 - 200자
+ * 4. 품질 + 일관성 - 100자
  * 
  * KIE API 최대 프롬프트 길이: 약 1000자
  */
 const MAX_PROMPT_LENGTH = 900; // 안전 마진
 
-// 예산 할당 (우선순위 기반)
+// 예산 할당 (씬 중심으로 재조정)
 const BUDGET = {
-  character: 200,   // 캐릭터 일관성 (가장 중요)
-  scene: 150,       // 씬 설명
-  style: 400,       // 스타일 프롬프트
-  quality: 50,      // 품질 키워드
-  consistency: 50,  // 일관성 키워드
+  styleCore: 100,     // 스타일 핵심 (짧게!)
+  scene: 300,         // 씬 설명 (가장 큰 예산!)
+  character: 200,     // 캐릭터 일관성
+  quality: 100,       // 품질 + 일관성
 };
 
 export function buildFinalPrompt(
@@ -476,70 +537,49 @@ export function buildFinalPrompt(
   consistencySettings?: ConsistencySettings
 ): string {
   const parts: string[] = [];
-  let usedLength = 0;
   
-  // ============ 1. 캐릭터 일관성 (최우선) ============
-  // 캐릭터가 없으면 다른 요소에 예산 재분배
-  let characterPart = '';
-  if (consistencySettings?.characterDescription) {
-    characterPart = consistencySettings.characterDescription.slice(0, BUDGET.character);
-    parts.push(`[Character: ${characterPart}]`);
-    usedLength += characterPart.length + 15; // "[Character: ]" 오버헤드
+  // ============ 1. 스타일 핵심 (짧게) ============
+  // 스타일의 핵심 부분만 추출 (100자)
+  if (stylePrompt) {
+    const styleCore = stylePrompt.slice(0, BUDGET.styleCore);
+    parts.push(styleCore);
   }
   
-  // ============ 2. 씬 설명 (중요) ============
-  // 한글 대본 → 영어 키워드 변환 + 원본 대본 일부 포함
-  let scenePart = '';
+  // ============ 2. 씬 설명 (가장 중요!) ============
+  // 한글 대본 → 영어 키워드 변환 + 원본 포함
   if (sceneDescription) {
     const englishScene = convertScriptToEnglishScene(sceneDescription);
-    // 원본 대본에서 핵심 단어 추출 (50자까지)
-    const koreanHint = sceneDescription.slice(0, 50);
-    scenePart = `[Scene: ${englishScene}] (${koreanHint})`;
-    scenePart = scenePart.slice(0, BUDGET.scene + 50); // 씬에 추가 예산
-    parts.push(scenePart);
-    usedLength += scenePart.length;
+    // 영어 씬을 먼저, 한글 힌트를 뒤에 (더 긴 힌트)
+    const koreanHint = sceneDescription.slice(0, 80);
+    const scenePart = `[Action: ${englishScene}], (Korean context: ${koreanHint})`;
+    parts.push(scenePart.slice(0, BUDGET.scene));
   }
   
-  // ============ 3. 스타일 프롬프트 (남은 예산 사용) ============
-  // 캐릭터/씬에서 사용하지 않은 예산을 스타일에 추가
-  const unusedBudget = (BUDGET.character - (characterPart.length || 0)) + 
-                       (BUDGET.scene - (scenePart.length || 0));
-  const styleBudget = BUDGET.style + unusedBudget;
-  
-  if (stylePrompt) {
-    // 스타일 프롬프트 - 씬 다음에 배치 (unshift 제거!)
-    const trimmedStyle = stylePrompt.slice(0, styleBudget);
-    parts.push(trimmedStyle); // 맨 뒤에 배치
-    usedLength += trimmedStyle.length;
+  // ============ 3. 캐릭터 일관성 ============
+  if (consistencySettings?.characterDescription) {
+    const characterPart = consistencySettings.characterDescription.slice(0, BUDGET.character);
+    parts.push(`[Same character: ${characterPart}]`);
   }
   
-  // ============ 4. 품질 키워드 (간소화) ============
-  const qualityKeywords = 'masterpiece, 8k, highly detailed';
-  parts.push(qualityKeywords);
-  usedLength += qualityKeywords.length;
+  // ============ 4. 품질 + 일관성 키워드 ============
+  parts.push('masterpiece, 8k, highly detailed, consistent character, same style');
   
-  // ============ 5. 일관성 키워드 ============
-  if (characterPart) {
-    parts.push('same character, consistent style');
-  } else {
-    parts.push('consistent style');
-  }
-  
-  // 최종 조합 (순서: 씬 → 캐릭터 → 스타일 → 품질 → 일관성)
+  // 최종 조합
   let finalPrompt = parts.join(', ');
   
-  // 안전망: 여전히 초과하면 자름
+  // 안전망: 초과하면 자름
   if (finalPrompt.length > MAX_PROMPT_LENGTH) {
     console.warn(`[buildFinalPrompt] 프롬프트 길이 초과: ${finalPrompt.length}자 → ${MAX_PROMPT_LENGTH}자로 자름`);
     finalPrompt = finalPrompt.slice(0, MAX_PROMPT_LENGTH);
   }
   
   // 디버그 로그
-  console.log('[buildFinalPrompt] 프롬프트 구조:');
-  console.log(`  1. 씬 설명: ${scenePart.slice(0, 50)}...`);
-  console.log(`  2. 캐릭터: ${characterPart.slice(0, 30)}...`);
-  console.log(`  3. 스타일: ${stylePrompt?.slice(0, 30) || 'N/A'}...`);
+  console.log('[buildFinalPrompt] v4.0 씬 중심 프롬프트:');
+  console.log(`  1. 스타일: ${stylePrompt?.slice(0, 30) || 'N/A'}...`);
+  console.log(`  2. 씬: ${sceneDescription?.slice(0, 40) || 'N/A'}...`);
+  console.log(`  3. 캐릭터: ${consistencySettings?.characterDescription?.slice(0, 30) || 'N/A'}...`);
   console.log(`  - 총 길이: ${finalPrompt.length}/${MAX_PROMPT_LENGTH}자`);
+  console.log(`  - 최종: ${finalPrompt.slice(0, 100)}...`);
   
   return finalPrompt;
 }
