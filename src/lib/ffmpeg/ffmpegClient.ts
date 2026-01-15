@@ -280,14 +280,13 @@ function calculateMotionEffect(
   effect: MotionEffect,
   time: number,  // 현재 시간 (초)
   intensity: number = 1.0
-): { scale: number; translateX: number; translateY: number; brightness: number; rotate: number } {
+): { scale: number; translateX: number; translateY: number; rotate: number } {
   const i = intensity;
   const t = time;
   
   let scale = 1.0;
   let translateX = 0;
   let translateY = 0;
-  let brightness = 1.0;
   let rotate = 0;
   
   switch (effect) {
@@ -312,9 +311,10 @@ function calculateMotionEffect(
       break;
       
     case 'eye-blink':
-      // 4초 주기로 미세한 눈 깜박임 (밝기 미세 변화)
+      // 눈 깜박임 효과: 미세한 스케일 변화로 표현 (화면 깜박임 없음)
       const blinkPhase = (t * 0.25) % 1;
-      brightness = (blinkPhase > 0.95 || blinkPhase < 0.05) ? 0.96 : 1.0;
+      // 4초 주기로 살짝 줄어들었다 커지는 효과
+      scale = blinkPhase > 0.95 || blinkPhase < 0.05 ? 0.995 : 1.0;
       break;
       
     case 'head-bob':
@@ -323,20 +323,20 @@ function calculateMotionEffect(
       break;
       
     case 'subtle-life':
-      // 호흡 (아주 미세한 스케일 변화)
+      // 호흡 (미세한 스케일 변화)
       scale = 1 + Math.sin(t * 0.6) * 0.008 * i;
-      // 눈 깜박임 (거의 눈치채지 못할 정도로 미세)
-      const lifeBlinkPhase = (t * 0.2) % 1;
-      brightness = lifeBlinkPhase > 0.96 ? 0.97 : 1.0;
-      // 좌우 흔들림 (미세)
-      translateX = Math.sin(t * 0.4) * 1 * i;
+      // 미세한 좌우 흔들림
+      translateX = Math.sin(t * 0.4) * 1.5 * i;
+      // 미세한 위아래 흔들림 (호흡처럼)
+      translateY = Math.sin(t * 0.5) * 0.5 * i;
+      // brightness 제거 - 화면 깜박임 방지
       break;
       
     default:
       break;
   }
   
-  return { scale, translateX, translateY, brightness, rotate };
+  return { scale, translateX, translateY, rotate };
 }
 
 // ============ 메인 렌더링 함수 ============
@@ -459,11 +459,6 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     const drawX = (canvasWidth - drawW) / 2 + (combinedTranslateX * canvasWidth / 100);
     const drawY = (canvasHeight - drawH) / 2 + (combinedTranslateY * canvasHeight / 100);
     
-    // 밝기 효과 적용 (filter 대신 직접 적용)
-    if (me.brightness !== 1.0) {
-      ctx.filter = `brightness(${me.brightness})`;
-    }
-    
     // 회전 효과 적용
     if (me.rotate !== 0) {
       ctx.save();
@@ -476,9 +471,6 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
       // 이미지 그리기
       ctx.drawImage(img, drawX, drawY, drawW, drawH);
     }
-    
-    // 필터 복원
-    ctx.filter = 'none';
     
     // 투명도 복원
     ctx.globalAlpha = 1.0;
