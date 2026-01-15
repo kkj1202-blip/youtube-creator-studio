@@ -15,6 +15,7 @@ import {
   RefreshCw,
   AlertCircle,
   Eye,
+  Sparkles,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, TextArea, Select, Slider, Tabs, Card, Modal } from '@/components/ui';
@@ -696,6 +697,39 @@ const SceneEditor: React.FC = () => {
                       <Video className="w-8 h-8 text-muted" />
                     </div>
                   )}
+                </div>
+              </Card>
+
+              {/* Motion Effects - 캐릭터 애니메이션 효과 */}
+              <Card>
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-primary" />
+                  모션 효과 <span className="text-xs text-success ml-1">NEW</span>
+                </h3>
+                <div className="space-y-3">
+                  <Select
+                    label="효과 선택"
+                    options={motionEffectOptions}
+                    value={activeScene.motionEffect || currentProject?.defaultMotionEffect || 'none'}
+                    onChange={(value) => handleUpdate({ motionEffect: value as MotionEffect })}
+                  />
+                  
+                  {activeScene.motionEffect && activeScene.motionEffect !== 'none' && (
+                    <Slider
+                      label="효과 강도"
+                      value={activeScene.motionIntensity || 1}
+                      onChange={(value) => handleUpdate({ motionIntensity: value })}
+                      min={0.5}
+                      max={2}
+                      step={0.1}
+                    />
+                  )}
+                  
+                  <div className="text-xs text-muted p-2 bg-card-hover rounded">
+                    <p>👁️ <b>눈 깜빡임</b>: 캐릭터 이미지에 자연스러운 눈 깜빡임</p>
+                    <p>🙂 <b>고개 끄덕임</b>: 살짝 위아래로 끄덕이는 효과</p>
+                    <p>✨ <b>미세 생동감</b>: 눈깜빡임 + 호흡 + 좌우 흔들림 조합</p>
+                  </div>
                 </div>
               </Card>
 
