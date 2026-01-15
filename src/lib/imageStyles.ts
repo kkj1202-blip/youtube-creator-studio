@@ -355,11 +355,32 @@ function convertScriptToEnglishScene(script: string): string {
   if (script.includes('웃') || script.includes('미소')) {
     keywords.push('laughing smiling');
   }
-  if (script.includes('포옹') || script.includes('안')) {
+  // "안기", "포옹"만 포함 (단순 "안"은 제외)
+  if (script.includes('포옹') || script.includes('안기') || script.includes('안아')) {
     keywords.push('hugging');
   }
   if (script.includes('싸') || script.includes('다투')) {
     keywords.push('arguing');
+  }
+  // 추가: 손 흔들기, 인사
+  if (script.includes('손을 흔') || script.includes('흔들') || script.includes('인사')) {
+    keywords.push('waving goodbye');
+  }
+  // 추가: 떠나기, 떠남
+  if (script.includes('떠나') || script.includes('떠났') || script.includes('출발')) {
+    keywords.push('departing leaving');
+  }
+  // 추가: 새로운 시작
+  if (script.includes('시작') || script.includes('새로운')) {
+    keywords.push('new beginning');
+  }
+  // 추가: 마을 관련
+  if (script.includes('마을') || script.includes('동네') || script.includes('주민')) {
+    keywords.push('village town scene');
+  }
+  // 추가: 해, 아침
+  if (script.includes('해가') || script.includes('해 뜨') || script.includes('떠오')) {
+    keywords.push('sunrise morning');
   }
   
   // ========== 감정 ==========
@@ -486,9 +507,9 @@ export function buildFinalPrompt(
   const styleBudget = BUDGET.style + unusedBudget;
   
   if (stylePrompt) {
-    // 스타일 프롬프트 핵심 부분 추출 (앞부분이 가장 중요)
+    // 스타일 프롬프트 - 씬 다음에 배치 (unshift 제거!)
     const trimmedStyle = stylePrompt.slice(0, styleBudget);
-    parts.unshift(trimmedStyle); // 맨 앞에 배치
+    parts.push(trimmedStyle); // 맨 뒤에 배치
     usedLength += trimmedStyle.length;
   }
   
@@ -504,7 +525,7 @@ export function buildFinalPrompt(
     parts.push('consistent style');
   }
   
-  // 최종 조합
+  // 최종 조합 (순서: 씬 → 캐릭터 → 스타일 → 품질 → 일관성)
   let finalPrompt = parts.join(', ');
   
   // 안전망: 여전히 초과하면 자름
@@ -514,12 +535,11 @@ export function buildFinalPrompt(
   }
   
   // 디버그 로그
-  console.log('[buildFinalPrompt] 예산 분배:');
-  console.log(`  - 캐릭터: ${characterPart.length}/${BUDGET.character}자`);
-  console.log(`  - 씬: ${scenePart.length}/${BUDGET.scene}자`);
-  console.log(`  - 스타일: ${stylePrompt?.length || 0} → ${Math.min(stylePrompt?.length || 0, styleBudget)}자`);
-  console.log(`  - 총: ${finalPrompt.length}/${MAX_PROMPT_LENGTH}자`);
-  console.log('[buildFinalPrompt] 최종:', finalPrompt.slice(0, 100) + '...');
+  console.log('[buildFinalPrompt] 프롬프트 구조:');
+  console.log(`  1. 씬 설명: ${scenePart.slice(0, 50)}...`);
+  console.log(`  2. 캐릭터: ${characterPart.slice(0, 30)}...`);
+  console.log(`  3. 스타일: ${stylePrompt?.slice(0, 30) || 'N/A'}...`);
+  console.log(`  - 총 길이: ${finalPrompt.length}/${MAX_PROMPT_LENGTH}자`);
   
   return finalPrompt;
 }

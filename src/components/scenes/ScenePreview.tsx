@@ -195,9 +195,9 @@ const ScenePreview: React.FC<ScenePreviewProps> = ({
         };
 
       case 'eye-blink':
-        // 4초마다 눈 깜빡임 (밝기 변화로 표현)
+        // 4초마다 미세한 눈 깜빡임 (밝기 미세 변화)
         const blinkPhase = (t * 0.25) % 1; // 4초 주기
-        const blink = blinkPhase > 0.95 || blinkPhase < 0.05 ? 0.9 : 1;
+        const blink = blinkPhase > 0.95 || blinkPhase < 0.05 ? 0.96 : 1;
         return {
           filter: `brightness(${blink})`,
           transition: 'filter 0.1s ease-in-out',
@@ -213,11 +213,11 @@ const ScenePreview: React.FC<ScenePreviewProps> = ({
         };
 
       case 'subtle-life':
-        // 눈깜빡임 + 호흡 + 좌우 흔들림 조합
-        const lifeBreath = 1 + Math.sin(t * 0.6) * 0.015 * i;
+        // 호흡 (미세한 스케일) + 눈깜박임 + 좌우 흔들림
+        const lifeBreath = 1 + Math.sin(t * 0.6) * 0.008 * i;
         const lifeBlinkPhase = (t * 0.2) % 1;
-        const lifeBlink = lifeBlinkPhase > 0.96 ? 0.85 : 1;
-        const lifeSway = Math.sin(t * 0.4) * 2 * i;
+        const lifeBlink = lifeBlinkPhase > 0.96 ? 0.97 : 1;
+        const lifeSway = Math.sin(t * 0.4) * 1 * i;
         return {
           transform: `scale(${lifeBreath}) translateX(${lifeSway}px)`,
           filter: `brightness(${lifeBlink})`,

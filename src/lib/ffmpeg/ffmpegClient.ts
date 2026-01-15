@@ -312,8 +312,9 @@ function calculateMotionEffect(
       break;
       
     case 'eye-blink':
+      // 4초 주기로 미세한 눈 깜박임 (밝기 미세 변화)
       const blinkPhase = (t * 0.25) % 1;
-      brightness = (blinkPhase > 0.95 || blinkPhase < 0.05) ? 0.9 : 1.0;
+      brightness = (blinkPhase > 0.95 || blinkPhase < 0.05) ? 0.96 : 1.0;
       break;
       
     case 'head-bob':
@@ -322,10 +323,13 @@ function calculateMotionEffect(
       break;
       
     case 'subtle-life':
-      scale = 1 + Math.sin(t * 0.6) * 0.015 * i;
+      // 호흡 (아주 미세한 스케일 변화)
+      scale = 1 + Math.sin(t * 0.6) * 0.008 * i;
+      // 눈 깜박임 (거의 눈치채지 못할 정도로 미세)
       const lifeBlinkPhase = (t * 0.2) % 1;
-      brightness = lifeBlinkPhase > 0.96 ? 0.85 : 1.0;
-      translateX = Math.sin(t * 0.4) * 2 * i;
+      brightness = lifeBlinkPhase > 0.96 ? 0.97 : 1.0;
+      // 좌우 흔들림 (미세)
+      translateX = Math.sin(t * 0.4) * 1 * i;
       break;
       
     default:
