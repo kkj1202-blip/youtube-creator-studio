@@ -77,21 +77,23 @@ async function callReplicateSadTalker(
   }
 
   try {
-    // Replicate SadTalker 모델 호출
+    // Replicate cjwbw/sadtalker 모델 호출
     const response = await fetch('https://api.replicate.com/v1/predictions', {
       method: 'POST',
       headers: {
-        'Authorization': `Token ${config.replicateApiKey}`,
+        'Authorization': `Bearer ${config.replicateApiKey}`,
         'Content-Type': 'application/json',
+        'Prefer': 'wait',  // 동기 방식 (최대 60초 대기)
       },
       body: JSON.stringify({
-        version: 'cdb0aec87b979a86b8b7f6a217ca0e38b7a7e18c2f77d3b7e5f4e1b77c1b80e2', // SadTalker 모델 버전
+        // cjwbw/sadtalker 최신 버전 사용
+        version: 'a519cc0cfebaaeade068b23899165a11ec76aaa1d2b313d40d214f204ec957a3',
         input: {
           source_image: request.imageUrl,
           driven_audio: request.audioUrl,
           preprocess: request.preprocess,
           still: request.stillMode,
-          enhancer: request.enhancer ? 'gfpgan' : null,
+          use_enhancer: request.enhancer,
         },
       }),
     });

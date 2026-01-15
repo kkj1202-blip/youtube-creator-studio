@@ -561,6 +561,47 @@ const ApiSettings: React.FC = () => {
         </div>
       </Card>
 
+      {/* Replicate API (SadTalker 립싱크) */}
+      <Card>
+        <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          🎤 Replicate API (SadTalker 립싱크)
+          <Badge variant="secondary" className="bg-primary/20 text-primary">NEW</Badge>
+        </h3>
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="flex-1 relative">
+              <Input
+                type={showKeys.replicate ? 'text' : 'password'}
+                value={settings.replicateApiKey || ''}
+                onChange={(e) => updateSettings({ replicateApiKey: e.target.value })}
+                placeholder="Replicate API 토큰 (r8_...)"
+                icon={<Key className="w-4 h-4" />}
+              />
+              <button
+                onClick={() => toggleShowKey('replicate')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+              >
+                {showKeys.replicate ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
+          <p className="text-xs text-muted">
+            Replicate API 키를 입력하면 캐릭터 이미지 + 음성으로 말하는 영상을 자동 생성합니다.
+            <a 
+              href="https://replicate.com/account/api-tokens" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="text-primary ml-1 hover:underline"
+            >
+              API 토큰 발급 →
+            </a>
+          </p>
+          <div className="text-xs text-muted bg-card-hover p-2 rounded">
+            💡 비용: 약 $0.01/생성 | 소요시간: ~60초 | 모델: SadTalker
+          </div>
+        </div>
+      </Card>
+
       {/* KIE (Image Generation) API */}
       <Card>
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">

@@ -733,6 +733,75 @@ const SceneEditor: React.FC = () => {
                 </div>
               </Card>
 
+              {/* SadTalker - 립싱크 영상 생성 */}
+              <Card>
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  🎤 SadTalker 립싱크 <span className="text-xs text-primary ml-1">AI</span>
+                </h3>
+                <div className="space-y-3">
+                  <p className="text-xs text-muted">
+                    캐릭터 이미지 + 음성 → 실제 말하는 영상 생성
+                  </p>
+                  
+                  {!settings.replicateApiKey ? (
+                    <div className="p-2 bg-warning/10 rounded text-xs text-warning">
+                      ⚠️ 설정에서 Replicate API 키를 입력하세요
+                    </div>
+                  ) : (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="w-full"
+                      disabled={!activeScene.imageUrl || !activeScene.audioUrl}
+                      onClick={async () => {
+                        if (!activeScene.imageUrl || !activeScene.audioUrl) {
+                          alert('이미지와 음성이 모두 필요합니다.');
+                          return;
+                        }
+                        handleUpdate({ isProcessing: true });
+                        try {
+                          const response = await fetch('/api/sadtalker', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              imageUrl: activeScene.imageUrl,
+                              audioUrl: activeScene.audioUrl,
+                              mode: 'replicate',
+                              replicateApiKey: settings.replicateApiKey,
+                              preprocess: 'crop',
+                              stillMode: true,
+                              enhancer: true,
+                            }),
+                          });
+                          const result = await response.json();
+                          if (result.success && result.videoUrl) {
+                            handleUpdate({ 
+                              videoUrl: result.videoUrl, 
+                              rendered: true,
+                              isProcessing: false 
+                            });
+                            alert('립싱크 영상 생성 완료!');
+                          } else {
+                            throw new Error(result.error || '생성 실패');
+                          }
+                        } catch (error) {
+                          console.error('SadTalker error:', error);
+                          handleUpdate({ isProcessing: false, error: String(error) });
+                          alert('립싱크 생성 실패: ' + (error instanceof Error ? error.message : error));
+                        }
+                      }}
+                      icon={<Video className="w-4 h-4" />}
+                    >
+                      {activeScene.isProcessing ? '생성 중... (약 1분)' : '🎤 립싱크 영상 생성'}
+                    </Button>
+                  )}
+                  
+                  <div className="text-xs text-muted">
+                    💡 비용: 약 $0.01/생성 | 소요시간: ~60초
+                  </div>
+                </div>
+              </Card>
+
               {/* Render & Download */}
               <Card>
                 <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
