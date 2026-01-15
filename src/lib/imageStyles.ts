@@ -59,8 +59,8 @@ export const imageStyleLibrary: StyleCategory[] = [
       },
       {
         id: 'stickman',
-        name: '졸라맨 (Expressive Stickman)',
-        prompt: 'Simple black stick figure character with round head, highly expressive body language, clean minimal line art style, cartoon stickman with action poses, bold black lines on colorful illustrated background matching the scene, comic strip aesthetic, dynamic motion lines',
+        name: '3D 졸라맨 (Trendy Stickman)',
+        prompt: 'Trendy 3D rendered white stickman character, cute minimalist 3D figure with smooth white body, small round head with simple dot eyes, stylized 3D character with soft shadows, modern CGI render, clean white character on vibrant colorful 3D background, Pixar-style lighting, cheerful expression, dynamic action pose, bright pop-color environment, soft ambient occlusion',
       },
       {
         id: 'claymation',
@@ -467,10 +467,14 @@ export function buildFinalPrompt(
   }
   
   // ============ 2. 씬 설명 (중요) ============
+  // 한글 대본 → 영어 키워드 변환 + 원본 대본 일부 포함
   let scenePart = '';
   if (sceneDescription) {
     const englishScene = convertScriptToEnglishScene(sceneDescription);
-    scenePart = englishScene.slice(0, BUDGET.scene);
+    // 원본 대본에서 핵심 단어 추출 (50자까지)
+    const koreanHint = sceneDescription.slice(0, 50);
+    scenePart = `[Scene: ${englishScene}] (${koreanHint})`;
+    scenePart = scenePart.slice(0, BUDGET.scene + 50); // 씬에 추가 예산
     parts.push(scenePart);
     usedLength += scenePart.length;
   }

@@ -168,9 +168,10 @@ const ScenePreview: React.FC<ScenePreviewProps> = ({
         };
 
       case 'shake':
-        const shakeX = (Math.random() - 0.5) * 2 * i;
-        const shakeY = (Math.random() - 0.5) * 2 * i;
-        const shakeRotate = (Math.random() - 0.5) * 0.5 * i;
+        // 시간 기반 pseudo-random으로 떨림 효과
+        const shakeX = Math.sin(t * 50) * 2 * i;
+        const shakeY = Math.cos(t * 47) * 2 * i;
+        const shakeRotate = Math.sin(t * 43) * 0.5 * i;
         return {
           transform: `translate(${shakeX}px, ${shakeY}px) rotate(${shakeRotate}deg)`,
         };
@@ -191,6 +192,36 @@ const ScenePreview: React.FC<ScenePreviewProps> = ({
         return {
           transform: `perspective(1000px) translateX(${px}px) translateY(${py}px) rotateY(${rotateY}deg) rotateX(${rotateX}deg) scale(1.05)`,
           transition: 'transform 0.15s ease-out',
+        };
+
+      case 'eye-blink':
+        // 4초마다 눈 깜빡임 (밝기 변화로 표현)
+        const blinkPhase = (t * 0.25) % 1; // 4초 주기
+        const blink = blinkPhase > 0.95 || blinkPhase < 0.05 ? 0.9 : 1;
+        return {
+          filter: `brightness(${blink})`,
+          transition: 'filter 0.1s ease-in-out',
+        };
+
+      case 'head-bob':
+        // 고개 끄덕임 (위아래 + 미세 회전)
+        const bobY = Math.sin(t * 1.2) * 3 * i;
+        const bobRotate = Math.sin(t * 0.8) * 1.5 * i;
+        return {
+          transform: `translateY(${bobY}px) rotate(${bobRotate}deg)`,
+          transition: 'transform 0.1s ease-out',
+        };
+
+      case 'subtle-life':
+        // 눈깜빡임 + 호흡 + 좌우 흔들림 조합
+        const lifeBreath = 1 + Math.sin(t * 0.6) * 0.015 * i;
+        const lifeBlinkPhase = (t * 0.2) % 1;
+        const lifeBlink = lifeBlinkPhase > 0.96 ? 0.85 : 1;
+        const lifeSway = Math.sin(t * 0.4) * 2 * i;
+        return {
+          transform: `scale(${lifeBreath}) translateX(${lifeSway}px)`,
+          filter: `brightness(${lifeBlink})`,
+          transition: 'all 0.15s ease-out',
         };
 
       default:
