@@ -10,6 +10,7 @@
 
 export type KenBurnsEffect = 'none' | 'random' | 'zoom-in' | 'zoom-out' | 'pan-left' | 'pan-right' | 'pan-up' | 'pan-down';
 export type TransitionType = 'none' | 'fade' | 'slide';
+export type MotionEffect = 'none' | 'breathing' | 'pulse' | 'float' | 'shake' | 'eye-blink' | 'head-bob' | 'subtle-life' | 'parallax-soft' | 'parallax-medium' | 'parallax-strong';
 
 export interface RenderOptions {
   imageUrl: string;
@@ -22,6 +23,9 @@ export interface RenderOptions {
   resolution?: '720p' | '1080p' | '4k';
   fps?: 24 | 30 | 60;
   bitrate?: 'low' | 'medium' | 'high' | 'ultra';
+  // 모션 효과
+  motionEffect?: MotionEffect;
+  motionIntensity?: number;
 }
 
 export interface RenderResult {
@@ -270,6 +274,67 @@ function calculateKenBurns(
   return { scale, translateX, translateY };
 }
 
+// ============ 모션 효과 계산 ============
+
+function calculateMotionEffect(
+  effect: MotionEffect,
+  time: number,  // 현재 시간 (초)
+  intensity: number = 1.0
+): { scale: number; translateX: number; translateY: number; brightness: number; rotate: number } {
+  const i = intensity;
+  const t = time;
+  
+  let scale = 1.0;
+  let translateX = 0;
+  let translateY = 0;
+  let brightness = 1.0;
+  let rotate = 0;
+  
+  switch (effect) {
+    case 'breathing':
+      scale = 1 + Math.sin(t * 0.8) * 0.02 * i;
+      break;
+      
+    case 'pulse':
+      const pulsePhase = (t * 1.5) % (Math.PI * 2);
+      scale = 1 + Math.pow(Math.sin(pulsePhase), 4) * 0.03 * i;
+      break;
+      
+    case 'float':
+      translateY = Math.sin(t * 0.6) * 8 * i;
+      rotate = Math.sin(t * 0.4) * 1 * i;
+      break;
+      
+    case 'shake':
+      translateX = Math.sin(t * 50) * 2 * i;
+      translateY = Math.cos(t * 47) * 2 * i;
+      rotate = Math.sin(t * 43) * 0.5 * i;
+      break;
+      
+    case 'eye-blink':
+      const blinkPhase = (t * 0.25) % 1;
+      brightness = (blinkPhase > 0.95 || blinkPhase < 0.05) ? 0.9 : 1.0;
+      break;
+      
+    case 'head-bob':
+      translateY = Math.sin(t * 1.2) * 3 * i;
+      rotate = Math.sin(t * 0.8) * 1.5 * i;
+      break;
+      
+    case 'subtle-life':
+      scale = 1 + Math.sin(t * 0.6) * 0.015 * i;
+      const lifeBlinkPhase = (t * 0.2) % 1;
+      brightness = lifeBlinkPhase > 0.96 ? 0.85 : 1.0;
+      translateX = Math.sin(t * 0.4) * 2 * i;
+      break;
+      
+    default:
+      break;
+  }
+  
+  return { scale, translateX, translateY, brightness, rotate };
+}
+
 // ============ 메인 렌더링 함수 ============
 
 export async function renderVideo(options: RenderOptions): Promise<RenderResult> {
@@ -284,6 +349,8 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     resolution = '1080p',
     fps = 30,
     bitrate = 'high',
+    motionEffect = 'none',
+    motionIntensity = 1.0,
   } = options;
 
   console.log('========================================');
@@ -361,7 +428,7 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
   }
 
   // 프레임 그리기 함수
-  function drawFrame(progress: number, alpha: number = 1.0) {
+  function drawFrame(progress: number, alpha: number = 1.0, currentTime: number = 0) {
     // 배경 (검정)
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
@@ -370,18 +437,44 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     ctx.globalAlpha = Math.max(0.01, Math.min(1.0, alpha));
     
     // Ken Burns 변환 계산 (영상 길이에 맞게 자동 조절)
-    const { scale, translateX, translateY } = calculateKenBurns(actualKenBurns, progress, kenBurnsIntensity, duration);
+    const kb = calculateKenBurns(actualKenBurns, progress, kenBurnsIntensity, duration);
+    
+    // 모션 효과 계산
+    const me = calculateMotionEffect(motionEffect as MotionEffect, currentTime, motionIntensity);
+    
+    // Ken Burns + Motion Effect 결합
+    const combinedScale = kb.scale * me.scale;
+    const combinedTranslateX = kb.translateX + (me.translateX * 100 / canvasWidth);
+    const combinedTranslateY = kb.translateY + (me.translateY * 100 / canvasHeight);
     
     // 최종 크기
-    const drawW = baseWidth * scale;
-    const drawH = baseHeight * scale;
+    const drawW = baseWidth * combinedScale;
+    const drawH = baseHeight * combinedScale;
     
     // 중앙 배치 + 이동
-    const drawX = (canvasWidth - drawW) / 2 + (translateX * canvasWidth / 100);
-    const drawY = (canvasHeight - drawH) / 2 + (translateY * canvasHeight / 100);
+    const drawX = (canvasWidth - drawW) / 2 + (combinedTranslateX * canvasWidth / 100);
+    const drawY = (canvasHeight - drawH) / 2 + (combinedTranslateY * canvasHeight / 100);
     
-    // 이미지 그리기
-    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    // 밝기 효과 적용 (filter 대신 직접 적용)
+    if (me.brightness !== 1.0) {
+      ctx.filter = `brightness(${me.brightness})`;
+    }
+    
+    // 회전 효과 적용
+    if (me.rotate !== 0) {
+      ctx.save();
+      ctx.translate(canvasWidth / 2, canvasHeight / 2);
+      ctx.rotate(me.rotate * Math.PI / 180);
+      ctx.translate(-canvasWidth / 2, -canvasHeight / 2);
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+      ctx.restore();
+    } else {
+      // 이미지 그리기
+      ctx.drawImage(img, drawX, drawY, drawW, drawH);
+    }
+    
+    // 필터 복원
+    ctx.filter = 'none';
     
     // 투명도 복원
     ctx.globalAlpha = 1.0;
@@ -561,8 +654,8 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
         alpha = Math.max(0.01, alpha);
       }
 
-      // 프레임 그리기
-      drawFrame(progress, alpha);
+      // 프레임 그리기 (currentTime 전달로 모션 효과 작동)
+      drawFrame(progress, alpha, elapsed);
 
       // 다음 프레임
       if (progress < 1.0) {

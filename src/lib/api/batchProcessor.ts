@@ -644,6 +644,9 @@ export async function renderAllScenes(
         kenBurns: scene.kenBurns || project.defaultKenBurns || 'none',
         kenBurnsIntensity: scene.kenBurnsZoom || project.defaultKenBurnsZoom || 15,
         transition: scene.transition || 'fade',
+        // 모션 효과 (캐릭터 애니메이션)
+        motionEffect: scene.motionEffect || project.defaultMotionEffect || 'none',
+        motionIntensity: scene.motionIntensity || 1.0,
         // 품질 설정
         resolution: renderSettings?.resolution || '1080p',
         fps: renderSettings?.fps || 30,

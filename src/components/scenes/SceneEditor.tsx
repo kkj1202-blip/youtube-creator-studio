@@ -299,6 +299,9 @@ const SceneEditor: React.FC = () => {
         kenBurns: activeScene.kenBurns || currentProject?.defaultKenBurns || 'none',
         kenBurnsIntensity: activeScene.kenBurnsZoom || currentProject?.defaultKenBurnsZoom || 15,
         transition: activeScene.transition || 'fade',
+        // 모션 효과 (캐릭터 애니메이션)
+        motionEffect: activeScene.motionEffect || currentProject?.defaultMotionEffect || 'none',
+        motionIntensity: activeScene.motionIntensity || 1.0,
         // 품질 설정
         resolution: renderSettings?.resolution || '1080p',
         fps: renderSettings?.fps || 30,
