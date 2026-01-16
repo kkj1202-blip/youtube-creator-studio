@@ -19,6 +19,7 @@ import {
   Globe,
   Flame,
   Save,
+  Search,
 } from 'lucide-react';
 
 // Types
@@ -73,6 +74,7 @@ export default function ViralSearchPage() {
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   // Load saved settings
   useEffect(() => {
@@ -96,9 +98,9 @@ export default function ViralSearchPage() {
     setTimeout(() => setShowSaveSuccess(false), 2000);
   }, [platform, region, maxAge, minViews, maxResults]);
 
-  // Search handler
   const handleSearch = useCallback(async () => {
     setIsLoading(true);
+    setHasSearched(true);
     try {
       const response = await fetch('/api/viral-search', {
         method: 'POST',
@@ -296,14 +298,29 @@ export default function ViralSearchPage() {
         {/* Empty State */}
         {videos.length === 0 && !isLoading && (
           <div className="flex flex-col items-center justify-center py-20 text-center">
-            <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <TrendingUp className="w-10 h-10 text-primary" />
-            </div>
-            <h3 className="text-xl font-semibold mb-2">트렌딩 영상 검색</h3>
-            <p className="text-muted text-sm mb-4">필터 설정 후 검색 버튼을 클릭하세요</p>
+            {!hasSearched ? (
+              <>
+                <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-4">
+                  <TrendingUp className="w-10 h-10 text-primary" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">트렌딩 영상 검색</h3>
+                <p className="text-muted text-sm mb-4">필터 설정 후 검색 버튼을 클릭하세요</p>
+              </>
+            ) : (
+              <>
+                <div className="w-20 h-20 rounded-full bg-muted/10 flex items-center justify-center mb-4">
+                  <Search className="w-10 h-10 text-muted" />
+                </div>
+                <h3 className="text-xl font-semibold mb-2">검색 결과가 없습니다</h3>
+                <p className="text-muted text-sm mb-4">
+                  조건에 맞는 영상을 찾지 못했습니다.<br />
+                  필터를 변경하거나 잠시 후 다시 시도해주세요.
+                </p>
+              </>
+            )}
             <button onClick={handleSearch} className="btn btn-primary">
               <Globe className="w-4 h-4 mr-2" />
-              지금 검색하기
+              {hasSearched ? '다시 검색하기' : '지금 검색하기'}
             </button>
           </div>
         )}

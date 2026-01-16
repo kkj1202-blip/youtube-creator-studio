@@ -37,8 +37,9 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
   const PARALLEL_REQUESTS = 20; // 20회 호출
   const BATCH_SIZE = 5; 
   
-  // 글로벌 주요 국가 코드 (미국, 영국, 캐나다, 호주, 독일, 프랑스, 일본, 브라질, 필리핀, 인도네시아 등)
-  const GLOBAL_REGIONS = ['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'JP', 'BR', 'PH', 'ID', 'TH', 'VN', 'MX', 'ES', 'IT', 'NL', 'SE', 'PL', 'TR', 'SA'];
+  // 글로벌 주요 국가 코드 업데이트: 안정성을 위해 US만 집중 공략 (다른 국가 코드 실패 가능성 차단)
+  // tikwm API 특성상 같은 US라도 호출마다 데이터가 조금씩 다름을 확인했으므로 US 20회 호출이 더 안전함.
+  const GLOBAL_REGIONS = ['US'];
 
   const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
     id: String(item.video_id || item.id || ''),
