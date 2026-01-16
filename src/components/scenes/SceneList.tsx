@@ -71,6 +71,8 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
   const [compact, setCompact] = useState(defaultCompact);
   const [isGeneratingAll, setIsGeneratingAll] = useState(false);
   const [generatingProgress, setGeneratingProgress] = useState(0);
+  const [isGeneratingAllPrompts, setIsGeneratingAllPrompts] = useState(false);
+  const [promptProgress, setPromptProgress] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const sensors = useSensors(
@@ -371,6 +373,85 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
     alert(`이미지 생성 완료!\n성공: ${successCount}개\n실패: ${failCount}개`);
   }, [currentProject, settings.kieApiKey, handleGenerateImage]);
 
+  // 🎯 일괄 프롬프트 생성 핸들러 (LLM 사용)
+  const handleGenerateAllPrompts = useCallback(async () => {
+    if (!currentProject) {
+      alert('프로젝트를 먼저 선택하세요.');
+      return;
+    }
+
+    const hasLLM = !!settings.geminiApiKey || !!settings.openaiApiKey;
+    if (!hasLLM) {
+      alert('설정에서 Gemini 또는 OpenAI API 키를 입력하세요.');
+      return;
+    }
+
+    // 프롬프트가 없는 씬 필터링
+    const scenesWithoutPrompt = currentProject.scenes.filter(s => !s.imagePrompt?.trim());
+    if (scenesWithoutPrompt.length === 0) {
+      alert('모든 씬에 이미 프롬프트가 있습니다.');
+      return;
+    }
+
+    const confirmed = confirm(`${scenesWithoutPrompt.length}개 씬의 프롬프트를 LLM으로 생성하시겠습니까?`);
+    if (!confirmed) return;
+
+    setIsGeneratingAllPrompts(true);
+    setPromptProgress(0);
+
+    const stylePrompt = currentProject.masterImageStylePrompt || 'high quality, detailed, professional illustration';
+    const styleId = currentProject.masterImageStyleId || 'default';
+    const characterDescription = currentProject.imageConsistency?.characterDescription;
+
+    let successCount = 0;
+    let failCount = 0;
+
+    for (let i = 0; i < scenesWithoutPrompt.length; i++) {
+      const scene = scenesWithoutPrompt[i];
+      setPromptProgress(i + 1);
+
+      try {
+        console.log(`[SceneList] 프롬프트 생성 ${i + 1}/${scenesWithoutPrompt.length}: 씬 ${scene.order + 1}`);
+        
+        const llmResponse = await fetch('/api/generate-scene-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            script: scene.script,
+            stylePrompt,
+            styleName: styleId,
+            characterDescription,
+            geminiApiKey: settings.geminiApiKey,
+            openaiApiKey: settings.openaiApiKey,
+          }),
+        });
+
+        if (llmResponse.ok) {
+          const llmData = await llmResponse.json();
+          updateScene(scene.id, { imagePrompt: llmData.prompt });
+          successCount++;
+          console.log(`[SceneList] ✅ 프롬프트 생성 성공: ${llmData.prompt.slice(0, 50)}...`);
+        } else {
+          failCount++;
+          console.warn('[SceneList] ❌ 프롬프트 생성 실패');
+        }
+      } catch (error) {
+        failCount++;
+        console.error(`[SceneList] 씬 ${scene.order + 1} 프롬프트 생성 오류:`, error);
+      }
+
+      // API 호출 간격 (1초)
+      if (i < scenesWithoutPrompt.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+
+    setIsGeneratingAllPrompts(false);
+    setPromptProgress(0);
+
+    alert(`프롬프트 생성 완료!\n성공: ${successCount}개\n실패: ${failCount}개`);
+  }, [currentProject, settings.geminiApiKey, settings.openaiApiKey, updateScene]);
+
   // 음성 생성 핸들러
   const handleGenerateAudio = useCallback(async (sceneId: string) => {
     if (!currentProject) return;
@@ -574,21 +655,41 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       </div>
 
       {/* 일괄 AI 이미지 생성 버튼 */}
-      {stats.total > 0 && stats.withImage < stats.total && settings.kieApiKey && (
+      {stats.total > 0 && settings.kieApiKey && (
         <div className="flex gap-2">
-          <Button
-            variant="primary"
-            className="flex-1"
-            onClick={handleGenerateAllImages}
-            disabled={isGeneratingAll}
-            isLoading={isGeneratingAll}
-            icon={<Sparkles className="w-4 h-4" />}
-          >
-            {isGeneratingAll 
-              ? `생성 중... (${generatingProgress}/${stats.total - stats.withImage})` 
-              : `🎨 이미지 없는 씬 AI 일괄 생성 (${stats.total - stats.withImage}개)`
-            }
-          </Button>
+          {/* 전체 프롬프트 생성 버튼 */}
+          {(settings.geminiApiKey || settings.openaiApiKey) && (
+            <Button
+              variant="ghost"
+              className="flex-1"
+              onClick={handleGenerateAllPrompts}
+              disabled={isGeneratingAllPrompts}
+              isLoading={isGeneratingAllPrompts}
+              icon={<Wand2 className="w-4 h-4" />}
+            >
+              {isGeneratingAllPrompts 
+                ? `프롬프트 생성 중... (${promptProgress})` 
+                : `✨ 전체 프롬프트 생성`
+              }
+            </Button>
+          )}
+          
+          {/* 전체 이미지 생성 버튼 */}
+          {stats.withImage < stats.total && (
+            <Button
+              variant="primary"
+              className="flex-1"
+              onClick={handleGenerateAllImages}
+              disabled={isGeneratingAll}
+              isLoading={isGeneratingAll}
+              icon={<Sparkles className="w-4 h-4" />}
+            >
+              {isGeneratingAll 
+                ? `생성 중... (${generatingProgress}/${stats.total - stats.withImage})` 
+                : `🎨 이미지 일괄 생성 (${stats.total - stats.withImage}개)`
+              }
+            </Button>
+          )}
         </div>
       )}
 
