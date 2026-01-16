@@ -66,7 +66,7 @@ export default function ViralSearchPage() {
   const [region, setRegion] = useState<Region>('global');
   const [maxAge, setMaxAge] = useState<number>(24); // 1일 기본
   const [minViews, setMinViews] = useState<number>(1000000); // 100만 기본
-  const [maxResults, setMaxResults] = useState<number>(30); // 출력 제한
+  const [maxResults, setMaxResults] = useState<number>(10); // 10개 기본
   const [videos, setVideos] = useState<VideoResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
@@ -227,12 +227,12 @@ export default function ViralSearchPage() {
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-muted" />
                 <select
-                  value={maxResults}
+                  value={maxResults || 10}
                   onChange={(e) => setMaxResults(Number(e.target.value))}
                   className="bg-card border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-primary"
                 >
+                  <option value={10}>10개</option>
                   <option value={20}>20개</option>
-                  <option value={30}>30개</option>
                   <option value={50}>50개</option>
                   <option value={100}>100개</option>
                 </select>
