@@ -100,29 +100,48 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 스타일 강제 규칙 감지
+    const isStickman = styleName.toLowerCase().includes('stickman') || 
+                       styleName.toLowerCase().includes('stick') ||
+                       stylePrompt.toLowerCase().includes('stickman') ||
+                       stylePrompt.toLowerCase().includes('졸라맨');
+    
+    const styleRule = isStickman 
+      ? `CRITICAL STYLE RULE: ALL characters MUST be simple white stickman figures. 
+         - ONLY white minimalist stick figures with round heads
+         - NO realistic humans, NO detailed faces, NO skin, NO hair textures
+         - ALL characters in the scene must be stickman - no exceptions!
+         - Even background characters must be stickmen`
+      : `STYLE: ${styleName} - Follow this art style for all elements`;
+
     const systemPrompt = `You are a VISUAL SCENE DIRECTOR who converts Korean narration into detailed English image prompts.
+
+${styleRule}
 
 CRITICAL TASK: Extract SPECIFIC VISUAL ELEMENTS from the Korean script and describe them for image generation.
 
 ANALYSIS STEPS:
 1. IDENTIFY the main SUBJECT/TOPIC (e.g., money, fraud, factory, company, crisis)
-2. FIND SPECIFIC NUMBERS/AMOUNTS and visualize them (e.g., "270억 달러" → "piles of money, financial documents showing billions")
-3. IDENTIFY LOCATIONS mentioned (e.g., "베트남" → "Vietnam factory district with Vietnamese signs")
-4. IDENTIFY ACTIONS (e.g., "짐을 싸고" → "workers packing boxes, moving trucks")
-5. IDENTIFY EMOTIONS/MOOD (e.g., "충격" → "shocked expressions", "위기" → "dramatic crisis atmosphere")
-6. IDENTIFY OBJECTS related to the topic (money → cash stacks, banks; fraud → documents, handcuffs; factory → machinery, boxes)
-
-EXAMPLES:
-- Input: "270억 달러 금융 사기" → Output: "massive pile of cash and documents, financial fraud scene, shocked businesspeople, falling stock charts, dramatic red lighting"
-- Input: "삼성이 짐을 싸고 있다" → Output: "Samsung logo on boxes, workers packing factory equipment, moving trucks, empty factory floor"
-- Input: "전기를 끊어버렸다" → Output: "power outage, dark factory, emergency lights, frustrated workers"
+2. FIND SPECIFIC NUMBERS/AMOUNTS and visualize them (e.g., "270억 달러" → "piles of money, financial documents")
+3. IDENTIFY LOCATIONS mentioned (e.g., "베트남" → "Vietnam factory district")
+4. IDENTIFY ACTIONS (e.g., "짐을 싸고" → "packing boxes, moving trucks")
+5. IDENTIFY EMOTIONS/MOOD (e.g., "충격" → "shocked expressions")
 
 ABSOLUTE RULES:
 1. Output ONLY the English prompt - NO explanations, NO Korean text
 2. Start with: "NO TEXT, NO WORDS, NO LETTERS,"
-3. Include SPECIFIC VISUAL ELEMENTS from the script (don't just show generic characters)
-4. Match the art style provided
-5. Be SPECIFIC about what should appear in the scene`;
+3. ${isStickman ? 'Add "ONLY white stickman characters, NO realistic humans, NO detailed faces" right after NO LETTERS' : 'Follow the art style exactly'}
+4. Include SPECIFIC VISUAL ELEMENTS from the script
+5. MAINTAIN CHARACTER CONSISTENCY - if a character is described, use that EXACT description`;
+
+    // 캐릭터 일관성 강화
+    const characterSection = characterDescription 
+      ? `\n\nMAIN CHARACTER (MUST appear in EVERY scene with EXACT same appearance):
+${characterDescription}
+- This character MUST be recognizable across all scenes
+- Keep the SAME features: glasses, hair, clothing, body type
+- This is the narrator/protagonist - they should be the focus of the scene`
+      : '';
 
     const userPrompt = `ANALYZE this Korean script and create a DETAILED image prompt:
 
@@ -136,14 +155,13 @@ REQUIRED VISUAL ELEMENTS TO EXTRACT:
 - What LOCATION/BACKGROUND fits this scene?
 - What ACTIONS are happening?
 - What EMOTIONS should characters show?
+${characterSection}
 
 ART STYLE: ${styleName}
-STYLE KEYWORDS: ${stylePrompt.slice(0, 300)}
-
-${characterDescription ? `CHARACTER APPEARANCE (MUST maintain exactly): ${characterDescription}` : ''}
+${isStickman ? 'REMEMBER: ALL characters must be simple white stickman figures - NO realistic humans!' : ''}
 
 OUTPUT FORMAT (English only, no explanation):
-NO TEXT, NO WORDS, NO LETTERS, [style], [main subject/object], [specific visual elements from script], [background/location], [character actions/emotions], [mood/lighting]`;
+NO TEXT, NO WORDS, NO LETTERS, ${isStickman ? 'ONLY white stickman characters, NO realistic humans, ' : ''}[main subject/object from script], [specific visual elements], [background/location], [character actions/emotions], [mood/lighting]`;
 
     let prompt: string;
 
