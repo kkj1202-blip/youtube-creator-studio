@@ -33,11 +33,13 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
   const regionCode = region === 'korea' ? 'KR' : 'US';
   
   // 순수 트렌딩 데이터만 수집하기 위해 feed/list를 병렬로 다수 호출 (랜덤성 활용)
-  // 순수 트렌딩 데이터만 수집하기 위해 feed/list를 병렬로 다수 호출 (랜덤성 활용)
-  // 키워드 검색은 "인위적"이라는 사용자 피드백 반영하여 제거함
-  const PARALLEL_REQUESTS = 20; // 20회 병렬 호출 시도 (약 200~400개 확보 목표)
-  const BATCH_SIZE = 5; // 한 번에 5개씩 요청 (Rate Limit 방지)
+  // + '해외' 선택 시 단일 국가(US)만 부르면 중복이 심하므로, 주요 국가들을 로테이션하며 수집하여 다양성 확보
+  const PARALLEL_REQUESTS = 20; // 20회 호출
+  const BATCH_SIZE = 5; 
   
+  // 글로벌 주요 국가 코드 (미국, 영국, 캐나다, 호주, 독일, 프랑스, 일본, 브라질, 필리핀, 인도네시아 등)
+  const GLOBAL_REGIONS = ['US', 'GB', 'CA', 'AU', 'DE', 'FR', 'JP', 'BR', 'PH', 'ID', 'TH', 'VN', 'MX', 'ES', 'IT', 'NL', 'SE', 'PL', 'TR', 'SA'];
+
   const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
     id: String(item.video_id || item.id || ''),
     platform: 'tiktok' as const,
@@ -59,13 +61,17 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
 
     console.log(`🚀 Starting TikTok trending fetch: ${PARALLEL_REQUESTS} requests...`);
 
-    // 배치 처리로 Rate Limit 회피
+    // 배치 처리로 Rate Limit 회피 + 지역 로테이션
     for (let i = 0; i < PARALLEL_REQUESTS; i += BATCH_SIZE) {
       const batchPromises = Array(BATCH_SIZE).fill(0).map((_, j) => {
-        const cursor = i + j;
-        return fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50&cursor=${cursor}`, {
+        const iterIndex = i + j;
+        // 한국이면 KR 고정, 해외면 20개 국가 로테이션
+        // 이렇게 하면 '해외' 탭에서 전 세계 트렌딩을 다양하게 수집 가능 -> '1일' 필터 걸려도 남는 게 많아짐
+        const targetRegion = regionCode === 'KR' ? 'KR' : GLOBAL_REGIONS[iterIndex % GLOBAL_REGIONS.length];
+        
+        return fetch(`https://www.tikwm.com/api/feed/list?region=${targetRegion}&count=50`, { 
           headers: { 'Accept': 'application/json', 'User-Agent': `Mozilla/5.0 (Random=${Math.random()})` },
-        }).then(r => r.json()).catch(e => { console.error(`Fetch error (cursor=${cursor}):`, e); return null; });
+        }).then(r => r.json()).catch(e => { console.error(`Fetch error (${targetRegion}):`, e); return null; });
       });
 
       const results = await Promise.allSettled(batchPromises);
