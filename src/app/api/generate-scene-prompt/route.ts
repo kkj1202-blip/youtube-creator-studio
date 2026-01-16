@@ -100,32 +100,50 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const systemPrompt = `You are an expert image prompt engineer for AI image generation.
-Your task is to analyze a Korean script/narration and generate a detailed English image prompt.
+    const systemPrompt = `You are a VISUAL SCENE DIRECTOR who converts Korean narration into detailed English image prompts.
 
-CRITICAL RULES:
-1. The output must be ONLY the English prompt - no explanations, no Korean, no markdown
-2. NEVER include ANY text, words, letters, captions, subtitles, or watermarks in the prompt
-3. Focus on visual elements: characters, actions, backgrounds, lighting, mood
-4. Always start with: "NO TEXT, NO WORDS, NO LETTERS,"
-5. Match the style requirements exactly
-6. If characters are described, maintain their exact appearance
-7. Be specific about actions, emotions, and scene context`;
+CRITICAL TASK: Extract SPECIFIC VISUAL ELEMENTS from the Korean script and describe them for image generation.
 
-    const userPrompt = `Generate an image prompt for this scene:
+ANALYSIS STEPS:
+1. IDENTIFY the main SUBJECT/TOPIC (e.g., money, fraud, factory, company, crisis)
+2. FIND SPECIFIC NUMBERS/AMOUNTS and visualize them (e.g., "270억 달러" → "piles of money, financial documents showing billions")
+3. IDENTIFY LOCATIONS mentioned (e.g., "베트남" → "Vietnam factory district with Vietnamese signs")
+4. IDENTIFY ACTIONS (e.g., "짐을 싸고" → "workers packing boxes, moving trucks")
+5. IDENTIFY EMOTIONS/MOOD (e.g., "충격" → "shocked expressions", "위기" → "dramatic crisis atmosphere")
+6. IDENTIFY OBJECTS related to the topic (money → cash stacks, banks; fraud → documents, handcuffs; factory → machinery, boxes)
 
-SCRIPT (Korean):
-"""
-${script.slice(0, 500)}
-"""
+EXAMPLES:
+- Input: "270억 달러 금융 사기" → Output: "massive pile of cash and documents, financial fraud scene, shocked businesspeople, falling stock charts, dramatic red lighting"
+- Input: "삼성이 짐을 싸고 있다" → Output: "Samsung logo on boxes, workers packing factory equipment, moving trucks, empty factory floor"
+- Input: "전기를 끊어버렸다" → Output: "power outage, dark factory, emergency lights, frustrated workers"
 
-STYLE: ${styleName}
-STYLE PROMPT: ${stylePrompt.slice(0, 200)}
+ABSOLUTE RULES:
+1. Output ONLY the English prompt - NO explanations, NO Korean text
+2. Start with: "NO TEXT, NO WORDS, NO LETTERS,"
+3. Include SPECIFIC VISUAL ELEMENTS from the script (don't just show generic characters)
+4. Match the art style provided
+5. Be SPECIFIC about what should appear in the scene`;
 
-${characterDescription ? `CHARACTER TO MAINTAIN: ${characterDescription}` : 'No specific character set - create appropriate characters for the scene'}
+    const userPrompt = `ANALYZE this Korean script and create a DETAILED image prompt:
 
-Output format (ONLY English prompt, nothing else):
-NO TEXT, NO WORDS, NO LETTERS, [style keywords], [scene description with characters and actions], [background/location], [mood/lighting], [camera angle]`;
+===== SCRIPT =====
+${script}
+==================
+
+REQUIRED VISUAL ELEMENTS TO EXTRACT:
+- What is the MAIN TOPIC? (money, fraud, company, crisis, etc.)
+- What SPECIFIC OBJECTS should appear? (cash, documents, boxes, factories, etc.)
+- What LOCATION/BACKGROUND fits this scene?
+- What ACTIONS are happening?
+- What EMOTIONS should characters show?
+
+ART STYLE: ${styleName}
+STYLE KEYWORDS: ${stylePrompt.slice(0, 300)}
+
+${characterDescription ? `CHARACTER APPEARANCE (MUST maintain exactly): ${characterDescription}` : ''}
+
+OUTPUT FORMAT (English only, no explanation):
+NO TEXT, NO WORDS, NO LETTERS, [style], [main subject/object], [specific visual elements from script], [background/location], [character actions/emotions], [mood/lighting]`;
 
     let prompt: string;
 
