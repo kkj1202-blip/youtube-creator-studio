@@ -32,15 +32,9 @@ interface VideoData {
 async function fetchTikTokTrending(region: string = 'US', limit: number = 20): Promise<VideoData[]> {
   const regionCode = region === 'korea' ? 'KR' : 'US';
   
-  // 여러 API 엔드포인트를 병렬로 호출해서 더 많은 결과 수집 (최대화)
-  const trendingKeywords = [
-    'viral', 'trending', 'fyp', 'foryou', 'popular',          // 기본 트렌드
-    'dance', 'funny', 'comedy', 'music', 'challenge',         // 주요 카테고리
-    'korea', 'usa', 'global', 'tiktok', 'wow',                // 지역/플랫폼
-    'cute', 'pets', 'food', 'life', 'satisfying',             // 인기 주제
-    'video', 'new', 'hot', 'best', '2026',                    // 일반/최신
-    'today', 'week', 'month'                                  // 기간
-  ];
+  // 순수 트렌딩 데이터만 수집하기 위해 feed/list를 병렬로 다수 호출 (랜덤성 활용)
+  // 키워드 검색은 "인위적"이라는 사용자 피드백 반영하여 제거함
+  const PARALLEL_REQUESTS = 20; // 20회 병렬 호출 시도 (약 200~400개 확보 목표)
   
   const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
     id: String(item.video_id || item.id || ''),
@@ -58,19 +52,14 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
   });
 
   try {
-    // 1. 피드 리스트 API (기본) - 실패해도 무시
-    const feedPromise = fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50`, {
-      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-    }).then(r => r.json()).catch(e => { console.error('Feed fetch failed:', e); return null; });
-
-    // 2. 키워드 검색 API들 (병렬) - Promise.allSettled로 일부 실패 허용
-    const searchPromises = trendingKeywords.map(keyword =>
-      fetch(`https://www.tikwm.com/api/feed/search?keywords=${keyword}&count=50&region=${regionCode}`, {
-        headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-      }).then(r => r.json()).catch(e => { console.error(`Keyword ${keyword} failed:`, e); return null; })
+    // feed/list를 병렬로 여러 번 호출하여 데이터 풀 확장
+    const feedPromises = Array(PARALLEL_REQUESTS).fill(0).map((_, i) => 
+      fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50&cursor=${i}`, { // cursor는 동작 안할 수 있지만 캐시 방지용으로 넣음
+        headers: { 'Accept': 'application/json', 'User-Agent': `Mozilla/5.0 (Random=${Math.random()})` },
+      }).then(r => r.json()).catch(e => null)
     );
 
-    const results = await Promise.allSettled([feedPromise, ...searchPromises]);
+    const results = await Promise.allSettled(feedPromises);
     
     const allVideos: VideoData[] = [];
     const seenIds = new Set<string>();
@@ -79,15 +68,12 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
       if (result.status === 'fulfilled' && result.value) {
         const data = result.value;
         if (data.code === 0 && data.data) {
-          // data.data can be array or object (tikwm quirk) or contain 'videos' array (search)
           let items: Record<string, unknown>[] = [];
           
-          if (data.data.videos && Array.isArray(data.data.videos)) {
-            items = data.data.videos; // Search result
-          } else if (Array.isArray(data.data)) {
-            items = data.data; // Feed result (array)
+          if (Array.isArray(data.data)) {
+            items = data.data;
           } else if (typeof data.data === 'object') {
-            items = Object.values(data.data); // Feed result (object)
+            items = Object.values(data.data);
           }
 
           for (const item of items) {
