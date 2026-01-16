@@ -91,9 +91,45 @@ const SceneEditor: React.FC = () => {
     label: `⭐ ${voice.name}${voice.description ? ` - ${voice.description}` : ''}`,
   }));
 
-  // 이미지 프롬프트 자동 생성
-  const handleGeneratePrompt = () => {
+  // 이미지 프롬프트 자동 생성 (LLM 사용)
+  const handleGeneratePrompt = async () => {
     if (!currentProject) return;
+    
+    const hasLLM = !!settings.geminiApiKey || !!settings.openaiApiKey;
+    const stylePrompt = currentProject.masterImageStylePrompt || 'high quality, detailed, professional illustration';
+    const styleId = currentProject.masterImageStyleId || 'default';
+    
+    console.log('[SceneEditor] handleGeneratePrompt - hasLLM:', hasLLM);
+    
+    if (hasLLM) {
+      // LLM으로 프롬프트 생성
+      try {
+        console.log('[SceneEditor] LLM으로 프롬프트 생성 시작...');
+        const llmResponse = await fetch('/api/generate-scene-prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            script: activeScene.script,
+            stylePrompt: stylePrompt,
+            styleName: styleId,
+            characterDescription: currentProject.imageConsistency?.characterDescription,
+            geminiApiKey: settings.geminiApiKey,
+            openaiApiKey: settings.openaiApiKey,
+          }),
+        });
+        
+        if (llmResponse.ok) {
+          const llmData = await llmResponse.json();
+          console.log('[SceneEditor] ✅ LLM 프롬프트:', llmData.prompt.slice(0, 100) + '...');
+          handleUpdate({ imagePrompt: llmData.prompt });
+          return;
+        }
+      } catch (error) {
+        console.warn('[SceneEditor] LLM 실패, 폴백 사용:', error);
+      }
+    }
+    
+    // 폴백: 기존 방식
     const prompt = generateImagePrompt(
       activeScene.script,
       currentProject.imageStyle,
@@ -134,10 +170,47 @@ const SceneEditor: React.FC = () => {
       const sceneDescription = activeScene.imagePrompt || activeScene.script;
       console.log('[SceneEditor] sceneDescription:', sceneDescription?.slice(0, 50));
       
-      // 최종 프롬프트 조합: 스타일 + 일관성 + 씬 설명
+      // 최종 프롬프트 조합
       let finalPrompt: string;
       
-      if (masterStylePrompt) {
+      // LLM API 키 확인
+      const hasLLM = !!settings.geminiApiKey || !!settings.openaiApiKey;
+      const stylePrompt = masterStylePrompt || 'high quality, detailed, professional illustration';
+      const styleId = currentProject.masterImageStyleId || 'default';
+      
+      console.log('[SceneEditor] hasLLM:', hasLLM);
+      
+      if (hasLLM) {
+        // 🎯 LLM을 사용하여 대본에서 이미지 프롬프트 생성
+        console.log('[SceneEditor] ✅ LLM 사용하여 프롬프트 생성...');
+        
+        try {
+          const llmResponse = await fetch('/api/generate-scene-prompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              script: activeScene.script,
+              stylePrompt: stylePrompt,
+              styleName: styleId,
+              characterDescription: consistencySettings?.characterDescription,
+              geminiApiKey: settings.geminiApiKey,
+              openaiApiKey: settings.openaiApiKey,
+            }),
+          });
+          
+          if (llmResponse.ok) {
+            const llmData = await llmResponse.json();
+            finalPrompt = llmData.prompt;
+            console.log('[SceneEditor] ✅ LLM 프롬프트 생성 성공:', finalPrompt.slice(0, 150) + '...');
+          } else {
+            console.warn('[SceneEditor] LLM 실패, 폴백 사용');
+            finalPrompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
+          }
+        } catch (llmError) {
+          console.warn('[SceneEditor] LLM 오류:', llmError);
+          finalPrompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
+        }
+      } else if (masterStylePrompt) {
         // 마스터 스타일이 설정된 경우 새 방식 사용
         finalPrompt = buildFinalPrompt(
           sceneDescription,
