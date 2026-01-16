@@ -34,8 +34,9 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
     // TikTok Discover API (공개 접근 가능)
     const regionCode = region === 'korea' ? 'KR' : 'US';
     
-    // 무료 TikTok API 서비스 사용 (tikwm.com)
-    const response = await fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=${limit}`, {
+    // 무료 TikTok API 서비스 사용 (tikwm.com) - 필터링 전에 더 많이 가져오기
+    const fetchCount = Math.max(limit * 3, 50); // 필터링을 위해 더 많이 가져옴
+    const response = await fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=${fetchCount}`, {
       method: 'GET',
       headers: {
         'Accept': 'application/json',
