@@ -19,6 +19,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
+  Flame,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 
@@ -42,7 +43,8 @@ const toolsNavItems: NavItem[] = [
 ];
 
 const analysisNavItems: NavItem[] = [
-  { id: 'trend', label: '트렌드 분석', icon: <TrendingUp className="w-5 h-5" />, href: '/analysis/trend' },
+  { id: 'viral', label: '틱톡/인스타', icon: <Flame className="w-5 h-5" />, href: '/tools/viral-search', badge: 'NEW' },
+  { id: 'trend', label: '유튜브 분석', icon: <TrendingUp className="w-5 h-5" />, href: '/analysis/trend' },
   { id: 'comments', label: '댓글 분석', icon: <MessageSquare className="w-5 h-5" />, href: '/analysis/comments' },
   { id: 'revenue', label: '수익 대시보드', icon: <BarChart3 className="w-5 h-5" />, href: '/analysis/revenue' },
 ];
