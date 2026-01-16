@@ -18,6 +18,7 @@ import {
   CheckCircle,
   Globe,
   Flame,
+  Save,
 } from 'lucide-react';
 
 // Types
@@ -71,6 +72,7 @@ export default function ViralSearchPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   // Load saved settings
   useEffect(() => {
@@ -87,9 +89,11 @@ export default function ViralSearchPage() {
     } catch {}
   }, []);
 
-  // Save settings on change
-  useEffect(() => {
+  // Save settings explicitly
+  const handleSaveSettings = useCallback(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ platform, region, maxAge, minViews, maxResults }));
+    setShowSaveSuccess(true);
+    setTimeout(() => setShowSaveSuccess(false), 2000);
   }, [platform, region, maxAge, minViews, maxResults]);
 
   // Search handler
@@ -140,6 +144,20 @@ export default function ViralSearchPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* Save Success Toast */}
+      <AnimatePresence>
+        {showSaveSuccess && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-20 right-4 z-50 px-4 py-2 bg-green-500/90 text-white rounded-lg shadow-lg flex items-center gap-2 backdrop-blur-sm"
+          >
+            <CheckCircle className="w-4 h-4" />
+            <span className="text-sm font-medium">설정이 저장되었습니다</span>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Compact Header */}
       <div className="sticky top-0 z-40 bg-background/80 backdrop-blur-xl border-b border-border">
         <div className="max-w-[1800px] mx-auto px-4 py-3">
@@ -238,6 +256,15 @@ export default function ViralSearchPage() {
                 </select>
               </div>
             </div>
+
+            {/* Save Button */}
+            <button
+              onClick={handleSaveSettings}
+              className="p-2 rounded-lg bg-card border border-border hover:bg-card-hover hover:border-primary/50 text-muted hover:text-primary transition-all ml-2"
+              title="현재 설정을 기본값으로 저장"
+            >
+              <Save className="w-4 h-4" />
+            </button>
 
             {/* Search Button */}
             <button
