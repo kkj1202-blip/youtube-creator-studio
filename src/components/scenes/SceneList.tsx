@@ -214,14 +214,25 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       const sceneDescription = scene.imagePrompt || scene.script;
       console.log('[SceneList] sceneDescription:', sceneDescription?.slice(0, 50));
       
+      // 대본 빈값 체크
+      if (!scene.script?.trim()) {
+        throw new Error('대본이 비어있습니다. 먼저 대본을 입력하세요.');
+      }
+      
       let prompt: string;
       
       // LLM API 키 확인 (Gemini 또는 OpenAI)
       const hasLLM = !!settings.geminiApiKey || !!settings.openaiApiKey;
       
-      if (hasLLM && masterStylePrompt) {
+      // 🔥 핵심 수정: LLM은 masterStylePrompt 없이도 사용 가능!
+      // 스타일 정보 - 없으면 기본값 사용
+      const stylePrompt = masterStylePrompt || 'high quality, detailed, professional illustration';
+      const styleId = currentProject.masterImageStyleId || 'default';
+      
+      if (hasLLM) {
         // 🎯 LLM을 사용하여 대본에서 이미지 프롬프트 생성
         console.log('[SceneList] LLM을 사용하여 프롬프트 생성 시작...');
+        console.log('[SceneList] 스타일:', styleId, '| 프롬프트:', stylePrompt.slice(0, 50));
         
         try {
           const llmResponse = await fetch('/api/generate-scene-prompt', {
@@ -229,8 +240,8 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               script: scene.script,
-              stylePrompt: masterStylePrompt,
-              styleName: currentProject.masterImageStyleId || 'custom',
+              stylePrompt: stylePrompt,
+              styleName: styleId,
               characterDescription: consistencySettings.characterDescription,
               geminiApiKey: settings.geminiApiKey,
               openaiApiKey: settings.openaiApiKey,
@@ -242,12 +253,13 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
             prompt = llmData.prompt;
             console.log('[SceneList] ✅ LLM 프롬프트 생성 성공:', prompt.slice(0, 150) + '...');
           } else {
-            console.warn('[SceneList] LLM 프롬프트 생성 실패, 폴백 사용');
-            prompt = buildFinalPrompt(sceneDescription, masterStylePrompt, consistencySettings);
+            const errorData = await llmResponse.json().catch(() => ({}));
+            console.warn('[SceneList] LLM 프롬프트 생성 실패:', errorData.error || llmResponse.status);
+            prompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
           }
         } catch (llmError) {
           console.warn('[SceneList] LLM 오류, 폴백 사용:', llmError);
-          prompt = buildFinalPrompt(sceneDescription, masterStylePrompt, consistencySettings);
+          prompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
         }
       } else if (masterStylePrompt) {
         // 캐릭터 분석으로 스타일이 설정된 경우 - 기존 방식 (LLM 없음)
