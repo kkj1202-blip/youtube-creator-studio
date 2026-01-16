@@ -229,10 +229,17 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       const stylePrompt = masterStylePrompt || 'high quality, detailed, professional illustration';
       const styleId = currentProject.masterImageStyleId || 'default';
       
+      // 🔍 디버그 로그
+      console.log('[SceneList] ========== 프롬프트 생성 디버그 ==========');
+      console.log('[SceneList] hasLLM:', hasLLM);
+      console.log('[SceneList] geminiApiKey:', settings.geminiApiKey ? '있음 (' + settings.geminiApiKey.slice(0, 10) + '...)' : '없음');
+      console.log('[SceneList] openaiApiKey:', settings.openaiApiKey ? '있음 (' + settings.openaiApiKey.slice(0, 10) + '...)' : '없음');
+      console.log('[SceneList] styleId:', styleId);
+      console.log('[SceneList] stylePrompt:', stylePrompt.slice(0, 50) + '...');
+      
       if (hasLLM) {
         // 🎯 LLM을 사용하여 대본에서 이미지 프롬프트 생성
-        console.log('[SceneList] LLM을 사용하여 프롬프트 생성 시작...');
-        console.log('[SceneList] 스타일:', styleId, '| 프롬프트:', stylePrompt.slice(0, 50));
+        console.log('[SceneList] ✅ LLM 사용 조건 충족! API 호출 시작...');
         
         try {
           const llmResponse = await fetch('/api/generate-scene-prompt', {
