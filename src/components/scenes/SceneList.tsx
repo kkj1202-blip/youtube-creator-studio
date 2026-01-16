@@ -243,6 +243,20 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
         // 🎯 LLM을 사용하여 대본에서 이미지 프롬프트 생성
         console.log('[SceneList] ✅ LLM 사용 조건 충족! API 호출 시작...');
         
+        // 🎯 스틱맨 스타일이면 캐릭터 설명도 스틱맨으로 변환
+        const isStickman = styleId.toLowerCase().includes('stickman') || 
+                           styleId.toLowerCase().includes('stick') ||
+                           stylePrompt.toLowerCase().includes('stickman') ||
+                           stylePrompt.toLowerCase().includes('졸라맨');
+        
+        let finalCharacterDescription = consistencySettings.characterDescription;
+        
+        if (isStickman && finalCharacterDescription) {
+          // 스틱맨 스타일이면 캐릭터 설명을 단순화
+          console.log('[SceneList] 스틱맨 스타일 - 캐릭터 설명 변환');
+          finalCharacterDescription = 'white stickman character with round head, simple minimalist body, same stickman in every scene';
+        }
+        
         try {
           const llmResponse = await fetch('/api/generate-scene-prompt', {
             method: 'POST',
@@ -251,7 +265,7 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
               script: scene.script,
               stylePrompt: stylePrompt,
               styleName: styleId,
-              characterDescription: consistencySettings.characterDescription,
+              characterDescription: finalCharacterDescription,
               geminiApiKey: settings.geminiApiKey,
               openaiApiKey: settings.openaiApiKey,
             }),

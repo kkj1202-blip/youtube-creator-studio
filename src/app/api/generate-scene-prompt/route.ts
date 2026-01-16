@@ -195,7 +195,55 @@ NO TEXT, NO WORDS, NO LETTERS, ${isStickman ? 'ONLY white stickman characters, N
       prompt = 'NO TEXT, NO WORDS, NO LETTERS, ' + prompt;
     }
 
-    console.log('[generate-scene-prompt] 생성된 프롬프트:', prompt.slice(0, 150) + '...');
+    // 🔥 스틱맨 스타일 강제 후처리
+    if (isStickman) {
+      console.log('[generate-scene-prompt] 스틱맨 스타일 강제 후처리 적용...');
+      
+      // 실사 인물 단어를 스틱맨으로 대체
+      const realisticToStickman: Record<string, string> = {
+        'businessman': 'white stickman',
+        'businesswoman': 'white stickman',
+        'businesspeople': 'white stickmen',
+        'businessperson': 'white stickman',
+        'man': 'white stickman',
+        'woman': 'white stickman',
+        'person': 'white stickman',
+        'people': 'white stickmen',
+        'worker': 'white stickman worker',
+        'workers': 'white stickmen workers',
+        'employee': 'white stickman',
+        'employees': 'white stickmen',
+        'executive': 'white stickman',
+        'executives': 'white stickmen',
+        'official': 'white stickman',
+        'officials': 'white stickmen',
+        'narrator': 'white stickman narrator',
+        'presenter': 'white stickman presenter',
+        'human': 'white stickman',
+        'humans': 'white stickmen',
+        'character': 'white stickman character',
+        'characters': 'white stickman characters',
+        'figure': 'white stick figure',
+        'figures': 'white stick figures',
+      };
+      
+      // 대소문자 무시하고 대체
+      for (const [realistic, stickman] of Object.entries(realisticToStickman)) {
+        const regex = new RegExp(`\\b${realistic}\\b`, 'gi');
+        prompt = prompt.replace(regex, stickman);
+      }
+      
+      // 외모 설명 제거 (피부색, 머리카락 등)
+      prompt = prompt.replace(/\b(skin|hair|face|eyes|nose|mouth|lips|beard|mustache)\b[^,]*/gi, '');
+      prompt = prompt.replace(/\b(wearing suit|in suit|suit and tie|formal attire|dressed in)\b/gi, '');
+      
+      // 스틱맨 강제 후미 추가
+      if (!prompt.includes('ONLY white stickman')) {
+        prompt = prompt + ', ONLY simple white stickman characters, NO realistic humans, NO detailed faces, NO skin texture';
+      }
+    }
+
+    console.log('[generate-scene-prompt] 최종 프롬프트:', prompt.slice(0, 200) + '...');
 
     return NextResponse.json({
       success: true,
