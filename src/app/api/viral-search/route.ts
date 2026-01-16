@@ -32,8 +32,13 @@ interface VideoData {
 async function fetchTikTokTrending(region: string = 'US', limit: number = 20): Promise<VideoData[]> {
   const regionCode = region === 'korea' ? 'KR' : 'US';
   
-  // 여러 API 엔드포인트를 병렬로 호출해서 더 많은 결과 수집
-  const trendingKeywords = ['viral', 'trending', 'fyp', 'foryou', 'popular'];
+  // 여러 API 엔드포인트를 병렬로 호출해서 더 많은 결과 수집 (최대화)
+  const trendingKeywords = [
+    'viral', 'trending', 'fyp', 'foryou', 'popular',          // 기본 트렌드
+    'dance', 'funny', 'comedy', 'music', 'challenge',         // 주요 카테고리
+    'korea', 'usa', 'global', 'tiktok', 'wow',                // 지역/플랫폼
+    'cute', 'pets', 'food', 'life', 'satisfying'              // 인기 주제
+  ];
   
   const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
     id: String(item.video_id || item.id || ''),
@@ -51,43 +56,48 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
   });
 
   try {
-    // 1. 피드 리스트 API (기본)
+    // 1. 피드 리스트 API (기본) - 실패해도 무시
     const feedPromise = fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50`, {
       headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-    }).then(r => r.json()).catch(() => null);
+    }).then(r => r.json()).catch(e => { console.error('Feed fetch failed:', e); return null; });
 
-    // 2. 키워드 검색 API들 (병렬)
+    // 2. 키워드 검색 API들 (병렬) - Promise.allSettled로 일부 실패 허용
     const searchPromises = trendingKeywords.map(keyword =>
       fetch(`https://www.tikwm.com/api/feed/search?keywords=${keyword}&count=30&region=${regionCode}`, {
         headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
-      }).then(r => r.json()).catch(() => null)
+      }).then(r => r.json()).catch(e => { console.error(`Keyword ${keyword} failed:`, e); return null; })
     );
 
-    const [feedResult, ...searchResults] = await Promise.all([feedPromise, ...searchPromises]);
+    const results = await Promise.allSettled([feedPromise, ...searchPromises]);
     
     const allVideos: VideoData[] = [];
     const seenIds = new Set<string>();
 
-    // 피드 결과 추가
-    if (feedResult?.code === 0 && feedResult.data) {
-      const videos = Array.isArray(feedResult.data) ? feedResult.data : Object.values(feedResult.data);
-      for (const item of videos as Record<string, unknown>[]) {
-        const video = mapToVideoData(item);
-        if (!seenIds.has(video.id)) {
-          seenIds.add(video.id);
-          allVideos.push(video);
-        }
-      }
-    }
+    for (const result of results) {
+      if (result.status === 'fulfilled' && result.value) {
+        const data = result.value;
+        if (data.code === 0 && data.data) {
+          // data.data can be array or object (tikwm quirk) or contain 'videos' array (search)
+          let items: Record<string, unknown>[] = [];
+          
+          if (data.data.videos && Array.isArray(data.data.videos)) {
+            items = data.data.videos; // Search result
+          } else if (Array.isArray(data.data)) {
+            items = data.data; // Feed result (array)
+          } else if (typeof data.data === 'object') {
+            items = Object.values(data.data); // Feed result (object)
+          }
 
-    // 검색 결과 추가
-    for (const result of searchResults) {
-      if (result?.code === 0 && result.data?.videos) {
-        for (const item of result.data.videos as Record<string, unknown>[]) {
-          const video = mapToVideoData(item);
-          if (!seenIds.has(video.id)) {
-            seenIds.add(video.id);
-            allVideos.push(video);
+          for (const item of items) {
+            try {
+              const video = mapToVideoData(item);
+              if (!seenIds.has(video.id)) {
+                seenIds.add(video.id);
+                allVideos.push(video);
+              }
+            } catch (err) {
+              // 개별 아이템 파싱 에러 무시
+            }
           }
         }
       }
