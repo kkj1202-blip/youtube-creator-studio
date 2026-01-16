@@ -28,49 +28,73 @@ interface VideoData {
   duration?: number;
 }
 
-// TikTok Web API를 통한 트렌딩 조회
+// TikTok Web API를 통한 트렌딩 조회 - 여러 소스에서 병렬로 가져오기
 async function fetchTikTokTrending(region: string = 'US', limit: number = 20): Promise<VideoData[]> {
+  const regionCode = region === 'korea' ? 'KR' : 'US';
+  
+  // 여러 API 엔드포인트를 병렬로 호출해서 더 많은 결과 수집
+  const trendingKeywords = ['viral', 'trending', 'fyp', 'foryou', 'popular'];
+  
+  const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
+    id: String(item.video_id || item.id || ''),
+    platform: 'tiktok' as const,
+    url: `https://www.tiktok.com/@${(item.author as Record<string, unknown>)?.unique_id || 'user'}/video/${item.video_id || item.id}`,
+    thumbnail: String(item.origin_cover || item.cover || item.ai_dynamic_cover || ''),
+    title: String(item.title || ''),
+    author: `@${(item.author as Record<string, unknown>)?.unique_id || (item.author as Record<string, unknown>)?.nickname || 'unknown'}`,
+    views: Number(item.play_count || 0),
+    likes: Number(item.digg_count || 0),
+    comments: Number(item.comment_count || 0),
+    shares: Number(item.share_count || 0),
+    uploadDate: new Date(Number(item.create_time || 0) * 1000).toISOString(),
+    duration: Number(item.duration || 0),
+  });
+
   try {
-    // TikTok Discover API (공개 접근 가능)
-    const regionCode = region === 'korea' ? 'KR' : 'US';
-    
-    // 무료 TikTok API 서비스 사용 (tikwm.com) - 필터링 전에 더 많이 가져오기
-    const fetchCount = Math.max(limit * 3, 50); // 필터링을 위해 더 많이 가져옴
-    const response = await fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=${fetchCount}`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      },
-    });
+    // 1. 피드 리스트 API (기본)
+    const feedPromise = fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50`, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+    }).then(r => r.json()).catch(() => null);
 
-    if (!response.ok) {
-      throw new Error(`TikTok API error: ${response.status}`);
+    // 2. 키워드 검색 API들 (병렬)
+    const searchPromises = trendingKeywords.map(keyword =>
+      fetch(`https://www.tikwm.com/api/feed/search?keywords=${keyword}&count=30&region=${regionCode}`, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      }).then(r => r.json()).catch(() => null)
+    );
+
+    const [feedResult, ...searchResults] = await Promise.all([feedPromise, ...searchPromises]);
+    
+    const allVideos: VideoData[] = [];
+    const seenIds = new Set<string>();
+
+    // 피드 결과 추가
+    if (feedResult?.code === 0 && feedResult.data) {
+      const videos = Array.isArray(feedResult.data) ? feedResult.data : Object.values(feedResult.data);
+      for (const item of videos as Record<string, unknown>[]) {
+        const video = mapToVideoData(item);
+        if (!seenIds.has(video.id)) {
+          seenIds.add(video.id);
+          allVideos.push(video);
+        }
+      }
     }
 
-    const data = await response.json();
-    
-    if (data.code === 0 && data.data) {
-      // tikwm.com returns data as object with numeric keys, not array
-      const videos = Array.isArray(data.data) ? data.data : Object.values(data.data);
-      
-      return videos.map((item: Record<string, unknown>) => ({
-        id: String(item.video_id || item.id || ''),
-        platform: 'tiktok' as const,
-        url: `https://www.tiktok.com/@${(item.author as Record<string, unknown>)?.unique_id || 'user'}/video/${item.video_id || item.id}`,
-        thumbnail: String(item.origin_cover || item.cover || item.ai_dynamic_cover || ''),
-        title: String(item.title || ''),
-        author: `@${(item.author as Record<string, unknown>)?.unique_id || (item.author as Record<string, unknown>)?.nickname || 'unknown'}`,
-        views: Number(item.play_count || 0),
-        likes: Number(item.digg_count || 0),
-        comments: Number(item.comment_count || 0),
-        shares: Number(item.share_count || 0),
-        uploadDate: new Date(Number(item.create_time || 0) * 1000).toISOString(),
-        duration: Number(item.duration || 0),
-      }));
+    // 검색 결과 추가
+    for (const result of searchResults) {
+      if (result?.code === 0 && result.data?.videos) {
+        for (const item of result.data.videos as Record<string, unknown>[]) {
+          const video = mapToVideoData(item);
+          if (!seenIds.has(video.id)) {
+            seenIds.add(video.id);
+            allVideos.push(video);
+          }
+        }
+      }
     }
-    
-    throw new Error('Invalid API response');
+
+    console.log(`🎵 TikTok: 총 ${allVideos.length}개 영상 수집됨`);
+    return allVideos;
   } catch (error) {
     console.error('TikTok trending fetch error:', error);
     return [];
