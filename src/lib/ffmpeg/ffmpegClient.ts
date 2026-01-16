@@ -195,32 +195,31 @@ function getRandomKenBurns(): KenBurnsEffect {
 function calculateKenBurns(
   effect: KenBurnsEffect,
   progress: number,  // 0 ~ 1
-  intensity: number = 15,  // 5 ~ 50
+  intensity: number = 10,  // 5 ~ 50, 기본값 더 느리게
   duration: number = 5  // 영상 길이 (초)
 ): { scale: number; translateX: number; translateY: number } {
   // ============ 영상 길이 기반 자동 스케일링 ============
   // 기준: 5초 영상에서 기본 intensity가 적용됨
-  // - 짧은 영상(2초): 효과량 증가 (같은 시간에 더 많이 움직임 = 체감 속도 유지)
-  // - 긴 영상(10초): 효과량 증가 (더 많이 움직여야 속도감 유지)
+  // - 짧은 영상(2초): 효과량 증가 (더 빠르게 움직여야 체감 동일)
+  // - 긴 영상(10초): 효과량 감소 (느리게 움직여야 체감 동일)
   
   const baseDuration = 5;  // 기준 영상 길이 (초)
   
-  // 스케일 팩터: 영상 길이에 비례 (더 긴 영상 = 더 많은 효과량)
-  // 예: 10초 영상 = 2배 효과, 2.5초 영상 = 0.5배 효과
-  // 단, 너무 극단적이지 않게 0.5 ~ 3.0 범위로 제한
-  const durationScale = Math.max(0.5, Math.min(3.0, duration / baseDuration));
+  // 스케일 팩터: 영상 길이에 반비례 (더 긴 영상 = 느린 체감 속도)
+  // 예: 10초 영상 = 0.5배 효과 (느리게), 2.5초 영상 = 2배 효과 (빠르게)
+  // 단, 너무 극단적이지 않게 0.3 ~ 2.0 범위로 제한
+  const durationScale = Math.max(0.3, Math.min(2.0, baseDuration / duration));
   
-  // 최종 intensity 계산 (영상 길이에 비례)
+  // 최종 intensity 계산 (영상 길이에 반비례)
   const scaledIntensity = intensity * durationScale;
   
   // intensity를 0.05 ~ 1.5 범위로 변환 (5% ~ 150% 효과)
   // 기존보다 max를 늘려서 긴 영상에서도 충분한 움직임 보장
   const power = Math.max(0.05, Math.min(1.5, scaledIntensity / 100));
   
-  // ease-in-out 곡선 (부드러운 움직임)
-  const t = progress < 0.5 
-    ? 2 * progress * progress 
-    : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+  // 선형 보간 (linear) - 영상 전체에 걸쳐 균일하게 움직임
+  // 기존 ease-in-out은 끝부분에서 멈춘 것처럼 보이는 문제 있음
+  const t = progress;
   
   let scale = 1;
   let translateX = 0;

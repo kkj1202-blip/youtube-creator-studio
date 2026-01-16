@@ -298,7 +298,7 @@ const SceneEditor: React.FC = () => {
         // 효과 설정 (씬 → 프로젝트 기본값 → 'none')
         kenBurns: activeScene.kenBurns || currentProject?.defaultKenBurns || 'none',
         kenBurnsIntensity: activeScene.kenBurnsZoom || currentProject?.defaultKenBurnsZoom || 15,
-        transition: activeScene.transition || 'fade',
+        transition: activeScene.transition || currentProject?.defaultTransition || 'none',
         // 모션 효과 (캐릭터 애니메이션)
         motionEffect: activeScene.motionEffect || currentProject?.defaultMotionEffect || 'none',
         motionIntensity: activeScene.motionIntensity || 1.0,
