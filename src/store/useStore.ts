@@ -899,9 +899,13 @@ export const useStore = create<AppState>()(
         // URL 유효성 체크 (blob:, data: 제외, 외부 URL만 저장)
         const isValidExternalUrl = (url: string | undefined): boolean => {
           if (!url) return false;
+          // blob: URL은 브라우저 세션에서만 유효하므로 저장 안 함
           if (url.startsWith('blob:')) return false;
-          if (url.startsWith('data:')) return false;
-          // http/https URL만 저장
+          // 프록시 이미지 URL 허용 (/api/proxy-image)
+          if (url.startsWith('/api/')) return true;
+          // data: URL (base64 인코딩된 오디오 등) 허용
+          if (url.startsWith('data:')) return true;
+          // http/https URL 허용
           return url.startsWith('http://') || url.startsWith('https://');
         };
 
