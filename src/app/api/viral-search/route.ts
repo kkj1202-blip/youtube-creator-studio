@@ -92,7 +92,8 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
     }
 
     console.log(`🎵 TikTok: 총 ${allVideos.length}개 영상 수집됨`);
-    return allVideos;
+    // 조회수 높은 순으로 정렬 (사용자 니즈 반영)
+    return allVideos.sort((a, b) => b.views - a.views);
   } catch (error) {
     console.error('TikTok trending fetch error:', error);
     return [];
