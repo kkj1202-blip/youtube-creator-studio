@@ -186,8 +186,28 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       const masterStylePrompt = currentProject.masterImageStylePrompt || '';
       console.log('[SceneList] masterStylePrompt:', masterStylePrompt ? masterStylePrompt.slice(0, 50) + '...' : '(없음)');
       
-      // 캐릭터 일관성 설정
-      const consistencySettings = currentProject.imageConsistency;
+      // 캐릭터 일관성 설정 (approvedCharacters에서 자동 추출)
+      let consistencySettings = currentProject.imageConsistency || {};
+      
+      // approvedCharacters가 있고 characterDescription이 없으면 자동 생성
+      if (!consistencySettings.characterDescription && currentProject.approvedCharacters && currentProject.approvedCharacters.length > 0) {
+        const mainCharacter = currentProject.approvedCharacters[0];
+        if (mainCharacter) {
+          // 캐릭터 정보를 일관성 설정으로 자동 변환
+          const charDesc = [
+            mainCharacter.appearance || '',
+            mainCharacter.generatedPrompt || '',
+          ].filter(Boolean).join(', ');
+          
+          if (charDesc) {
+            consistencySettings = {
+              ...consistencySettings,
+              characterDescription: `SAME character throughout: ${charDesc}`,
+            };
+            console.log('[SceneList] approvedCharacters에서 캐릭터 설명 자동 추출:', charDesc.slice(0, 50));
+          }
+        }
+      }
       console.log('[SceneList] consistencySettings:', consistencySettings);
       
       // 씬 설명
@@ -196,8 +216,41 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       
       let prompt: string;
       
-      if (masterStylePrompt) {
-        // 캐릭터 분석으로 스타일이 설정된 경우 - 일관성 적용
+      // LLM API 키 확인 (Gemini 또는 OpenAI)
+      const hasLLM = !!settings.geminiApiKey || !!settings.openaiApiKey;
+      
+      if (hasLLM && masterStylePrompt) {
+        // 🎯 LLM을 사용하여 대본에서 이미지 프롬프트 생성
+        console.log('[SceneList] LLM을 사용하여 프롬프트 생성 시작...');
+        
+        try {
+          const llmResponse = await fetch('/api/generate-scene-prompt', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              script: scene.script,
+              stylePrompt: masterStylePrompt,
+              styleName: currentProject.masterImageStyleId || 'custom',
+              characterDescription: consistencySettings.characterDescription,
+              geminiApiKey: settings.geminiApiKey,
+              openaiApiKey: settings.openaiApiKey,
+            }),
+          });
+          
+          if (llmResponse.ok) {
+            const llmData = await llmResponse.json();
+            prompt = llmData.prompt;
+            console.log('[SceneList] ✅ LLM 프롬프트 생성 성공:', prompt.slice(0, 150) + '...');
+          } else {
+            console.warn('[SceneList] LLM 프롬프트 생성 실패, 폴백 사용');
+            prompt = buildFinalPrompt(sceneDescription, masterStylePrompt, consistencySettings);
+          }
+        } catch (llmError) {
+          console.warn('[SceneList] LLM 오류, 폴백 사용:', llmError);
+          prompt = buildFinalPrompt(sceneDescription, masterStylePrompt, consistencySettings);
+        }
+      } else if (masterStylePrompt) {
+        // 캐릭터 분석으로 스타일이 설정된 경우 - 기존 방식 (LLM 없음)
         prompt = buildFinalPrompt(
           sceneDescription,
           masterStylePrompt,
@@ -253,7 +306,7 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
         error: errorMsg,
       });
     }
-  }, [currentProject, settings.kieApiKey, updateScene]);
+  }, [currentProject, settings.kieApiKey, settings.geminiApiKey, settings.openaiApiKey, updateScene]);
 
   // 일괄 이미지 생성 핸들러
   const handleGenerateAllImages = useCallback(async () => {

@@ -489,6 +489,62 @@ function convertScriptToEnglishScene(script: string): string {
     keywords.push('group of people');
   }
   
+  // ========== 비즈니스/경제 ==========
+  if (script.includes('삼성') || script.includes('기업') || script.includes('회사') || script.includes('업체')) {
+    keywords.push('corporate business setting');
+  }
+  if (script.includes('공장') || script.includes('제조') || script.includes('생산')) {
+    keywords.push('factory manufacturing plant');
+  }
+  if (script.includes('세금') || script.includes('납세') || script.includes('과세')) {
+    keywords.push('tax documents money');
+  }
+  if (script.includes('철수') || script.includes('짐') || script.includes('싸')) {
+    keywords.push('packing moving boxes leaving');
+  }
+  if (script.includes('투자') || script.includes('이익') || script.includes('손실')) {
+    keywords.push('investment financial graphs');
+  }
+  
+  // ========== 정치/정부 ==========
+  if (script.includes('정부') || script.includes('정책') || script.includes('규제')) {
+    keywords.push('government building official setting');
+  }
+  if (script.includes('대통령') || script.includes('장관') || script.includes('관료')) {
+    keywords.push('political leader podium');
+  }
+  if (script.includes('법') || script.includes('법률') || script.includes('규정')) {
+    keywords.push('legal documents court');
+  }
+  
+  // ========== 국제/국가 ==========
+  if (script.includes('베트남') || script.includes('동남아')) {
+    keywords.push('Vietnam Southeast Asia factory district');
+  }
+  if (script.includes('중국') || script.includes('미국') || script.includes('일본') || script.includes('한국')) {
+    keywords.push('international global map');
+  }
+  if (script.includes('해외') || script.includes('외국') || script.includes('수출') || script.includes('수입')) {
+    keywords.push('international trade shipping');
+  }
+  
+  // ========== 위기/문제 ==========
+  if (script.includes('위기') || script.includes('문제') || script.includes('충격')) {
+    keywords.push('crisis situation dramatic urgent');
+  }
+  if (script.includes('전기') || script.includes('정전') || script.includes('끊')) {
+    keywords.push('power outage electricity dark');
+  }
+  if (script.includes('방관') || script.includes('무시') || script.includes('외면')) {
+    keywords.push('ignoring turning away');
+  }
+  if (script.includes('약속') || script.includes('뒤집') || script.includes('배신')) {
+    keywords.push('broken promise betrayal');
+  }
+  if (script.includes('보호') || script.includes('지원') || script.includes('도와')) {
+    keywords.push('protection support helping');
+  }
+  
   // ========== 기본값 + 배경 보정 ==========
   if (keywords.length === 0) {
     keywords.push('character in colorful illustrated scene');
@@ -499,7 +555,8 @@ function convertScriptToEnglishScene(script: string): string {
     k.includes('interior') || k.includes('background') || k.includes('scene') || 
     k.includes('setting') || k.includes('cafe') || k.includes('office') ||
     k.includes('park') || k.includes('forest') || k.includes('beach') ||
-    k.includes('city') || k.includes('street') || k.includes('school')
+    k.includes('city') || k.includes('street') || k.includes('school') ||
+    k.includes('factory') || k.includes('government') || k.includes('Vietnam')
   );
   
   if (!hasBackground) {
