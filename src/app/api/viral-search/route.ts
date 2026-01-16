@@ -37,7 +37,9 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
     'viral', 'trending', 'fyp', 'foryou', 'popular',          // 기본 트렌드
     'dance', 'funny', 'comedy', 'music', 'challenge',         // 주요 카테고리
     'korea', 'usa', 'global', 'tiktok', 'wow',                // 지역/플랫폼
-    'cute', 'pets', 'food', 'life', 'satisfying'              // 인기 주제
+    'cute', 'pets', 'food', 'life', 'satisfying',             // 인기 주제
+    'video', 'new', 'hot', 'best', '2026',                    // 일반/최신
+    'today', 'week', 'month'                                  // 기간
   ];
   
   const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
@@ -63,7 +65,7 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
 
     // 2. 키워드 검색 API들 (병렬) - Promise.allSettled로 일부 실패 허용
     const searchPromises = trendingKeywords.map(keyword =>
-      fetch(`https://www.tikwm.com/api/feed/search?keywords=${keyword}&count=30&region=${regionCode}`, {
+      fetch(`https://www.tikwm.com/api/feed/search?keywords=${keyword}&count=50&region=${regionCode}`, {
         headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
       }).then(r => r.json()).catch(e => { console.error(`Keyword ${keyword} failed:`, e); return null; })
     );
