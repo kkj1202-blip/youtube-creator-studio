@@ -33,8 +33,10 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
   const regionCode = region === 'korea' ? 'KR' : 'US';
   
   // 순수 트렌딩 데이터만 수집하기 위해 feed/list를 병렬로 다수 호출 (랜덤성 활용)
+  // 순수 트렌딩 데이터만 수집하기 위해 feed/list를 병렬로 다수 호출 (랜덤성 활용)
   // 키워드 검색은 "인위적"이라는 사용자 피드백 반영하여 제거함
   const PARALLEL_REQUESTS = 20; // 20회 병렬 호출 시도 (약 200~400개 확보 목표)
+  const BATCH_SIZE = 5; // 한 번에 5개씩 요청 (Rate Limit 방지)
   
   const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
     id: String(item.video_id || item.id || ''),
@@ -52,47 +54,61 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
   });
 
   try {
-    // feed/list를 병렬로 여러 번 호출하여 데이터 풀 확장
-    const feedPromises = Array(PARALLEL_REQUESTS).fill(0).map((_, i) => 
-      fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50&cursor=${i}`, { // cursor는 동작 안할 수 있지만 캐시 방지용으로 넣음
-        headers: { 'Accept': 'application/json', 'User-Agent': `Mozilla/5.0 (Random=${Math.random()})` },
-      }).then(r => r.json()).catch(e => null)
-    );
-
-    const results = await Promise.allSettled(feedPromises);
-    
     const allVideos: VideoData[] = [];
     const seenIds = new Set<string>();
 
-    for (const result of results) {
-      if (result.status === 'fulfilled' && result.value) {
-        const data = result.value;
-        if (data.code === 0 && data.data) {
-          let items: Record<string, unknown>[] = [];
-          
-          if (Array.isArray(data.data)) {
-            items = data.data;
-          } else if (typeof data.data === 'object') {
-            items = Object.values(data.data);
-          }
+    console.log(`🚀 Starting TikTok trending fetch: ${PARALLEL_REQUESTS} requests...`);
 
-          for (const item of items) {
-            try {
-              const video = mapToVideoData(item);
-              if (!seenIds.has(video.id)) {
-                seenIds.add(video.id);
-                allVideos.push(video);
+    // 배치 처리로 Rate Limit 회피
+    for (let i = 0; i < PARALLEL_REQUESTS; i += BATCH_SIZE) {
+      const batchPromises = Array(BATCH_SIZE).fill(0).map((_, j) => {
+        const cursor = i + j;
+        return fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50&cursor=${cursor}`, {
+          headers: { 'Accept': 'application/json', 'User-Agent': `Mozilla/5.0 (Random=${Math.random()})` },
+        }).then(r => r.json()).catch(e => { console.error(`Fetch error (cursor=${cursor}):`, e); return null; });
+      });
+
+      const results = await Promise.allSettled(batchPromises);
+
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          const data = result.value;
+          if (data.code === 0 && data.data) {
+            let items: Record<string, unknown>[] = [];
+            
+            if (Array.isArray(data.data)) {
+              items = data.data;
+            } else if (typeof data.data === 'object') {
+              items = Object.values(data.data);
+            }
+
+            for (const item of items) {
+              try {
+                const video = mapToVideoData(item);
+                // 유효성 검사 (ID, 날짜 등)
+                if (!video.id || video.views === 0) continue;
+
+                if (!seenIds.has(video.id)) {
+                  seenIds.add(video.id);
+                  allVideos.push(video);
+                }
+              } catch (err) {
+                // 개별 아이템 파싱 에러 무시
               }
-            } catch (err) {
-              // 개별 아이템 파싱 에러 무시
             }
           }
         }
       }
+
+      // 배치 사이 딜레이
+      if (i + BATCH_SIZE < PARALLEL_REQUESTS) {
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
     }
 
-    console.log(`🎵 TikTok: 총 ${allVideos.length}개 영상 수집됨`);
-    // 조회수 높은 순으로 정렬 (사용자 니즈 반영)
+    console.log(`🎵 TikTok raw fetched: ${allVideos.length} videos`);
+    
+    // 조회수 높은 순으로 정렬
     return allVideos.sort((a, b) => b.views - a.views);
   } catch (error) {
     console.error('TikTok trending fetch error:', error);
