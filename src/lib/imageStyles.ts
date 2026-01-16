@@ -24,7 +24,7 @@ export interface StyleCategory {
 
 // ============ 기본 품질 프롬프트 (모든 스타일에 자동 추가) ============
 export const QUALITY_SUFFIX = ', masterpiece, best quality, 8k ultra HD, sharp focus, highly detailed';
-export const NEGATIVE_PROMPT = 'text, watermark, signature, logo, words, letters, blurry, low quality, distorted, deformed, ugly, bad anatomy, cropped';
+export const NEGATIVE_PROMPT = 'text, watermark, signature, logo, words, letters, writing, caption, subtitle, title, label, Korean text, Chinese text, Japanese text, any language text, typography, font, number, digit, script, inscription, blurry, low quality, distorted, deformed, ugly, bad anatomy, cropped, extra limbs, duplicate, disfigured';
 
 export const imageStyleLibrary: StyleCategory[] = [
   {
@@ -60,7 +60,7 @@ export const imageStyleLibrary: StyleCategory[] = [
       {
         id: 'stickman',
         name: '3D 졸라맨 (Trendy Stickman)',
-        prompt: 'Trendy 3D rendered white stickman character, cute minimalist 3D figure with smooth white body, small round head with simple dot eyes, stylized 3D character with soft shadows, modern CGI render, clean white character on vibrant colorful 3D background, Pixar-style lighting, cheerful expression, dynamic action pose, bright pop-color environment, soft ambient occlusion',
+        prompt: 'ONLY white stickman characters, 3D rendered minimalist white stick figure with smooth white body and small round head with simple black dot eyes, NO realistic humans, NO detailed faces, NO skin texture, simple geometric white character, cute minimalist 3D figure, soft shadows, modern CGI render, clean white stick figure on vibrant colorful 3D background, Pixar-style lighting, cheerful expression, dynamic pose, bright pop-color environment, soft ambient occlusion, all characters must be simple white stickman style',
       },
       {
         id: 'claymation',
@@ -538,11 +538,20 @@ export function buildFinalPrompt(
 ): string {
   const parts: string[] = [];
   
+  // ============ 0. 텍스트 금지 (가장 먼저!) ============
+  parts.push('NO TEXT, NO WORDS, NO LETTERS, NO WRITING, NO CAPTIONS, NO SUBTITLES, NO KOREAN TEXT');
+  
   // ============ 1. 스타일 핵심 (짧게) ============
   // 스타일의 핵심 부분만 추출 (100자)
   if (stylePrompt) {
     const styleCore = stylePrompt.slice(0, BUDGET.styleCore);
     parts.push(styleCore);
+    
+    // 졸라맨/스틱맨 스타일은 실사 금지 추가
+    const lowerStyle = stylePrompt.toLowerCase();
+    if (lowerStyle.includes('stickman') || lowerStyle.includes('stick figure') || lowerStyle.includes('white minimalist')) {
+      parts.push('ONLY simple white stickman characters, NO realistic humans, NO detailed faces, NO skin texture');
+    }
   }
   
   // ============ 2. 씬 설명 (가장 중요!) ============
@@ -574,21 +583,34 @@ export function buildFinalPrompt(
   }
   
   // 디버그 로그
-  console.log('[buildFinalPrompt] v4.0 씬 중심 프롬프트:');
+  console.log('[buildFinalPrompt] v5.0 텍스트 금지 + 스타일 강화 프롬프트:');
+  console.log(`  0. 텍스트 금지: 적용됨`);
   console.log(`  1. 스타일: ${stylePrompt?.slice(0, 30) || 'N/A'}...`);
   console.log(`  2. 씬: ${sceneDescription?.slice(0, 40) || 'N/A'}...`);
   console.log(`  3. 캐릭터: ${consistencySettings?.characterDescription?.slice(0, 30) || 'N/A'}...`);
   console.log(`  - 총 길이: ${finalPrompt.length}/${MAX_PROMPT_LENGTH}자`);
-  console.log(`  - 최종: ${finalPrompt.slice(0, 100)}...`);
+  console.log(`  - 최종: ${finalPrompt.slice(0, 150)}...`);
   
   return finalPrompt;
 }
 
 /**
- * 네거티브 프롬프트 가져오기
+ * 네거티브 프롬프트 가져오기 (스타일별 강화)
  */
-export function getNegativePrompt(): string {
-  return NEGATIVE_PROMPT;
+export function getNegativePrompt(styleId?: string): string {
+  let negativePrompt = NEGATIVE_PROMPT;
+  
+  // 졸라맨 스타일일 때 실사 캐릭터 강력 차단
+  if (styleId === 'stickman') {
+    negativePrompt += ', realistic human, photorealistic person, detailed face, realistic skin, human face, portrait, realistic eyes, realistic body, detailed body, anatomically correct, realistic proportions, human skin, flesh, real person, photography of person, 3D realistic human';
+  }
+  
+  // 애니메이션/만화 스타일일 때 실사 차단
+  if (['2d-animation', 'ghibli', 'k-webtoon', 'us-comics', 'pixel-art'].includes(styleId || '')) {
+    negativePrompt += ', photorealistic, realistic, photograph, 3D render, CGI realistic';
+  }
+  
+  return negativePrompt;
 }
 
 /**
