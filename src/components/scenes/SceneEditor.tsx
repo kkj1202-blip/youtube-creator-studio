@@ -16,9 +16,11 @@ import {
   AlertCircle,
   Eye,
   Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
-import { Button, TextArea, Select, Slider, Tabs, Card, Modal } from '@/components/ui';
+import { Button, TextArea, Select, Slider, Tabs, Card, Modal, Toggle } from '@/components/ui';
 import AudioPlayer from './AudioPlayer';
 import ScenePreview from './ScenePreview';
 import ImageUploader from './ImageUploader';
@@ -29,6 +31,7 @@ import type { Scene, MotionEffect } from '@/types';
 
 import {
   motionEffectOptions,
+  emotionOptions,
 } from '@/constants/options';
 
 const SceneEditor: React.FC = () => {
@@ -48,6 +51,7 @@ const SceneEditor: React.FC = () => {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState<{ percent: number; message: string } | null>(null);
   const [lastVideoBlob, setLastVideoBlob] = useState<Blob | null>(null);
+  const [showAdvancedVoice, setShowAdvancedVoice] = useState(false);
 
   const activeScene = currentProject?.scenes.find((s) => s.id === activeSceneId);
 
@@ -727,6 +731,92 @@ const SceneEditor: React.FC = () => {
                   <p className="text-xs text-muted">
                     ⭐ 즐겨찾기 {favoriteVoiceOptions.length}개 | 감정/속도는 프로젝트 설정에서 변경
                   </p>
+                </div>
+
+              </Card>
+
+              {/* Advanced Voice Settings */}
+              <Card>
+                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                  🎚️ 음성 세부 설정
+                </h3>
+                
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Select
+                      label="감정"
+                      options={emotionOptions}
+                      value={activeScene.emotion || 'normal'}
+                      onChange={(value) => handleUpdate({ emotion: value as any })}
+                    />
+                    <Slider
+                      label={`속도 (${activeScene.voiceSpeed}x)`}
+                      value={activeScene.voiceSpeed}
+                      onChange={(value) => handleUpdate({ voiceSpeed: value })}
+                      min={0.5}
+                      max={2.0}
+                      step={0.1}
+                    />
+                  </div>
+
+                  {/* Advanced Settings Toggle */}
+                  <div className="border-t border-border/50 pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedVoice(!showAdvancedVoice)}
+                      className="flex items-center gap-2 text-xs text-muted hover:text-foreground transition-colors w-full mb-3"
+                    >
+                      {showAdvancedVoice ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                      고급 설정 (Stability, Similarity, Style)
+                    </button>
+
+                    <AnimatePresence>
+                      {showAdvancedVoice && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          className="space-y-4 overflow-hidden"
+                        >
+                          <Slider
+                            label={`Stability (안정성): ${activeScene.voiceStability ?? 0.5}`}
+                            // description="낮을수록 감정 표현이 풍부하지만 불안정할 수 있습니다."
+                            value={activeScene.voiceStability ?? 0.5}
+                            onChange={(value) => handleUpdate({ voiceStability: value })}
+                            min={0.0}
+                            max={1.0}
+                            step={0.01}
+                          />
+                          <Slider
+                            label={`Similarity (유사도): ${activeScene.voiceSimilarity ?? 0.75}`}
+                            // description="원래 목소리와의 유사도를 조절합니다."
+                            value={activeScene.voiceSimilarity ?? 0.75}
+                            onChange={(value) => handleUpdate({ voiceSimilarity: value })}
+                            min={0.0}
+                            max={1.0}
+                            step={0.01}
+                          />
+                          <Slider
+                            label={`Style Exaggeration (스타일): ${activeScene.voiceStyle ?? 0.0}`}
+                            // description="목소리의 스타일을 과장합니다."
+                            value={activeScene.voiceStyle ?? 0.0}
+                            onChange={(value) => handleUpdate({ voiceStyle: value })}
+                            min={0.0}
+                            max={1.0}
+                            step={0.01}
+                          />
+                          <div className="flex items-center justify-between p-2 bg-card-hover rounded">
+                            <span className="text-xs font-medium text-muted-foreground">Speaker Boost (부스트)</span>
+                            <Toggle
+                              checked={activeScene.voiceSpeakerBoost ?? true}
+                              onChange={(checked) => handleUpdate({ voiceSpeakerBoost: checked })}
+                              label=""
+                            />
+                          </div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
                 </div>
               </Card>
             </motion.div>

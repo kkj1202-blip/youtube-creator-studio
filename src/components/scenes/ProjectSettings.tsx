@@ -12,6 +12,7 @@ import {
   Settings2,
   Sparkles,
   ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { Button, Select, Slider, Toggle, Input, Card } from '@/components/ui';
@@ -30,6 +31,7 @@ import {
 const ProjectSettings: React.FC = () => {
   const { currentProject, updateProject, settings, applyToAllScenes } = useStore();
   const [showMasterStyle, setShowMasterStyle] = useState(false);
+  const [showAdvancedVoice, setShowAdvancedVoice] = useState(false);
 
   if (!currentProject) return null;
 
@@ -236,6 +238,76 @@ const ProjectSettings: React.FC = () => {
           >
             모든 씬에 적용
           </Button>
+
+          {/* Advanced Voice Settings Toggle */}
+          <div className="border-t border-border/50 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowAdvancedVoice(!showAdvancedVoice)}
+              className="flex items-center gap-2 text-xs text-muted hover:text-foreground transition-colors w-full mb-3"
+            >
+              {showAdvancedVoice ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              고급 설정 (Stability, Similarity, Style)
+            </button>
+
+            <AnimatePresence>
+              {showAdvancedVoice && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  className="space-y-4 overflow-hidden"
+                >
+                  <Slider
+                    label={`Stability (안정성): ${currentProject.defaultVoiceStability ?? 0.5}`}
+                    value={currentProject.defaultVoiceStability ?? 0.5}
+                    onChange={(value) => updateProject({ defaultVoiceStability: value })}
+                    min={0.0}
+                    max={1.0}
+                    step={0.01}
+                  />
+                  <Slider
+                    label={`Similarity (유사도): ${currentProject.defaultVoiceSimilarity ?? 0.75}`}
+                    value={currentProject.defaultVoiceSimilarity ?? 0.75}
+                    onChange={(value) => updateProject({ defaultVoiceSimilarity: value })}
+                    min={0.0}
+                    max={1.0}
+                    step={0.01}
+                  />
+                  <Slider
+                    label={`Style Exaggeration (스타일): ${currentProject.defaultVoiceStyle ?? 0.0}`}
+                    value={currentProject.defaultVoiceStyle ?? 0.0}
+                    onChange={(value) => updateProject({ defaultVoiceStyle: value })}
+                    min={0.0}
+                    max={1.0}
+                    step={0.01}
+                  />
+                  <div className="flex items-center justify-between p-2 bg-card-hover rounded">
+                    <span className="text-xs font-medium text-muted-foreground">Speaker Boost (부스트)</span>
+                    <Toggle
+                      checked={currentProject.defaultVoiceSpeakerBoost ?? true}
+                      onChange={(checked) => updateProject({ defaultVoiceSpeakerBoost: checked })}
+                      label=""
+                    />
+                  </div>
+                  
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={() => {
+                      handleApplyToAll('voiceStability', currentProject.defaultVoiceStability);
+                      handleApplyToAll('voiceSimilarity', currentProject.defaultVoiceSimilarity);
+                      handleApplyToAll('voiceStyle', currentProject.defaultVoiceStyle);
+                      handleApplyToAll('voiceSpeakerBoost', currentProject.defaultVoiceSpeakerBoost);
+                    }}
+                  >
+                    이 고급 설정을 모든 씬에 적용
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </Card>
 

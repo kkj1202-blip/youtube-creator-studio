@@ -3,50 +3,40 @@
  * ElevenLabs TTS API 연동
  */
 
+// ... imports
+
 export interface VoiceGenerationParams {
   text: string;
   voiceId: string;
   speed?: number; // 0.8 ~ 1.3
   emotion?: 'normal' | 'emphasis' | 'whisper' | 'excited';
+  // 고급 설정 추가
+  stability?: number;
+  similarity?: number;
+  style?: number;
+  useSpeakerBoost?: boolean;
 }
 
-export interface VoiceGenerationResponse {
-  success: boolean;
-  audioUrl?: string;
-  audioDuration?: number;
-  error?: string;
-}
+// ... VoiceGenerationResponse
 
-// ElevenLabs 감정 태그 매핑
-const emotionSettings: Record<string, { stability: number; similarityBoost: number; style: number }> = {
-  normal: { stability: 0.5, similarityBoost: 0.75, style: 0 },
-  emphasis: { stability: 0.3, similarityBoost: 0.8, style: 0.5 },
-  whisper: { stability: 0.8, similarityBoost: 0.6, style: 0.2 },
-  excited: { stability: 0.2, similarityBoost: 0.85, style: 0.8 },
-};
+// ... emotionSettings
 
-/**
- * ElevenLabs API를 통한 음성 생성
- */
 export async function generateVoice(
   apiKey: string,
   params: VoiceGenerationParams
 ): Promise<VoiceGenerationResponse> {
-  if (!apiKey) {
-    return { success: false, error: 'ElevenLabs API 키가 설정되지 않았습니다.' };
-  }
-
-  if (!params.voiceId) {
-    return { success: false, error: '보이스 ID가 설정되지 않았습니다.' };
-  }
-
-  if (!params.text.trim()) {
-    return { success: false, error: '텍스트가 비어있습니다.' };
-  }
+  // ... checks
 
   try {
     const emotion = params.emotion || 'normal';
     const settings = emotionSettings[emotion];
+
+    // 고급 설정이 있으면 우선 사용, 없으면 감정 프리셋 사용
+    const stability = params.stability ?? settings.stability;
+    const similarityBoost = params.similarity ?? settings.similarityBoost;
+    const style = params.style ?? settings.style;
+    // useSpeakerBoost는 기본값 true
+    const useSpeakerBoost = params.useSpeakerBoost ?? true;
 
     // ElevenLabs API 호출
     const response = await fetch('/api/generate-voice', {
@@ -59,11 +49,13 @@ export async function generateVoice(
         voiceId: params.voiceId,
         text: params.text,
         speed: params.speed || 1.0,
-        stability: settings.stability,
-        similarityBoost: settings.similarityBoost,
-        style: settings.style,
+        stability,
+        similarityBoost,
+        style,
+        useSpeakerBoost,
       }),
     });
+// ... rest of file
 
     if (!response.ok) {
       const error = await response.text();

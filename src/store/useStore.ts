@@ -69,6 +69,12 @@ const defaultSettings: Settings = {
     transition: 'none',
     kenBurns: 'zoom-in',
     subtitleEnabled: true,
+    
+    // 일레븐랩스 기본 고급 설정
+    voiceStability: 0.5,
+    voiceSimilarity: 0.75,
+    voiceStyle: 0.0,
+    voiceSpeakerBoost: true,
   },
   autoSaveInterval: 30,
   maxVersionHistory: 10,
@@ -97,6 +103,10 @@ const createDefaultScene = (order: number, script: string = '', lastUsed?: Setti
   voiceSpeed: lastUsed?.voiceSpeed ?? 1.0,
   emotion: lastUsed?.emotion ?? 'normal',
   ttsEngine: lastUsed?.ttsEngine ?? 'elevenlabs',
+  voiceStability: lastUsed?.voiceStability ?? 0.5,
+  voiceSimilarity: lastUsed?.voiceSimilarity ?? 0.75,
+  voiceStyle: lastUsed?.voiceStyle ?? 0.0,
+  voiceSpeakerBoost: lastUsed?.voiceSpeakerBoost ?? true,
   postAudioGap: 0.5,
   transition: lastUsed?.transition ?? 'none',
   transitionDuration: 0.5,
@@ -905,8 +915,8 @@ export const useStore = create<AppState>()(
           if (url.startsWith('blob:')) return false;
           // 프록시 이미지 URL 허용 (/api/proxy-image)
           if (url.startsWith('/api/')) return true;
-          // data: URL (base64 인코딩된 오디오 등) 허용
-          if (url.startsWith('data:')) return true;
+          // data: URL (base64) 저장 차단 (용량 초과 원인)
+          if (url.startsWith('data:')) return false;
           // http/https URL 허용
           return url.startsWith('http://') || url.startsWith('https://');
         };

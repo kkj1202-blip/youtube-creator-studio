@@ -82,6 +82,12 @@ export interface Scene {
   emotion: EmotionTag;
   ttsEngine: TTSEngine; // TTS 엔진 선택
   
+  // 일레븐랩스 고급 설정
+  voiceStability?: number; // 0.0 ~ 1.0
+  voiceSimilarity?: number; // 0.0 ~ 1.0
+  voiceStyle?: number; // 0.0 ~ 1.0
+  voiceSpeakerBoost?: boolean;
+  
   // 영상 설정
   imageDuration?: number; // 수동 설정 시 (초)
   postAudioGap: number; // 음성 후 여백 (초)
@@ -144,6 +150,13 @@ export interface Project {
   defaultVoiceId?: string;
   defaultVoiceSpeed: number;
   defaultEmotion: EmotionTag;
+  
+  // 일레븐랩스 고급 설정 기본값
+  defaultVoiceStability?: number;
+  defaultVoiceSimilarity?: number;
+  defaultVoiceStyle?: number;
+  defaultVoiceSpeakerBoost?: boolean;
+
   elevenLabsAccountIndex: number; // 0 또는 1
   
   // 영상 설정
