@@ -30,6 +30,8 @@ interface YouTubeVideo {
   uploadDate: string;
   duration: number;
   isShort: boolean;
+  subscriberCount?: number;
+  algorithmScore?: number; // (views / subscriberCount) * 100
 }
 
 // ============================================================================
@@ -64,6 +66,59 @@ function getNextApiKey(): string | null {
   currentKeyIndex = (currentKeyIndex + 1) % keys.length;
   console.log(`🔑 Using YouTube API key #${(currentKeyIndex === 0 ? keys.length : currentKeyIndex)} of ${keys.length}`);
   return key;
+}
+
+// 채널 정보(구독자 수)를 일괄 조회하여 영상 정보에 병합하고 알코리즘 점수 계산
+async function enrichVideosWithChannelInfo(videos: YouTubeVideo[], apiKey: string): Promise<YouTubeVideo[]> {
+  if (videos.length === 0) return videos;
+
+  // 1. 고유한 Channel ID 추출
+  const channelIds = Array.from(new Set(videos.map(v => v.channelId))).filter(Boolean);
+  const channelMap = new Map<string, number>(); // channelId -> subscriberCount
+
+  // 2. 50개씩 끊어서 채널 정보 조회 (API Quota 절약)
+  const chunkSize = 50;
+  for (let i = 0; i < channelIds.length; i += chunkSize) {
+    const chunk = channelIds.slice(i, i + chunkSize);
+    const channelsUrl = new URL('https://www.googleapis.com/youtube/v3/channels');
+    channelsUrl.searchParams.set('part', 'statistics');
+    channelsUrl.searchParams.set('id', chunk.join(','));
+    channelsUrl.searchParams.set('key', apiKey);
+
+    try {
+      const res = await fetch(channelsUrl.toString());
+      const data = await res.json();
+      if (data.items) {
+        data.items.forEach((item: any) => {
+          const subs = parseInt(item.statistics?.subscriberCount || '0', 10);
+          channelMap.set(item.id, subs);
+        });
+      }
+    } catch (e) {
+      console.error('Failed to fetch channel info', e);
+    }
+  }
+
+  // 3. 영상 정보에 구독자 수 병합 및 알고리즘 점수 계산
+  return videos.map(video => {
+    const subscriberCount = channelMap.get(video.channelId) || 0;
+    // 구독자가 0이거나 숨김인 경우 조회수 자체를 점수로 (신규 채널 우대)
+    // 구독자 1000명 이하인 경우 1000으로 보정 (극단적 비율 방지)
+    const effectiveSubs = Math.max(subscriberCount, 1000); 
+    
+    // 알고리즘 점수 = (조회수 / 유효 구독자수) * 100 (%)
+    // 예: 구독자 1만, 조회수 5만 -> 500% (5배 터짐)
+    let algorithmScore = 0;
+    if (effectiveSubs > 0) {
+      algorithmScore = Math.floor((video.views / effectiveSubs) * 100);
+    }
+
+    return {
+      ...video,
+      subscriberCount,
+      algorithmScore
+    };
+  });
 }
 
 // ISO 8601 기간을 초로 변환
@@ -148,10 +203,9 @@ async function fetchYouTubeTrending(
       };
     });
 
-    console.log(`🎬 YouTube trending: ${videos.length} videos`);
     return videos;
-  } catch (error) {
-    console.error('YouTube trending fetch error:', error);
+  } catch (err) {
+    console.error(err);
     return [];
   }
 }
@@ -345,7 +399,7 @@ export async function POST(request: NextRequest) {
       videos = videos.filter(v => v.views >= minViews);
     }
 
-    if (maxAge > 0) {
+    if (maxAge > 0 && type !== 'trending') { // 트렌딩은 이미 쿼리에서 필터링하거나 제공된 리스트
       const cutoff = Date.now() - maxAge * 60 * 60 * 1000;
       videos = videos.filter(v => new Date(v.uploadDate).getTime() >= cutoff);
     }
@@ -355,8 +409,23 @@ export async function POST(request: NextRequest) {
       videos = videos.filter(v => v.isShort);
     }
 
-    // 조회수순 정렬 및 limit 적용
-    videos = videos.sort((a, b) => b.views - a.views).slice(0, limit);
+    // 2. 알고리즘 점수 계산 (채널 구독자 조회) - 모든 결과에 대해 일괄 처리
+    // API 키가 있을 때만 실행 (할당량 소모)
+    const apiKey = getNextApiKey();
+    if (apiKey) {
+      try {
+        videos = await enrichVideosWithChannelInfo(videos, apiKey);
+      } catch (enrichErr) {
+        console.error('Failed to enrich with channel info:', enrichErr);
+        // 실패해도 비디오 목록은 반환
+      }
+    }
+
+    // 기본 정렬: 조회수 순 (UI에서 변경 가능하므로 여기서는 raw data 제공에 집중)
+    // 단, Algorithm Hunter의 취지에 맞게 algorithmScore 필드가 있으면 유용
+    
+    // limit 적용
+    videos = videos.slice(0, limit);
 
     return NextResponse.json({
       success: true,

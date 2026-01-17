@@ -68,6 +68,18 @@ interface TrendingKeyword {
   videoCount?: number;
 }
 
+interface TrendingVideo {
+  id: string;
+  title: string;
+  thumbnail: string;
+  author: string;
+  views: number;
+  subscriberCount?: number;
+  algorithmScore?: number;
+  uploadDate: string;
+  url: string;
+}
+
 interface TitleSuggestion {
   title: string;
   score: number;
@@ -85,13 +97,16 @@ export default function TrendPage() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [category, setCategory] = useState('all');
   const [period, setPeriod] = useState('7d');
-  const [region, setRegion] = useState('korea'); // 기본값 한국
+  const [region, setRegion] = useState('korea');
+  const [sortBy, setSortBy] = useState<'algorithm' | 'views'>('algorithm');
+
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   
   // 분석 결과 상태
   const [trendingKeywords, setTrendingKeywords] = useState<TrendingKeyword[]>([]);
+  const [trendingVideos, setTrendingVideos] = useState<TrendingVideo[]>([]);
   const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([]);
   const [relatedKeywords, setRelatedKeywords] = useState<RelatedKeyword[]>([]);
 
@@ -189,6 +204,21 @@ export default function TrendPage() {
           }));
 
         setTrendingKeywords(sortedKeywords);
+
+        // 영상 데이터 저장 (Algorithm Hunter)
+        const videos: TrendingVideo[] = data.videos.map((v: any) => ({
+          id: v.id,
+          title: v.title,
+          thumbnail: v.thumbnail,
+          author: v.author,
+          views: v.views,
+          subscriberCount: v.subscriberCount,
+          algorithmScore: v.algorithmScore,
+          uploadDate: v.uploadDate,
+          url: v.url
+        }));
+        setTrendingVideos(videos);
+
       } else {
         setError(data.error || '트렌드 데이터를 가져오는데 실패했습니다.');
       }
@@ -264,37 +294,73 @@ export default function TrendPage() {
     }
   };
 
-  // AI 제목 생성 (LLM 사용 또는 템플릿)
+  // AI 제목 생성 (LLM 연동)
   const handleGenerateTitles = async () => {
-    if (!searchKeyword.trim()) return;
+    if (!searchKeyword.trim() && trendingKeywords.length === 0) {
+      setError('분석할 키워드가 없거나 트렌드 데이터가 없습니다.');
+      return;
+    }
+
+    const geminiKey = settings.geminiApiKey;
+    const openaiKey = settings.openaiApiKey;
+
+    if (!geminiKey && !openaiKey) {
+      setError('AI 분석을 위해 설정에서 Gemini 또는 OpenAI API 키를 등록해주세요.');
+      // 템플릿 폴백
+      setTitleSuggestions([
+        { title: `${searchKeyword || '이 주제'} 완벽 가이드 (이것만 보세요)`, score: 94, reason: '완성도 + 필수 정보' },
+        { title: `[충격] ${searchKeyword || '알고리즘'}의 숨겨진 진실`, score: 92, reason: '호기심 유발' },
+        { title: `${searchKeyword || '이것'} 1분만에 마스터하기`, score: 90, reason: '간결함 + 효율성' },
+        { title: `프로가 알려주는 ${searchKeyword || '핵심'} 비법`, score: 88, reason: '권위 + 핵심 정보' },
+        { title: `${searchKeyword || '영상'}? 이걸로 종결합니다`, score: 85, reason: '완결성 강조' },
+      ]);
+      return;
+    }
     
     setIsLoading(true);
     setError(null);
 
     try {
-      // LLM API가 있으면 사용, 없으면 템플릿
-      if (settings.geminiApiKey || settings.openaiApiKey) {
-        // TODO: LLM 연동
-        setTitleSuggestions([
-          { title: `${searchKeyword} 완벽 가이드 (이것만 보세요)`, score: 94, reason: '완성도 + 필수 정보' },
-          { title: `[충격] ${searchKeyword}의 숨겨진 진실`, score: 92, reason: '호기심 유발' },
-          { title: `${searchKeyword} 1분만에 마스터하기`, score: 90, reason: '간결함 + 효율성' },
-          { title: `프로가 알려주는 ${searchKeyword} 핵심 비법`, score: 88, reason: '권위 + 핵심 정보' },
-          { title: `${searchKeyword}? 이 영상 하나로 끝`, score: 85, reason: '완결성 강조' },
-        ]);
+      // 컨텍스트 데이터 수집
+      const keywords = searchKeyword 
+        ? [searchKeyword, ...relatedKeywords.slice(0, 4).map(k => k.keyword)]
+        : trendingKeywords.slice(0, 5).map(k => k.keyword);
+
+      const referenceTitles = trendingVideos.slice(0, 10).map(v => v.title);
+
+      // API 호출
+      const response = await fetch('/api/generate-title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          keywords,
+          referenceTitles,
+          tone: 'clickbait',
+          count: 5,
+          geminiApiKey: geminiKey,
+          openaiApiKey: openaiKey,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && Array.isArray(data.titles)) {
+        // 결과 매핑
+        const suggestions: TitleSuggestion[] = data.titles.map((title: string, idx: number) => ({
+          title,
+          score: 95 - idx * 2,
+          reason: '트렌드 데이터 기반 AI 생성',
+        }));
+        
+        
+        setTitleSuggestions(suggestions);
+        setActiveTab('titles');
       } else {
-        setTitleSuggestions([
-          { title: `${searchKeyword} 완벽 가이드 (이것만 보세요)`, score: 94, reason: '완성도 + 필수 정보' },
-          { title: `[꿀팁] ${searchKeyword} 이렇게 하면 바로 됨`, score: 91, reason: '실용적 + 즉각적 결과' },
-          { title: `프로가 알려주는 ${searchKeyword} 핵심 비법`, score: 88, reason: '권위 + 핵심 정보' },
-          { title: `${searchKeyword}? 이 영상 하나로 끝`, score: 85, reason: '간결함 + 완결성' },
-          { title: `아직도 ${searchKeyword} 이렇게 하세요? (틀림)`, score: 82, reason: '도발 + 교정' },
-        ]);
+        throw new Error(data.error || '제목 생성 실패');
       }
-      
-      setActiveTab('titles');
     } catch (err) {
-      setError('제목 생성 중 오류가 발생했습니다.');
+      console.error('AI Title Error:', err);
+      setError('AI 제목 생성 중 오류가 발생했습니다. (설정에서 API 키를 확인해주세요)');
     } finally {
       setIsLoading(false);
     }
@@ -569,6 +635,122 @@ export default function TrendPage() {
                       검색량은 높지만 경쟁도가 낮은 키워드가 최적의 선택입니다. 
                       상승 추세인 키워드를 빠르게 공략하세요!
                     </p>
+                  </Card>
+                </div>
+
+                {/* Algorithm Hunter Section (Video Ranking) */}
+                <div className="lg:col-span-3 mt-4">
+                  <Card className="flex flex-col overflow-hidden">
+                    <div className="flex items-center justify-between mb-6">
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-lg font-semibold text-foreground flex items-center gap-2">
+                            🚀 알고리즘 헌터 (Video Ranking)
+                          </h3>
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20 animate-pulse">
+                            LIVE
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted">구독자 대비 조회수가 폭발적으로 높은 영상을 찾아냅니다.</p>
+                      </div>
+                      <div className="flex items-center bg-card-hover p-1 rounded-lg border border-border">
+                         <button
+                           onClick={() => setSortBy('algorithm')}
+                           className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                             sortBy === 'algorithm' 
+                               ? 'bg-primary text-primary-foreground shadow-sm' 
+                               : 'text-muted hover:text-foreground'
+                           }`}
+                         >
+                           🔥 알고리즘순
+                         </button>
+                         <button
+                           onClick={() => setSortBy('views')}
+                           className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
+                             sortBy === 'views' 
+                               ? 'bg-primary text-primary-foreground shadow-sm' 
+                               : 'text-muted hover:text-foreground'
+                           }`}
+                         >
+                           👀 조회수순
+                         </button>
+                      </div>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-card-hover border-b border-border">
+                          <tr>
+                            <th className="p-3 text-left font-medium text-muted w-16">순위</th>
+                            <th className="p-3 text-left font-medium text-muted">영상 정보</th>
+                            <th className="p-3 text-right font-medium text-muted w-24">알고리즘 점수</th>
+                            <th className="p-3 text-right font-medium text-muted w-24">조회수</th>
+                            <th className="p-3 text-right font-medium text-muted w-24">구독자</th>
+                            <th className="p-3 text-right font-medium text-muted w-32">업로드</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-border">
+                          {trendingVideos
+                            .sort((a, b) => {
+                              if (sortBy === 'algorithm') return (b.algorithmScore || 0) - (a.algorithmScore || 0);
+                              return b.views - a.views;
+                            })
+                            .slice(0, 50)
+                            .map((video, idx) => (
+                            <tr key={video.id} className="group hover:bg-card-hover/50 transition-colors">
+                              <td className="p-3 font-bold text-lg text-muted group-hover:text-primary transition-colors">
+                                {idx + 1}
+                              </td>
+                              <td className="p-3">
+                                <div className="flex gap-3">
+                                  <a href={video.url} target="_blank" rel="noopener noreferrer" className="relative shrink-0 w-32 aspect-video rounded-md overflow-hidden hover:ring-2 hover:ring-primary transition-all group-hover:scale-105">
+                                    <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
+                                  </a>
+                                  <div className="flex flex-col justify-center min-w-0">
+                                    <a href={video.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground truncate hover:underline hover:text-primary transition-colors" title={video.title}>
+                                      {video.title}
+                                    </a>
+                                    <span className="text-xs text-muted flex items-center gap-1 mt-1">
+                                      {video.author}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-3 text-right">
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className={`font-bold ${
+                                    (video.algorithmScore || 0) >= 1000 ? 'text-red-500' :
+                                    (video.algorithmScore || 0) >= 300 ? 'text-orange-500' : 'text-primary'
+                                  }`}>
+                                    {video.algorithmScore ? `${video.algorithmScore}%` : '-'}
+                                  </span>
+                                  {(video.algorithmScore || 0) >= 1000 && <span className="text-[10px] px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded-full border border-red-500/20">SUPER</span>}
+                                </div>
+                              </td>
+                              <td className="p-3 text-right font-medium text-foreground">
+                                {video.views >= 1000000 ? `${(video.views / 1000000).toFixed(1)}M` : `${Math.floor(video.views / 1000)}K`}
+                              </td>
+                              <td className="p-3 text-right text-muted">
+                                {video.subscriberCount 
+                                  ? (video.subscriberCount >= 1000000 
+                                      ? `${(video.subscriberCount / 1000000).toFixed(1)}M` 
+                                      : `${Math.floor(video.subscriberCount / 1000)}K`)
+                                  : '-'}
+                              </td>
+                              <td className="p-3 text-right text-muted text-xs">
+                                {new Date(video.uploadDate).toLocaleDateString()}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {trendingVideos.length === 0 && !isLoading && (
+                        <div className="p-8 text-center text-muted flex flex-col items-center gap-2">
+                          <Search className="w-8 h-8 opacity-20" />
+                          <p>데이터가 없습니다. 새로고침을 눌러주세요.</p>
+                        </div>
+                      )}
+                    </div>
                   </Card>
                 </div>
               </motion.div>

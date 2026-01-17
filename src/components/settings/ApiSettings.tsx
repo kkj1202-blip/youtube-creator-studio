@@ -221,37 +221,41 @@ const ApiSettings: React.FC = () => {
   };
 
   // YouTube API 테스트
-  const testYoutubeApiKey = async () => {
-    if (!settings.youtubeApiKey) return;
+  const testYoutubeApiKey = async (index: number = 0) => {
+    const apiKeys = [settings.youtubeApiKey, settings.youtubeApiKey2, settings.youtubeApiKey3];
+    const targetKey = apiKeys[index];
+    const stateKey = index === 0 ? 'youtube' : index === 1 ? 'youtube2' : 'youtube3';
 
-    setLoading((prev) => ({ ...prev, youtube: true }));
-    setTestResults((prev) => ({ ...prev, youtube: null }));
+    if (!targetKey) return;
+
+    setLoading((prev) => ({ ...prev, [stateKey]: true }));
+    setTestResults((prev) => ({ ...prev, [stateKey]: null }));
 
     try {
       const response = await fetch(
-        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=test&key=${settings.youtubeApiKey}`
+        `https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&maxResults=1&q=test&key=${targetKey}`
       );
 
       if (response.ok) {
         setTestResults((prev) => ({ 
           ...prev, 
-          youtube: { status: 'success', message: 'API 키가 유효합니다' } 
+          [stateKey]: { status: 'success', message: 'API 키가 유효합니다' } 
         }));
       } else {
         const data = await response.json();
         setTestResults((prev) => ({ 
           ...prev, 
-          youtube: { status: 'error', message: data.error?.message || 'API 키가 유효하지 않습니다' } 
+          [stateKey]: { status: 'error', message: data.error?.message || 'API 키가 유효하지 않습니다' } 
         }));
       }
     } catch (error) {
       setTestResults((prev) => ({ 
         ...prev, 
-        youtube: { status: 'error', message: '연결 오류가 발생했습니다' } 
+        [stateKey]: { status: 'error', message: '연결 오류가 발생했습니다' } 
       }));
     }
 
-    setLoading((prev) => ({ ...prev, youtube: false }));
+    setLoading((prev) => ({ ...prev, [stateKey]: false }));
   };
 
   // 음성 미리듣기
@@ -949,14 +953,14 @@ const ApiSettings: React.FC = () => {
                   {showKeys.youtube ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
-              <Button
-                variant="ghost"
-                onClick={testYoutubeApiKey}
-                disabled={!settings.youtubeApiKey || loading.youtube}
-                isLoading={loading.youtube}
-              >
-                테스트
-              </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => testYoutubeApiKey(0)}
+                  disabled={!settings.youtubeApiKey || loading.youtube}
+                  isLoading={loading.youtube}
+                >
+                  테스트
+                </Button>
             </div>
           </div>
           
@@ -979,7 +983,21 @@ const ApiSettings: React.FC = () => {
                   {showKeys.youtube2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <Button
+                variant="ghost"
+                onClick={() => testYoutubeApiKey(1)}
+                disabled={!settings.youtubeApiKey2 || loading.youtube2}
+                isLoading={loading.youtube2}
+              >
+                테스트
+              </Button>
             </div>
+            {testResults.youtube2 && (
+              <div className={`flex items-center gap-2 text-sm ${testResults.youtube2.status === 'success' ? 'text-success' : 'text-error'}`}>
+                {testResults.youtube2.status === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {testResults.youtube2.message}
+              </div>
+            )}
           </div>
           
           {/* Key 3 */}
@@ -1001,7 +1019,21 @@ const ApiSettings: React.FC = () => {
                   {showKeys.youtube3 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+              <Button
+                variant="ghost"
+                onClick={() => testYoutubeApiKey(2)}
+                disabled={!settings.youtubeApiKey3 || loading.youtube3}
+                isLoading={loading.youtube3}
+              >
+                테스트
+              </Button>
             </div>
+            {testResults.youtube3 && (
+              <div className={`flex items-center gap-2 text-sm ${testResults.youtube3.status === 'success' ? 'text-success' : 'text-error'}`}>
+                {testResults.youtube3.status === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                {testResults.youtube3.message}
+              </div>
+            )}
           </div>
           
           {testResults.youtube && (
