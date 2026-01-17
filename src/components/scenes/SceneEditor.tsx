@@ -27,7 +27,7 @@ import ImageUploader from './ImageUploader';
 import { generateImagePrompt } from '@/lib/api/imageGeneration';
 import { estimateAudioDuration } from '@/lib/api/voiceGeneration';
 import { buildFinalPrompt } from '@/lib/imageStyles';
-import type { Scene, MotionEffect } from '@/types';
+import type { Scene, MotionEffect, EmotionTag } from '@/types';
 
 import {
   motionEffectOptions,
@@ -426,6 +426,7 @@ const SceneEditor: React.FC = () => {
       // 저장 위치 선택 다이얼로그 (Chrome/Edge)
       if ('showSaveFilePicker' in window) {
         try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const handle = await (window as any).showSaveFilePicker({
             suggestedName: filename,
             types: [{
@@ -747,7 +748,7 @@ const SceneEditor: React.FC = () => {
                       label="감정"
                       options={emotionOptions}
                       value={activeScene.emotion || 'normal'}
-                      onChange={(value) => handleUpdate({ emotion: value as any })}
+                      onChange={(value) => handleUpdate({ emotion: value as EmotionTag })}
                     />
                     <Slider
                       label={`속도 (${activeScene.voiceSpeed}x)`}

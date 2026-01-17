@@ -76,12 +76,13 @@ const ProjectSettings: React.FC = () => {
     label: account.name || `계정 ${idx + 1}`,
   }));
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleApplyToAll = (field: string, value: any) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updates: any = {};
     updates[field] = value;
     applyToAllScenes(updates);
   };
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -165,7 +166,7 @@ const ProjectSettings: React.FC = () => {
             기본 이미지 스타일 (레거시)
           </h3>
           <p className="text-xs text-muted mb-4">
-            ⚠️ 위의 "마스터 이미지 스타일"을 사용하시는 것을 권장합니다.
+            ⚠️ 위의 &quot;마스터 이미지 스타일&quot;을 사용하시는 것을 권장합니다.
           </p>
           <div className="space-y-4">
             <Select
