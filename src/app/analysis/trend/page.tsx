@@ -23,7 +23,9 @@ import {
   ThumbsUp,
   Loader2,
   ExternalLink,
+  Shield,
 } from 'lucide-react';
+import { useStore } from '@/store/useStore';
 
 // 카테고리 옵션
 const categoryOptions = [
@@ -47,53 +49,42 @@ const periodOptions = [
   { value: '90d', label: '지난 90일' },
 ];
 
-// 데모 트렌드 데이터
-const demoTrendingKeywords = [
-  { keyword: 'AI 영상 편집', score: 98, trend: 'up' as const, change: '+45%', volume: '1.2M', competition: 'medium' },
-  { keyword: '쇼츠 알고리즘', score: 95, trend: 'up' as const, change: '+32%', volume: '890K', competition: 'high' },
-  { keyword: '유튜브 수익화', score: 92, trend: 'up' as const, change: '+28%', volume: '2.1M', competition: 'high' },
-  { keyword: '영상 제작 꿀팁', score: 88, trend: 'up' as const, change: '+22%', volume: '560K', competition: 'medium' },
-  { keyword: '무료 음악 사이트', score: 85, trend: 'stable' as const, change: '+5%', volume: '780K', competition: 'low' },
-  { keyword: '썸네일 만들기', score: 82, trend: 'up' as const, change: '+18%', volume: '450K', competition: 'medium' },
-  { keyword: '구독자 늘리기', score: 80, trend: 'stable' as const, change: '+8%', volume: '1.5M', competition: 'high' },
-  { keyword: '편집 프로그램 추천', score: 78, trend: 'down' as const, change: '-5%', volume: '320K', competition: 'low' },
-  { keyword: '브이로그 카메라', score: 75, trend: 'up' as const, change: '+15%', volume: '280K', competition: 'medium' },
-  { keyword: '조회수 올리기', score: 72, trend: 'stable' as const, change: '+3%', volume: '1.8M', competition: 'high' },
-];
+// 인터페이스
+interface TrendingKeyword {
+  keyword: string;
+  score: number;
+  trend: 'up' | 'down' | 'stable';
+  change: string;
+  volume: string;
+  competition: 'low' | 'medium' | 'high';
+  videoCount?: number;
+}
 
-// 데모 추천 제목
-const demoTitleSuggestions = [
-  { title: '이 방법 알면 AI가 영상 알아서 만들어줌 (진짜)', score: 95, reason: '호기심 유발 + 실용적' },
-  { title: '[충격] 쇼츠 하나로 월 500만원 버는 비밀', score: 92, reason: '수치 강조 + 비밀 요소' },
-  { title: '유튜브 10년차가 알려주는 진짜 성공 비결', score: 88, reason: '권위 + 독점 정보' },
-  { title: '이거 모르면 유튜브 접어야 합니다 (심각)', score: 85, reason: '위기감 + 필수 정보' },
-  { title: '초보도 따라하면 영상 퀄리티 10배 올라감', score: 82, reason: '접근성 + 구체적 수치' },
-];
+interface TitleSuggestion {
+  title: string;
+  score: number;
+  reason: string;
+}
 
-// 데모 관련 키워드
-const demoRelatedKeywords = [
-  { keyword: '유튜브 시작하기', relevance: 95 },
-  { keyword: '영상 편집 배우기', relevance: 90 },
-  { keyword: '촬영 장비 추천', relevance: 85 },
-  { keyword: '유튜브 SEO', relevance: 82 },
-  { keyword: '채널 브랜딩', relevance: 78 },
-  { keyword: '수익 창출 조건', relevance: 75 },
-  { keyword: '알고리즘 공략', relevance: 72 },
-  { keyword: '커뮤니티 탭 활용', relevance: 68 },
-];
+interface RelatedKeyword {
+  keyword: string;
+  relevance: number;
+}
 
 export default function TrendPage() {
+  const { settings } = useStore();
   const [activeTab, setActiveTab] = useState('trending');
   const [searchKeyword, setSearchKeyword] = useState('');
   const [category, setCategory] = useState('all');
   const [period, setPeriod] = useState('7d');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   
   // 분석 결과 상태
-  const [trendingKeywords, setTrendingKeywords] = useState(demoTrendingKeywords);
-  const [titleSuggestions, setTitleSuggestions] = useState(demoTitleSuggestions);
-  const [relatedKeywords, setRelatedKeywords] = useState(demoRelatedKeywords);
+  const [trendingKeywords, setTrendingKeywords] = useState<TrendingKeyword[]>([]);
+  const [titleSuggestions, setTitleSuggestions] = useState<TitleSuggestion[]>([]);
+  const [relatedKeywords, setRelatedKeywords] = useState<RelatedKeyword[]>([]);
 
   const tabs = [
     { id: 'trending', label: '인기 키워드', icon: <Flame className="w-4 h-4" /> },
@@ -101,55 +92,203 @@ export default function TrendPage() {
     { id: 'titles', label: 'AI 제목 추천', icon: <Sparkles className="w-4 h-4" /> },
   ];
 
-  // 트렌드 갱신
-  const handleRefreshTrends = async () => {
-    setIsLoading(true);
-    // 시뮬레이션
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    // 데이터 셔플
-    setTrendingKeywords([...demoTrendingKeywords].sort(() => Math.random() - 0.5));
-    setIsLoading(false);
+  // YouTube API 키 가져오기
+  const getApiKeys = () => {
+    return [settings.youtubeApiKey, settings.youtubeApiKey2, settings.youtubeApiKey3]
+      .filter(k => k && k.trim());
   };
 
-  // 키워드 검색
+  // 시크릿 모드: API Key만 사용 (로그인 없음, 개인화 없음)
+  const isIncognitoMode = () => {
+    const keys = getApiKeys();
+    return keys.length > 0; // API Key만 있으면 시크릿 모드
+  };
+
+  // 초기 로드 시 트렌딩 가져오기
+  useEffect(() => {
+    if (getApiKeys().length > 0) {
+      handleRefreshTrends();
+    }
+  }, []);
+
+  // 실제 YouTube API로 트렌딩 영상에서 키워드 추출
+  const handleRefreshTrends = async () => {
+    const apiKeys = getApiKeys();
+    if (apiKeys.length === 0) {
+      setError('설정에서 YouTube API 키를 등록해주세요.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/youtube-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'trending',
+          region: 'global',
+          maxAge: period === '24h' ? 24 : period === '7d' ? 168 : period === '30d' ? 720 : 2160,
+          limit: 50,
+          apiKeys,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.videos) {
+        // 영상 제목에서 키워드 추출
+        const keywordMap = new Map<string, { count: number; totalViews: number }>();
+        
+        data.videos.forEach((video: { title: string; views: number }) => {
+          // 제목에서 키워드 추출 (괄호, 특수문자 제거)
+          const cleanTitle = video.title
+            .replace(/[\[\]【】\(\)]/g, ' ')
+            .replace(/[#@]/g, ' ')
+            .toLowerCase();
+          
+          // 2글자 이상 단어 추출
+          const words = cleanTitle.split(/\s+/).filter((w: string) => 
+            w.length >= 2 && !/^[0-9]+$/.test(w) && !['the', 'and', 'for', 'with'].includes(w)
+          );
+          
+          words.forEach((word: string) => {
+            const existing = keywordMap.get(word) || { count: 0, totalViews: 0 };
+            keywordMap.set(word, { 
+              count: existing.count + 1, 
+              totalViews: existing.totalViews + video.views 
+            });
+          });
+        });
+
+        // 키워드 정렬 및 변환
+        const sortedKeywords = Array.from(keywordMap.entries())
+          .filter(([_, data]) => data.count >= 2) // 2회 이상 등장
+          .sort((a, b) => b[1].totalViews - a[1].totalViews)
+          .slice(0, 15)
+          .map(([keyword, data], idx) => ({
+            keyword,
+            score: Math.max(50, 100 - idx * 3),
+            trend: data.count >= 5 ? 'up' as const : data.count >= 3 ? 'stable' as const : 'down' as const,
+            change: `+${Math.floor(data.count * 10)}%`,
+            volume: data.totalViews >= 1000000 
+              ? `${(data.totalViews / 1000000).toFixed(1)}M`
+              : `${Math.floor(data.totalViews / 1000)}K`,
+            competition: data.count >= 5 ? 'high' as const : data.count >= 3 ? 'medium' as const : 'low' as const,
+            videoCount: data.count,
+          }));
+
+        setTrendingKeywords(sortedKeywords);
+      } else {
+        setError(data.error || '트렌드 데이터를 가져오는데 실패했습니다.');
+      }
+    } catch (err) {
+      console.error('Trend fetch error:', err);
+      setError('API 호출 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // 실제 YouTube API로 키워드 검색
   const handleSearchKeyword = async () => {
     if (!searchKeyword.trim()) return;
     
+    const apiKeys = getApiKeys();
+    if (apiKeys.length === 0) {
+      setError('설정에서 YouTube API 키를 등록해주세요.');
+      return;
+    }
+
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // 관련 키워드 생성 (데모)
-    setRelatedKeywords([
-      { keyword: `${searchKeyword} 방법`, relevance: 95 },
-      { keyword: `${searchKeyword} 추천`, relevance: 90 },
-      { keyword: `${searchKeyword} 비교`, relevance: 85 },
-      { keyword: `${searchKeyword} 후기`, relevance: 80 },
-      { keyword: `${searchKeyword} 초보`, relevance: 75 },
-      { keyword: `${searchKeyword} 팁`, relevance: 70 },
-      { keyword: `최신 ${searchKeyword}`, relevance: 65 },
-      { keyword: `${searchKeyword} 2024`, relevance: 60 },
-    ]);
-    
-    setIsLoading(false);
+    setError(null);
+
+    try {
+      const response = await fetch('/api/youtube-search', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'search',
+          query: searchKeyword,
+          region: 'global',
+          maxAge: period === '24h' ? 24 : period === '7d' ? 168 : 720,
+          limit: 30,
+          apiKeys,
+        }),
+      });
+
+      const data = await response.json();
+      
+      if (data.success && data.videos) {
+        // 검색 결과에서 관련 키워드 추출
+        const keywordMap = new Map<string, number>();
+        
+        data.videos.forEach((video: { title: string }) => {
+          const words = video.title
+            .replace(/[\[\]【】\(\)]/g, ' ')
+            .toLowerCase()
+            .split(/\s+/)
+            .filter((w: string) => w.length >= 2 && w !== searchKeyword.toLowerCase());
+          
+          words.forEach((word: string) => {
+            keywordMap.set(word, (keywordMap.get(word) || 0) + 1);
+          });
+        });
+
+        const related = Array.from(keywordMap.entries())
+          .filter(([_, count]) => count >= 2)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10)
+          .map(([keyword, count]) => ({
+            keyword,
+            relevance: Math.min(100, count * 15),
+          }));
+
+        setRelatedKeywords(related);
+      }
+    } catch (err) {
+      console.error('Search error:', err);
+      setError('검색 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // 제목 생성
+  // AI 제목 생성 (LLM 사용 또는 템플릿)
   const handleGenerateTitles = async () => {
     if (!searchKeyword.trim()) return;
     
     setIsLoading(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    
-    setTitleSuggestions([
-      { title: `${searchKeyword} 완벽 가이드 (이것만 보세요)`, score: 94, reason: '완성도 + 필수 정보' },
-      { title: `[꿀팁] ${searchKeyword} 이렇게 하면 바로 됨`, score: 91, reason: '실용적 + 즉각적 결과' },
-      { title: `프로가 알려주는 ${searchKeyword} 핵심 비법`, score: 88, reason: '권위 + 핵심 정보' },
-      { title: `${searchKeyword}? 이 영상 하나로 끝`, score: 85, reason: '간결함 + 완결성' },
-      { title: `아직도 ${searchKeyword} 이렇게 하세요? (틀림)`, score: 82, reason: '도발 + 교정' },
-    ]);
-    
-    setActiveTab('titles');
-    setIsLoading(false);
+    setError(null);
+
+    try {
+      // LLM API가 있으면 사용, 없으면 템플릿
+      if (settings.geminiApiKey || settings.openaiApiKey) {
+        // TODO: LLM 연동
+        setTitleSuggestions([
+          { title: `${searchKeyword} 완벽 가이드 (이것만 보세요)`, score: 94, reason: '완성도 + 필수 정보' },
+          { title: `[충격] ${searchKeyword}의 숨겨진 진실`, score: 92, reason: '호기심 유발' },
+          { title: `${searchKeyword} 1분만에 마스터하기`, score: 90, reason: '간결함 + 효율성' },
+          { title: `프로가 알려주는 ${searchKeyword} 핵심 비법`, score: 88, reason: '권위 + 핵심 정보' },
+          { title: `${searchKeyword}? 이 영상 하나로 끝`, score: 85, reason: '완결성 강조' },
+        ]);
+      } else {
+        setTitleSuggestions([
+          { title: `${searchKeyword} 완벽 가이드 (이것만 보세요)`, score: 94, reason: '완성도 + 필수 정보' },
+          { title: `[꿀팁] ${searchKeyword} 이렇게 하면 바로 됨`, score: 91, reason: '실용적 + 즉각적 결과' },
+          { title: `프로가 알려주는 ${searchKeyword} 핵심 비법`, score: 88, reason: '권위 + 핵심 정보' },
+          { title: `${searchKeyword}? 이 영상 하나로 끝`, score: 85, reason: '간결함 + 완결성' },
+          { title: `아직도 ${searchKeyword} 이렇게 하세요? (틀림)`, score: 82, reason: '도발 + 교정' },
+        ]);
+      }
+      
+      setActiveTab('titles');
+    } catch (err) {
+      setError('제목 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // 복사 기능
@@ -553,7 +692,7 @@ export default function TrendPage() {
                   </h3>
 
                   <p className="text-sm text-muted mb-6">
-                    "{searchKeyword || '키워드'}" 키워드 기반 클릭률 높은 제목 추천
+                    &ldquo;{searchKeyword || '키워드'}&rdquo; 키워드 기반 클릭률 높은 제목 추천
                   </p>
 
                   <div className="space-y-3">
