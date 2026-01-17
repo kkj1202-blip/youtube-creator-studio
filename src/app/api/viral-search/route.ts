@@ -28,18 +28,15 @@ interface VideoData {
   duration?: number;
 }
 
-// TikTok Web API를 통한 트렌딩 조회 - 여러 소스에서 병렬로 가져오기
+// TikTok Web API를 통한 트렌딩 조회 - 다중 소스에서 병렬로 가져오기
 async function fetchTikTokTrending(region: string = 'US', limit: number = 20): Promise<VideoData[]> {
   const regionCode = region === 'korea' ? 'KR' : 'US';
   
-  // 순수 트렌딩 데이터만 수집하기 위해 feed/list를 병렬로 다수 호출 (랜덤성 활용)
-  // + '해외' 선택 시 단일 국가(US)만 부르면 중복이 심하므로, 주요 국가들을 로테이션하며 수집하여 다양성 확보
-  const PARALLEL_REQUESTS = 20; // 20회 호출
-  const BATCH_SIZE = 5; 
-  
-  // 글로벌 주요 국가 코드 업데이트: 안정성을 위해 US만 집중 공략 (다른 국가 코드 실패 가능성 차단)
-  // tikwm API 특성상 같은 US라도 호출마다 데이터가 조금씩 다름을 확인했으므로 US 20회 호출이 더 안전함.
-  const GLOBAL_REGIONS = ['US'];
+  // tikwm feed/list는 ~9개밖에 안 줌 (확인됨)
+  // 따라서 인기 해시태그를 병렬로 함께 호출하여 데이터 풀 대폭 확대
+  const POPULAR_HASHTAGS = regionCode === 'KR' 
+    ? ['fyp', 'viral', 'korea', 'kpop', 'trending', 'comedy', 'dance', 'vlog', 'mukbang', 'daily']
+    : ['fyp', 'viral', 'trending', 'foryou', 'comedy', 'dance', 'challenge', 'funny', 'meme', 'pov'];
 
   const mapToVideoData = (item: Record<string, unknown>): VideoData => ({
     id: String(item.video_id || item.id || ''),
@@ -60,65 +57,63 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
     const allVideos: VideoData[] = [];
     const seenIds = new Set<string>();
 
-    console.log(`🚀 Starting TikTok trending fetch: ${PARALLEL_REQUESTS} requests...`);
+    console.log(`🚀 Starting multi-source TikTok fetch (region: ${regionCode})...`);
 
-    // 배치 처리로 Rate Limit 회피 + 지역 로테이션
-    for (let i = 0; i < PARALLEL_REQUESTS; i += BATCH_SIZE) {
-      const batchPromises = Array(BATCH_SIZE).fill(0).map((_, j) => {
-        const iterIndex = i + j;
-        // 한국이면 KR 고정, 해외면 20개 국가 로테이션
-        // 이렇게 하면 '해외' 탭에서 전 세계 트렌딩을 다양하게 수집 가능 -> '1일' 필터 걸려도 남는 게 많아짐
-        const targetRegion = regionCode === 'KR' ? 'KR' : GLOBAL_REGIONS[iterIndex % GLOBAL_REGIONS.length];
-        
-        return fetch(`https://www.tikwm.com/api/feed/list?region=${targetRegion}&count=50`, { 
-          headers: { 'Accept': 'application/json', 'User-Agent': `Mozilla/5.0 (Random=${Math.random()})` },
-        }).then(r => r.json()).catch(e => { console.error(`Fetch error (${targetRegion}):`, e); return null; });
-      });
+    // 1) 트렌딩 피드 (소수지만 일단 포함)
+    const trendingPromise = fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50`, {
+      headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+    }).then(r => r.json()).catch(() => null);
 
-      const results = await Promise.allSettled(batchPromises);
+    // 2) 인기 해시태그들에서 영상 수집 (각각 50개씩 요청)
+    const hashtagPromises = POPULAR_HASHTAGS.map(tag =>
+      fetch(`https://www.tikwm.com/api/challenge/posts?challenge_name=${tag}&count=50`, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+      }).then(r => r.json()).catch(() => null)
+    );
 
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value) {
-          const data = result.value;
-          if (data.code === 0 && data.data) {
-            let items: Record<string, unknown>[] = [];
-            
-            if (Array.isArray(data.data)) {
-              items = data.data;
-            } else if (typeof data.data === 'object') {
-              items = Object.values(data.data);
-            }
+    // 모든 요청 병렬 실행
+    const [trendingResult, ...hashtagResults] = await Promise.all([trendingPromise, ...hashtagPromises]);
 
-            for (const item of items) {
-              try {
-                const video = mapToVideoData(item);
-                // 유효성 검사 (ID, 날짜 등)
-                if (!video.id || video.views === 0) continue;
-
-                if (!seenIds.has(video.id)) {
-                  seenIds.add(video.id);
-                  allVideos.push(video);
-                }
-              } catch (err) {
-                // 개별 아이템 파싱 에러 무시
-              }
-            }
+    // 트렌딩 결과 처리
+    if (trendingResult?.code === 0 && trendingResult.data) {
+      const items = Array.isArray(trendingResult.data) ? trendingResult.data : Object.values(trendingResult.data);
+      for (const item of items as Record<string, unknown>[]) {
+        try {
+          const video = mapToVideoData(item);
+          if (video.id && video.views > 0 && !seenIds.has(video.id)) {
+            seenIds.add(video.id);
+            allVideos.push(video);
           }
-        }
+        } catch { /* skip */ }
       }
+      console.log(`📊 Trending feed: ${items.length} items`);
+    }
 
-      // 배치 사이 딜레이
-      if (i + BATCH_SIZE < PARALLEL_REQUESTS) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+    // 해시태그 결과 처리
+    for (let i = 0; i < hashtagResults.length; i++) {
+      const result = hashtagResults[i];
+      if (result?.code === 0 && result.data) {
+        // 해시태그 API는 result.data.videos 또는 result.data 배열 형태일 수 있음
+        const items = result.data.videos || (Array.isArray(result.data) ? result.data : []);
+        for (const item of items as Record<string, unknown>[]) {
+          try {
+            const video = mapToVideoData(item);
+            if (video.id && video.views > 0 && !seenIds.has(video.id)) {
+              seenIds.add(video.id);
+              allVideos.push(video);
+            }
+          } catch { /* skip */ }
+        }
+        console.log(`#${POPULAR_HASHTAGS[i]}: ${items.length} items`);
       }
     }
 
-    console.log(`🎵 TikTok raw fetched: ${allVideos.length} videos`);
+    console.log(`🎵 TikTok total collected: ${allVideos.length} unique videos`);
     
     // 조회수 높은 순으로 정렬
     return allVideos.sort((a, b) => b.views - a.views);
   } catch (error) {
-    console.error('TikTok trending fetch error:', error);
+    console.error('TikTok multi-source fetch error:', error);
     return [];
   }
 }
