@@ -25,7 +25,7 @@ import {
 // Types
 interface VideoResult {
   id: string;
-  platform: 'tiktok' | 'instagram';
+  platform: 'tiktok' | 'instagram' | 'youtube';
   url: string;
   thumbnail: string;
   title: string;
@@ -36,9 +36,10 @@ interface VideoResult {
   shares?: number;
   uploadDate: string;
   duration?: number;
+  isShort?: boolean; // YouTube Shorts 여부
 }
 
-type Platform = 'tiktok' | 'instagram';
+type Platform = 'tiktok' | 'instagram' | 'youtube';
 type Region = 'korea' | 'global';
 
 const STORAGE_KEY = 'viral-search-settings-v2';
@@ -102,12 +103,14 @@ export default function ViralSearchPage() {
     setIsLoading(true);
     setHasSearched(true);
     try {
-      const response = await fetch('/api/viral-search', {
+      // YouTube는 별도 API 사용
+      const apiEndpoint = platform === 'youtube' ? '/api/youtube-search' : '/api/viral-search';
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           platform,
-          type: 'trending',
+          type: platform === 'youtube' ? 'shorts' : 'trending', // YouTube는 Shorts 우선
           region,
           maxAge,
           minViews,
@@ -169,13 +172,19 @@ export default function ViralSearchPage() {
             </Link>
             <div className="flex items-center gap-2">
               <Flame className="w-6 h-6 text-primary" />
-              <span className="text-lg font-bold">틱톡/인스타 트렌딩</span>
+              <span className="text-lg font-bold">바이럴 영상 검색</span>
             </div>
             
             {/* Inline Filters */}
             <div className="flex-1 flex items-center gap-3 ml-6">
               {/* Platform */}
               <div className="flex rounded-lg overflow-hidden border border-border">
+                <button
+                  onClick={() => setPlatform('youtube')}
+                  className={`px-3 py-1.5 text-sm font-medium transition-all ${
+                    platform === 'youtube' ? 'bg-red-500 text-white' : 'bg-card text-muted hover:bg-card-hover'
+                  }`}
+                >▶️ YouTube</button>
                 <button
                   onClick={() => setPlatform('tiktok')}
                   className={`px-3 py-1.5 text-sm font-medium transition-all ${
