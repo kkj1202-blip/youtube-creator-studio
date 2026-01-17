@@ -755,7 +755,7 @@ const SceneEditor: React.FC = () => {
                       onChange={(value) => handleUpdate({ voiceSpeed: value })}
                       min={0.5}
                       max={2.0}
-                      step={0.1}
+                      step={0.05}
                     />
                   </div>
 

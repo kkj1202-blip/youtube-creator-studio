@@ -223,7 +223,7 @@ const ProjectSettings: React.FC = () => {
               onChange={(value) => updateProject({ defaultVoiceSpeed: value })}
               min={0.8}
               max={1.3}
-              step={0.1}
+              step={0.05}
               unit="x"
             />
           </div>
