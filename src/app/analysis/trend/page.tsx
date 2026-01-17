@@ -199,8 +199,25 @@ export default function TrendPage() {
 
         // 키워드 정렬 및 변환
         const sortedKeywords = Array.from(keywordMap.entries())
-          .filter(([_, data]) => data.count >= 2) // 2회 이상 등장
-          .sort((a, b) => b[1].totalViews - a[1].totalViews)
+          .filter(([keyword, data]) => {
+            // 빈도수 필터링 (한국 설정 시 영어 단독 단어는 기준을 엄격하게)
+            if (region === 'korea' && /^[a-z0-9]+$/.test(keyword)) {
+              return data.count >= 4; // 영어는 4회 이상 등장해야 인정
+            }
+            return data.count >= 2;
+          }) 
+          .sort((a, b) => {
+            // 한국 설정 시 한글 포함 단어 가산점
+            let scoreA = a[1].totalViews;
+            let scoreB = b[1].totalViews;
+
+            if (region === 'korea') {
+              if (/[가-힣]/.test(a[0])) scoreA *= 1.5; // 한글 포함 시 1.5배 가중치
+              if (/[가-힣]/.test(b[0])) scoreB *= 1.5;
+            }
+
+            return scoreB - scoreA;
+          })
           .slice(0, 15)
           .map(([keyword, data], idx) => ({
             keyword,
