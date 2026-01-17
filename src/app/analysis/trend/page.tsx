@@ -98,6 +98,7 @@ export default function TrendPage() {
   const [category, setCategory] = useState('all');
   const [period, setPeriod] = useState('7d');
   const [region, setRegion] = useState('korea');
+  const [videoType, setVideoType] = useState('all'); // 'all' | 'video' | 'shorts'
   const [sortBy, setSortBy] = useState<'algorithm' | 'views'>('algorithm');
 
   const [isLoading, setIsLoading] = useState(false);
@@ -124,13 +125,13 @@ export default function TrendPage() {
 
   const [isIncognitoMode, setIsIncognitoMode] = useState(false);
 
-  // 초기 데이터 로드 및 Region 변경 시 자동 새로고침
+  // 초기 데이터 로드 및 필터 변경 시 자동 새로고침
   useEffect(() => {
     const keys = getApiKeys();
     if (keys.length > 0) {
       handleRefreshTrends();
     }
-  }, [region]); // region 변경 시 자동 실행
+  }, [region, videoType]); // 의존성 추가
 
 
 
@@ -150,8 +151,8 @@ export default function TrendPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          type: 'trending',
-          region: region, // 선택된 지역 사용
+          type: videoType === 'shorts' ? 'shorts' : 'trending', // 숏폼이면 shorts 타입 요청
+          region: region, 
           maxAge: period === '24h' ? 24 : period === '7d' ? 168 : period === '30d' ? 720 : 2160,
           limit: 50,
           apiKeys,
@@ -233,8 +234,13 @@ export default function TrendPage() {
 
         setTrendingKeywords(sortedKeywords);
 
-        // 영상 데이터 저장 (Algorithm Hunter)
-        const videos: TrendingVideo[] = data.videos.map((v: any) => ({
+        const videos: TrendingVideo[] = data.videos
+          .filter((v: any) => {
+             // 롱폼 선택 시 숏폼 제외 (API가 trending일 때 섞여옴)
+             if (videoType === 'video') return !v.isShort;
+             return true;
+          })
+          .map((v: any) => ({
           id: v.id,
           title: v.title,
           thumbnail: v.thumbnail,
@@ -243,7 +249,8 @@ export default function TrendPage() {
           subscriberCount: v.subscriberCount,
           algorithmScore: v.algorithmScore,
           uploadDate: v.uploadDate,
-          url: v.url
+          url: v.url,
+          isShort: v.isShort
         }));
         setTrendingVideos(videos);
 
@@ -469,6 +476,18 @@ export default function TrendPage() {
                   options={regionOptions}
                   value={region}
                   onChange={setRegion}
+                />
+              </div>
+              <div className="w-32">
+                <Select
+                  label="유형"
+                  options={[
+                    { value: 'all', label: '전체' },
+                    { value: 'video', label: '일반 영상' },
+                    { value: 'shorts', label: '쇼츠' },
+                  ]}
+                  value={videoType}
+                  onChange={setVideoType}
                 />
               </div>
 
@@ -717,80 +736,80 @@ export default function TrendPage() {
                       </div>
                     </div>
 
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-card-hover border-b border-border">
-                          <tr>
-                            <th className="p-3 text-left font-medium text-muted w-16">순위</th>
-                            <th className="p-3 text-left font-medium text-muted">영상 정보</th>
-                            <th className="p-3 text-right font-medium text-muted w-24">알고리즘 점수</th>
-                            <th className="p-3 text-right font-medium text-muted w-24">조회수</th>
-                            <th className="p-3 text-right font-medium text-muted w-24">구독자</th>
-                            <th className="p-3 text-right font-medium text-muted w-32">업로드</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                          {trendingVideos
-                            .sort((a, b) => {
-                              if (sortBy === 'algorithm') return (b.algorithmScore || 0) - (a.algorithmScore || 0);
-                              return b.views - a.views;
-                            })
-                            .slice(0, 50)
-                            .map((video, idx) => (
-                            <tr key={video.id} className="group hover:bg-card-hover/50 transition-colors">
-                              <td className="p-3 font-bold text-lg text-muted group-hover:text-primary transition-colors">
-                                {idx + 1}
-                              </td>
-                              <td className="p-3">
-                                <div className="flex gap-3">
-                                  <a href={video.url} target="_blank" rel="noopener noreferrer" className="relative shrink-0 w-32 aspect-video rounded-md overflow-hidden hover:ring-2 hover:ring-primary transition-all group-hover:scale-105">
-                                    <img src={video.thumbnail} alt={video.title} className="w-full h-full object-cover" />
-                                  </a>
-                                  <div className="flex flex-col justify-center min-w-0">
-                                    <a href={video.url} target="_blank" rel="noopener noreferrer" className="font-medium text-foreground truncate hover:underline hover:text-primary transition-colors" title={video.title}>
-                                      {video.title}
-                                    </a>
-                                    <span className="text-xs text-muted flex items-center gap-1 mt-1">
-                                      {video.author}
-                                    </span>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="p-3 text-right">
-                                <div className="flex flex-col items-end gap-1">
-                                  <span className={`font-bold ${
-                                    (video.algorithmScore || 0) >= 1000 ? 'text-red-500' :
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pb-4">
+                      {trendingVideos
+                        .sort((a, b) => {
+                          if (sortBy === 'algorithm') return (b.algorithmScore || 0) - (a.algorithmScore || 0);
+                          return b.views - a.views;
+                        })
+                        .slice(0, 50)
+                        .map((video, idx) => (
+                        <Card key={video.id} className="group hover:border-primary transition-all duration-200 overflow-hidden flex flex-col h-full border border-border/50">
+                          {/* 썸네일 */}
+                          <div className="relative aspect-video bg-muted/20">
+                            <a href={video.url} target="_blank" rel="noopener noreferrer" className="block w-full h-full relative overflow-hidden">
+                              <img 
+                                src={video.thumbnail} 
+                                alt={video.title} 
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" 
+                                loading="lazy"
+                              />
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3">
+                                <span className="text-white text-xs font-medium flex items-center gap-1">
+                                  <ExternalLink className="w-3 h-3" /> YouTube에서 보기
+                                </span>
+                              </div>
+                              {/* 순위 뱃지 */}
+                              <div className="absolute top-2 left-2 w-8 h-8 rounded-full bg-black/70 backdrop-blur-sm flex items-center justify-center border border-white/10 shadow-lg z-10">
+                                <span className={`font-bold text-sm ${idx < 3 ? 'text-primary' : 'text-white'}`}>#{idx + 1}</span>
+                              </div>
+                            </a>
+                          </div>
+
+                          {/* 정보 */}
+                          <div className="p-4 flex flex-col flex-1 gap-3">
+                            <a href={video.url} target="_blank" rel="noopener noreferrer" className="line-clamp-2 font-medium text-foreground hover:text-primary transition-colors text-sm leading-snug" title={video.title}>
+                              {video.title}
+                            </a>
+                            
+                            <div className="flex items-center justify-between mt-auto pt-2 border-t border-border/50">
+                              <span className="text-xs text-muted flex items-center gap-1 truncate max-w-[50%]">
+                                {video.author}
+                              </span>
+                              <div className="flex flex-col items-end">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-[10px] text-muted uppercase tracking-wider">알고리즘 점수</span>
+                                  <span className={`text-sm font-bold ${
+                                    (video.algorithmScore || 0) >= 1000 ? 'text-red-500' : 
                                     (video.algorithmScore || 0) >= 300 ? 'text-orange-500' : 'text-primary'
                                   }`}>
                                     {video.algorithmScore ? `${video.algorithmScore}%` : '-'}
                                   </span>
-                                  {(video.algorithmScore || 0) >= 1000 && <span className="text-[10px] px-1.5 py-0.5 bg-red-500/10 text-red-500 rounded-full border border-red-500/20">SUPER</span>}
                                 </div>
-                              </td>
-                              <td className="p-3 text-right font-medium text-foreground">
-                                {video.views >= 1000000 ? `${(video.views / 1000000).toFixed(1)}M` : `${Math.floor(video.views / 1000)}K`}
-                              </td>
-                              <td className="p-3 text-right text-muted">
-                                {video.subscriberCount 
-                                  ? (video.subscriberCount >= 1000000 
-                                      ? `${(video.subscriberCount / 1000000).toFixed(1)}M` 
-                                      : `${Math.floor(video.subscriberCount / 1000)}K`)
-                                  : '-'}
-                              </td>
-                              <td className="p-3 text-right text-muted text-xs">
-                                {new Date(video.uploadDate).toLocaleDateString()}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {trendingVideos.length === 0 && !isLoading && (
-                        <div className="p-8 text-center text-muted flex flex-col items-center gap-2">
-                          <Search className="w-8 h-8 opacity-20" />
-                          <p>데이터가 없습니다. 새로고침을 눌러주세요.</p>
-                        </div>
-                      )}
+                                <div className="text-[10px] text-muted flex gap-2">
+                                  <span>조회수 {video.views >= 1000000 ? `${(video.views / 1000000).toFixed(1)}M` : `${Math.floor(video.views / 1000)}K`}</span>
+                                  {video.subscriberCount && (
+                                    <span>구독자 {video.subscriberCount >= 1000000 ? `${(video.subscriberCount / 1000000).toFixed(1)}M` : `${Math.floor(video.subscriberCount / 1000)}K`}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
                     </div>
+                    
+                    {trendingVideos.length === 0 && !isLoading && (
+                      <div className="p-12 text-center text-muted flex flex-col items-center gap-4 bg-muted/5 rounded-lg border border-dashed border-border">
+                        <div className="p-4 rounded-full bg-muted/10">
+                          <Search className="w-8 h-8 opacity-40" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="font-medium">데이터가 없습니다</p>
+                          <p className="text-xs">상단의 &apos;새로고침&apos; 버튼을 눌러보세요.</p>
+                        </div>
+                      </div>
+                    )}
                   </Card>
                 </div>
               </motion.div>
