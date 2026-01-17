@@ -28,6 +28,80 @@ interface VideoData {
   duration?: number;
 }
 
+// ============================================================================
+// Woop RapidAPI - 진짜 트렌딩/급상승 영상 데이터 (days, sorting 필터 지원)
+// https://rapidapi.com/Woop/api/tiktok-most-trending-and-viral-content
+// ============================================================================
+async function fetchWoopTrending(
+  days: number = 7, 
+  region: string = 'global', 
+  limit: number = 50
+): Promise<VideoData[]> {
+  const apiKey = process.env.WOOP_RAPIDAPI_KEY;
+  
+  if (!apiKey) {
+    console.log('⚠️ WOOP_RAPIDAPI_KEY not found, falling back to tikwm');
+    return [];
+  }
+
+  try {
+    const params = new URLSearchParams({
+      days: String(days),           // 1 = 24시간, 7 = 1주일, 30 = 1달
+      sorting: 'rise',              // rise = 일일 상승량 순, rate = 성장률 순
+      videosLocation: region === 'korea' ? 'KR' : 'US',
+      limit: String(limit),
+    });
+
+    console.log(`🔥 Fetching Woop API: days=${days}, region=${region}...`);
+
+    const response = await fetch(
+      `https://tiktok-most-trending-and-viral-content.p.rapidapi.com/video?${params}`,
+      {
+        method: 'GET',
+        headers: {
+          'X-RapidAPI-Key': apiKey,
+          'X-RapidAPI-Host': 'tiktok-most-trending-and-viral-content.p.rapidapi.com',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`Woop API error: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    
+    // Woop API 응답 구조에 맞게 매핑
+    if (Array.isArray(data)) {
+      const videos: VideoData[] = data.map((item: Record<string, unknown>) => ({
+        id: String(item.id || item.videoId || ''),
+        platform: 'tiktok' as const,
+        url: String(item.videoUrl || item.url || `https://www.tiktok.com/@${item.authorName}/video/${item.id}`),
+        thumbnail: String(item.coverUrl || item.cover || ''),
+        title: String(item.description || item.title || ''),
+        author: `@${item.authorName || item.author || 'unknown'}`,
+        views: Number(item.playCount || item.views || 0),
+        likes: Number(item.diggCount || item.likes || 0),
+        comments: Number(item.commentCount || item.comments || 0),
+        shares: Number(item.shareCount || item.shares || 0),
+        uploadDate: item.createTime 
+          ? new Date(Number(item.createTime) * 1000).toISOString() 
+          : new Date().toISOString(),
+        duration: Number(item.duration || 0),
+      }));
+
+      console.log(`🔥 Woop API returned: ${videos.length} trending videos`);
+      return videos.sort((a, b) => b.views - a.views);
+    }
+
+    console.log('Woop API returned unexpected format');
+    return [];
+  } catch (error) {
+    console.error('Woop API fetch error:', error);
+    return [];
+  }
+}
 // TikTok Web API를 통한 트렌딩 조회 - 키워드 검색 기반 (최신 영상 수집)
 async function fetchTikTokTrending(region: string = 'US', limit: number = 20): Promise<VideoData[]> {
   const regionCode = region === 'korea' ? 'KR' : 'US';
@@ -505,7 +579,20 @@ export async function POST(request: NextRequest) {
     if (platform === 'tiktok') {
       // TikTok 실제 API 호출
       if (type === 'trending') {
-        videos = await fetchTikTokTrending(region, limit);
+        // 1순위: Woop API (진짜 급상승 데이터, days 필터 지원)
+        // maxAge는 시간 단위 → days로 변환 (1일=24h, 7일=168h)
+        const woopDays = maxAge ? Math.ceil(maxAge / 24) : 7;
+        videos = await fetchWoopTrending(woopDays, region, limit);
+        if (videos.length > 0) {
+          source = 'woop';
+          console.log(`✅ Using Woop API: ${videos.length} trending videos (${woopDays} days)`);
+        }
+        
+        // 2순위: tikwm (Woop 실패 시 fallback)
+        if (videos.length === 0) {
+          console.log('⚠️ Woop API empty, falling back to tikwm...');
+          videos = await fetchTikTokTrending(region, limit);
+        }
       } else if (type === 'hashtag' && query) {
         videos = await fetchTikTokHashtag(query, limit);
       } else if (type === 'keyword' && query) {
