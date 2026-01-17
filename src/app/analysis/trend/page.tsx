@@ -122,18 +122,17 @@ export default function TrendPage() {
       .filter(k => k && k.trim());
   };
 
-  // 시크릿 모드: API Key만 사용 (로그인 없음, 개인화 없음)
-  const isIncognitoMode = () => {
-    const keys = getApiKeys();
-    return keys.length > 0; // API Key만 있으면 시크릿 모드
-  };
+  const [isIncognitoMode, setIsIncognitoMode] = useState(false);
 
-  // 초기 로드 시 트렌딩 가져오기
+  // 초기 데이터 로드 및 Region 변경 시 자동 새로고침
   useEffect(() => {
-    if (getApiKeys().length > 0) {
+    const keys = getApiKeys();
+    if (keys.length > 0) {
       handleRefreshTrends();
     }
-  }, []);
+  }, [region]); // region 변경 시 자동 실행
+
+
 
   // 실제 YouTube API로 트렌딩 영상에서 키워드 추출
   const handleRefreshTrends = async () => {
@@ -172,9 +171,21 @@ export default function TrendPage() {
             .replace(/[#@]/g, ' ')
             .toLowerCase();
           
-          // 2글자 이상 단어 추출
+          // 불용어 목록 확장 (영어 + 한국어 + 유튜브 상용구)
+          const stopWords = new Set([
+            'the', 'and', 'for', 'with', 'to', 'in', 'of', 'at', 'by', 'on', 'is', 'it', 'this', 'that', 'my', 'your', 'from',
+            'official', 'video', 'mv', 'music', 'full', 'hd', 'ft', 'feat', 'vs', 'lyric', 'audio',
+            'shorts', 'trailer', 'teaser', 'episode', 'ep', 'season', 'part', 'live', 'stream',
+            '공식', '영상', '비디오', '뮤직비디오', '뮤비', '티저', '예고편', '풀버전', '직캠', '방송', '실시간',
+            'new', 'best', 'top', '2024', '2025', '2023', 'review', 'vlog', 'daily',
+            'how', 'why', 'what', 'when', 'where', 'who'
+          ]);
+
+          // 2글자 이상 단어 추출 및 필터링
           const words = cleanTitle.split(/\s+/).filter((w: string) => 
-            w.length >= 2 && !/^[0-9]+$/.test(w) && !['the', 'and', 'for', 'with'].includes(w)
+            w.length >= 2 && 
+            !/^[0-9]+$/.test(w) && 
+            !stopWords.has(w)
           );
           
           words.forEach((word: string) => {
@@ -285,6 +296,7 @@ export default function TrendPage() {
           }));
 
         setRelatedKeywords(related);
+        setActiveTab('search'); // 검색 완료 시 탭 자동 전환
       }
     } catch (err) {
       console.error('Search error:', err);
@@ -441,6 +453,17 @@ export default function TrendPage() {
                   value={region}
                   onChange={setRegion}
                 />
+              </div>
+
+              <div className="flex items-center self-center px-2">
+                <button
+                  type="button"
+                  onClick={() => setIsIncognitoMode(!isIncognitoMode)}
+                  className={`p-2 rounded-full transition-colors ${isIncognitoMode ? 'bg-primary text-primary-foreground' : 'text-muted hover:bg-muted/10'}`}
+                  title={isIncognitoMode ? "시크릿 모드 켜짐 (개인 맞춤 추천 제외)" : "시크릿 모드 꺼짐 (맞춤 추천 포함)"}
+                >
+                  <Shield className="w-5 h-5" />
+                </button>
               </div>
               <div className="flex gap-2">
                 <Button
