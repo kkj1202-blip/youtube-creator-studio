@@ -227,6 +227,8 @@ export interface Settings {
   kieApiKey: string;
   elevenLabsAccounts: ElevenLabsAccount[];
   youtubeApiKey: string;
+  youtubeApiKey2: string; // 로테이션용 2번째 키
+  youtubeApiKey3: string; // 로테이션용 3번째 키
   
   // LLM API 키
   geminiApiKey: string;

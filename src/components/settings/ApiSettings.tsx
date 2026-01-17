@@ -919,38 +919,91 @@ const ApiSettings: React.FC = () => {
         );
       })}
 
-      {/* YouTube API */}
+      {/* YouTube API - 3개 키 로테이션 */}
       <Card>
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
           <Youtube className="w-5 h-5 text-red-500" />
           YouTube Data API
+          <Badge variant="secondary" className="bg-red-500/20 text-red-500">로테이션</Badge>
         </h3>
-        <div className="space-y-3">
-          <div className="flex gap-2">
-            <div className="flex-1 relative">
-              <Input
-                type={showKeys.youtube ? 'text' : 'password'}
-                value={settings.youtubeApiKey}
-                onChange={(e) => updateSettings({ youtubeApiKey: e.target.value })}
-                placeholder="YouTube Data API 키를 입력하세요"
-                icon={<Key className="w-4 h-4" />}
-              />
-              <button
-                onClick={() => toggleShowKey('youtube')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+        <p className="text-sm text-muted mb-4">
+          3개까지 API 키를 등록하면 할당량 분산을 위해 순환 사용됩니다.
+        </p>
+        <div className="space-y-4">
+          {/* Key 1 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-foreground">API 키 #1 (메인)</label>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  type={showKeys.youtube ? 'text' : 'password'}
+                  value={settings.youtubeApiKey}
+                  onChange={(e) => updateSettings({ youtubeApiKey: e.target.value })}
+                  placeholder="YouTube Data API 키를 입력하세요"
+                  icon={<Key className="w-4 h-4" />}
+                />
+                <button
+                  onClick={() => toggleShowKey('youtube')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                >
+                  {showKeys.youtube ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              <Button
+                variant="ghost"
+                onClick={testYoutubeApiKey}
+                disabled={!settings.youtubeApiKey || loading.youtube}
+                isLoading={loading.youtube}
               >
-                {showKeys.youtube ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
+                테스트
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              onClick={testYoutubeApiKey}
-              disabled={!settings.youtubeApiKey || loading.youtube}
-              isLoading={loading.youtube}
-            >
-              테스트
-            </Button>
           </div>
+          
+          {/* Key 2 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-muted">API 키 #2 (선택)</label>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  type={showKeys.youtube2 ? 'text' : 'password'}
+                  value={settings.youtubeApiKey2 || ''}
+                  onChange={(e) => updateSettings({ youtubeApiKey2: e.target.value })}
+                  placeholder="할당량 분산용 추가 키"
+                  icon={<Key className="w-4 h-4" />}
+                />
+                <button
+                  onClick={() => toggleShowKey('youtube2')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                >
+                  {showKeys.youtube2 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          
+          {/* Key 3 */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-muted">API 키 #3 (선택)</label>
+            <div className="flex gap-2">
+              <div className="flex-1 relative">
+                <Input
+                  type={showKeys.youtube3 ? 'text' : 'password'}
+                  value={settings.youtubeApiKey3 || ''}
+                  onChange={(e) => updateSettings({ youtubeApiKey3: e.target.value })}
+                  placeholder="할당량 분산용 추가 키"
+                  icon={<Key className="w-4 h-4" />}
+                />
+                <button
+                  onClick={() => toggleShowKey('youtube3')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                >
+                  {showKeys.youtube3 ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+          </div>
+          
           {testResults.youtube && (
             <div className={`flex items-center gap-2 text-sm ${testResults.youtube?.status === 'success' ? 'text-success' : 'text-error'}`}>
               {testResults.youtube?.status === 'success' ? (
@@ -962,7 +1015,7 @@ const ApiSettings: React.FC = () => {
             </div>
           )}
           <p className="text-xs text-muted">
-            YouTube API는 트렌드 분석, 댓글 분석, 수익 대시보드 기능에 사용됩니다.
+            YouTube API는 트렌드 분석, 바이럴 검색 기능에 사용됩니다. (무료: 일 10,000 유닛)
             <a 
               href="https://console.cloud.google.com/apis/credentials" 
               target="_blank" 

@@ -12,6 +12,8 @@ interface YouTubeSearchRequest {
   maxAge?: number; // hours
   minViews?: number;
   limit?: number;
+  // 클라이언트에서 전달하는 API 키 (설정에서 입력)
+  apiKeys?: string[];
 }
 
 interface YouTubeVideo {
@@ -28,6 +30,40 @@ interface YouTubeVideo {
   uploadDate: string;
   duration: number;
   isShort: boolean;
+}
+
+// ============================================================================
+// API Key 로테이션 시스템 (3개 키 순환 사용으로 할당량 분산)
+// 클라이언트 설정 키 우선, 없으면 환경 변수 사용
+// ============================================================================
+let currentKeyIndex = 0;
+let requestApiKeys: string[] = []; // 요청마다 설정되는 키
+
+function setRequestApiKeys(keys: string[]) {
+  requestApiKeys = keys.filter(k => k && k.trim());
+}
+
+function getApiKeys(): string[] {
+  // 요청에서 전달받은 키가 있으면 사용
+  if (requestApiKeys.length > 0) {
+    return requestApiKeys;
+  }
+  // 없으면 환경 변수에서 가져오기
+  const keys: string[] = [];
+  if (process.env.YOUTUBE_API_KEY) keys.push(process.env.YOUTUBE_API_KEY);
+  if (process.env.YOUTUBE_API_KEY_2) keys.push(process.env.YOUTUBE_API_KEY_2);
+  if (process.env.YOUTUBE_API_KEY_3) keys.push(process.env.YOUTUBE_API_KEY_3);
+  return keys;
+}
+
+function getNextApiKey(): string | null {
+  const keys = getApiKeys();
+  if (keys.length === 0) return null;
+  
+  const key = keys[currentKeyIndex % keys.length];
+  currentKeyIndex = (currentKeyIndex + 1) % keys.length;
+  console.log(`🔑 Using YouTube API key #${(currentKeyIndex === 0 ? keys.length : currentKeyIndex)} of ${keys.length}`);
+  return key;
 }
 
 // ISO 8601 기간을 초로 변환
@@ -52,10 +88,10 @@ async function fetchYouTubeTrending(
   regionCode: string = 'US',
   maxResults: number = 50
 ): Promise<YouTubeVideo[]> {
-  const apiKey = process.env.YOUTUBE_API_KEY;
+  const apiKey = getNextApiKey();
   
   if (!apiKey) {
-    console.error('YOUTUBE_API_KEY not found');
+    console.error('No YouTube API keys configured');
     return [];
   }
 
@@ -128,10 +164,10 @@ async function searchYouTube(
   maxResults: number = 50,
   shortsOnly: boolean = false
 ): Promise<YouTubeVideo[]> {
-  const apiKey = process.env.YOUTUBE_API_KEY;
+  const apiKey = getNextApiKey();
   
   if (!apiKey) {
-    console.error('YOUTUBE_API_KEY not found');
+    console.error('No YouTube API keys configured');
     return [];
   }
 
@@ -277,8 +313,12 @@ export async function POST(request: NextRequest) {
       region = 'global', 
       maxAge = 72, // 기본 3일
       minViews = 0,
-      limit = 50 
+      limit = 50,
+      apiKeys = []
     } = body;
+
+    // 클라이언트에서 전달된 키 설정
+    setRequestApiKeys(apiKeys);
 
     let videos: YouTubeVideo[] = [];
 

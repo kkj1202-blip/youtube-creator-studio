@@ -21,6 +21,7 @@ import {
   Save,
   Search,
 } from 'lucide-react';
+import { useStore } from '@/store/useStore';
 
 // Types
 interface VideoResult {
@@ -48,28 +49,36 @@ const STORAGE_KEY = 'viral-search-settings-v2';
 function formatViewCount(views: number): string {
   if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
   if (views >= 1000) return (views / 1000).toFixed(0) + 'K';
-  return views.toString();
+  return String(views);
 }
 
-function formatRelativeTime(dateString: string): string {
-  const date = new Date(dateString);
+function formatDuration(seconds?: number): string {
+  if (!seconds) return '';
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function parseRelativeDate(dateStr: string): string {
+  const date = new Date(dateStr);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  if (diffHours < 1) return '방금 전';
+  if (diffHours < 24) return `${diffHours}시간 전`;
   const diffDays = Math.floor(diffHours / 24);
-  if (diffHours < 1) return '방금';
-  if (diffHours < 24) return `${diffHours}h`;
-  if (diffDays < 7) return `${diffDays}d`;
-  return `${Math.floor(diffDays / 7)}w`;
+  if (diffDays < 7) return `${diffDays}일 전`;
+  return date.toLocaleDateString('ko-KR');
 }
 
 export default function ViralSearchPage() {
+  const { settings } = useStore();
   // State
   const [platform, setPlatform] = useState<Platform>('tiktok');
   const [region, setRegion] = useState<Region>('global');
-  const [maxAge, setMaxAge] = useState<number>(24); // 1일 기본
-  const [minViews, setMinViews] = useState<number>(1000000); // 100만 기본
-  const [maxResults, setMaxResults] = useState<number>(10); // 10개 기본
+  const [maxAge, setMaxAge] = useState<number>(168); // 1일 기본
+  const [minViews, setMinViews] = useState<number>(100000); // 100만 기본
+  const [maxResults, setMaxResults] = useState<number>(20); // 10개 기본
   const [videos, setVideos] = useState<VideoResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
@@ -105,6 +114,12 @@ export default function ViralSearchPage() {
     try {
       // YouTube는 별도 API 사용
       const apiEndpoint = platform === 'youtube' ? '/api/youtube-search' : '/api/viral-search';
+      
+      // YouTube인 경우 설정에서 API 키 가져오기
+      const youtubeKeys = platform === 'youtube' 
+        ? [settings.youtubeApiKey, settings.youtubeApiKey2, settings.youtubeApiKey3].filter(k => k && k.trim())
+        : [];
+      
       const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -115,6 +130,7 @@ export default function ViralSearchPage() {
           maxAge,
           minViews,
           limit: maxResults,
+          apiKeys: youtubeKeys, // YouTube API 키 전달
         }),
       });
       const data = await response.json();
@@ -126,7 +142,7 @@ export default function ViralSearchPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [platform, region, maxAge, minViews, maxResults]);
+  }, [platform, region, maxAge, minViews, maxResults, settings.youtubeApiKey, settings.youtubeApiKey2, settings.youtubeApiKey3]);
 
   // Download handler
   const handleDownload = useCallback(async (video: VideoResult) => {
@@ -394,7 +410,7 @@ export default function ViralSearchPage() {
                       {video.platform === 'tiktok' ? '🎵' : '📸'}
                     </span>
                     <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px]">
-                      {formatRelativeTime(video.uploadDate)}
+                      {parseRelativeDate(video.uploadDate)}
                     </span>
                   </div>
 

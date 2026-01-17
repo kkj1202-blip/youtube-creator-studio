@@ -43,6 +43,8 @@ const defaultSettings: Settings = {
     { name: '계정 2', apiKey: '', voices: [], isActive: false },
   ],
   youtubeApiKey: '',
+  youtubeApiKey2: '', // 로테이션용 2번째 키
+  youtubeApiKey3: '', // 로테이션용 3번째 키
   // LLM API 키
   geminiApiKey: '',
   openaiApiKey: '',
