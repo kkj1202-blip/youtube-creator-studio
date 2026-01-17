@@ -49,6 +49,14 @@ const periodOptions = [
   { value: '90d', label: '지난 90일' },
 ];
 
+// 지역 옵션
+const regionOptions = [
+  { value: 'korea', label: '🇰🇷 한국' },
+  { value: 'global', label: '🌐 글로벌' },
+  { value: 'US', label: '🇺🇸 미국' },
+  { value: 'JP', label: '🇯🇵 일본' },
+];
+
 // 인터페이스
 interface TrendingKeyword {
   keyword: string;
@@ -77,6 +85,7 @@ export default function TrendPage() {
   const [searchKeyword, setSearchKeyword] = useState('');
   const [category, setCategory] = useState('all');
   const [period, setPeriod] = useState('7d');
+  const [region, setRegion] = useState('korea'); // 기본값 한국
   const [isLoading, setIsLoading] = useState(false);
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +137,7 @@ export default function TrendPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           type: 'trending',
-          region: 'global',
+          region: region, // 선택된 지역 사용
           maxAge: period === '24h' ? 24 : period === '7d' ? 168 : period === '30d' ? 720 : 2160,
           limit: 50,
           apiKeys,
@@ -357,6 +366,14 @@ export default function TrendPage() {
                   options={periodOptions}
                   value={period}
                   onChange={setPeriod}
+                />
+              </div>
+              <div className="w-36">
+                <Select
+                  label="지역"
+                  options={regionOptions}
+                  value={region}
+                  onChange={setRegion}
                 />
               </div>
               <div className="flex gap-2">
