@@ -355,6 +355,10 @@ export async function generateAllVoices(
       voiceId: scene.voiceId || defaultVoiceId,
       speed: scene.voiceSpeed,
       emotion: scene.emotion,
+      stability: scene.voiceStability,
+      similarity: scene.voiceSimilarity,
+      style: scene.voiceStyle,
+      useSpeakerBoost: scene.voiceSpeakerBoost,
     });
 
     if (!result.success || !result.audioUrl) {
@@ -474,6 +478,10 @@ export async function generateAllVoicesWithAutoSwitch(
           voiceId: scene.voiceId || defaultVoiceId,
           speed: scene.voiceSpeed,
           emotion: scene.emotion,
+          stability: scene.voiceStability,
+          similarity: scene.voiceSimilarity,
+          style: scene.voiceStyle,
+          useSpeakerBoost: scene.voiceSpeakerBoost,
         });
 
         if (result.success && result.audioUrl) {
