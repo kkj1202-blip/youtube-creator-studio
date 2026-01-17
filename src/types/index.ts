@@ -268,6 +268,10 @@ export interface Settings {
     transition: TransitionType;
     kenBurns: KenBurnsEffect;
     subtitleEnabled: boolean;
+    voiceStability?: number;
+    voiceSimilarity?: number;
+    voiceStyle?: number;
+    voiceSpeakerBoost?: boolean;
   };
   
   // 자동 저장

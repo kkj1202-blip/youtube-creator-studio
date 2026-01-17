@@ -17,9 +17,19 @@ export interface VoiceGenerationParams {
   useSpeakerBoost?: boolean;
 }
 
-// ... VoiceGenerationResponse
+export interface VoiceGenerationResponse {
+  success: boolean;
+  audioUrl?: string;
+  audioDuration?: number;
+  error?: string;
+}
 
-// ... emotionSettings
+const emotionSettings: Record<string, { stability: number; similarityBoost: number; style: number }> = {
+  normal: { stability: 0.5, similarityBoost: 0.75, style: 0.0 },
+  emphasis: { stability: 0.4, similarityBoost: 0.8, style: 0.5 },
+  whisper: { stability: 0.8, similarityBoost: 0.5, style: 0.0 },
+  excited: { stability: 0.3, similarityBoost: 0.8, style: 0.8 },
+};
 
 export async function generateVoice(
   apiKey: string,
