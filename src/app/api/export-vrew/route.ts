@@ -40,6 +40,43 @@ async function processInBatches<T, R>(
     return results;
 }
 
+// 무음 WAV 생성 (Vrew 호환: 32-bit float, 16000Hz, mono)
+function generateSilentWav(durationSec: number = 1): Buffer {
+    const sampleRate = 16000;
+    const numChannels = 1;
+    const bytesPerSample = 4; // 32-bit float
+    const numSamples = Math.floor(sampleRate * durationSec);
+    const dataSize = numSamples * numChannels * bytesPerSample;
+    const fileSize = 44 + dataSize - 8; // RIFF chunk size
+    
+    const buffer = Buffer.alloc(44 + dataSize);
+    let offset = 0;
+    
+    // RIFF header
+    buffer.write('RIFF', offset); offset += 4;
+    buffer.writeUInt32LE(fileSize, offset); offset += 4;
+    buffer.write('WAVE', offset); offset += 4;
+    
+    // fmt chunk
+    buffer.write('fmt ', offset); offset += 4;
+    buffer.writeUInt32LE(16, offset); offset += 4; // chunk size
+    buffer.writeUInt16LE(3, offset); offset += 2;  // format = 3 (IEEE float)
+    buffer.writeUInt16LE(numChannels, offset); offset += 2;
+    buffer.writeUInt32LE(sampleRate, offset); offset += 4;
+    buffer.writeUInt32LE(sampleRate * numChannels * bytesPerSample, offset); offset += 4; // byte rate
+    buffer.writeUInt16LE(numChannels * bytesPerSample, offset); offset += 2; // block align
+    buffer.writeUInt16LE(32, offset); offset += 2; // bits per sample
+    
+    // data chunk
+    buffer.write('data', offset); offset += 4;
+    buffer.writeUInt32LE(dataSize, offset); offset += 4;
+    
+    // Silent samples (all zeros = silence for float)
+    // Already zero-filled by Buffer.alloc
+    
+    return buffer;
+}
+
 // 이미지/오디오 fetch with timeout
 async function fetchWithTimeout(url: string, timeoutMs: number = 30000): Promise<ArrayBuffer | null> {
     const controller = new AbortController();
@@ -334,68 +371,90 @@ export async function POST(req: NextRequest) {
               "mediaId": audioMediaId
           });
       } else {
-          // 오디오 없을 때: 텍스트 words + End Marker 추가 (mediaId 없이)
-          const rawWords = script.split(/\s+/).filter((w: string) => w.length > 0);
-          const totalWords = rawWords.length || 1;
+          // 오디오 없을 때: 무음 WAV 생성 + type 7 (TTS 대기 상태) - Vrew 호환!
+          const placeholderAudioId = generateShortId(10);
+          const silentWav = generateSilentWav(1); // 1초 무음
           
-          let currentTime = 0;
-          const wordDuration = duration / (totalWords + 1);
+          // 무음 WAV를 media 파일에 추가
+          mediaFiles.set(`media/${placeholderAudioId}.wav`, silentWav);
           
-          rawWords.forEach((wordText: string, i: number) => {
-              words.push({
-                  "id": generateShortId(10),
-                  "text": wordText,
-                  "startTime": currentTime,
-                  "duration": wordDuration * 0.8,
-                  "aligned": false,
-                  "type": 0,
-                  "originalDuration": wordDuration * 0.8,
-                  "originalStartTime": currentTime,
-                  "truncatedWords": [],
-                  "autoControl": false,
-                  "audioIds": [],
-                  "assetIds": [],
-                  "playbackRate": 1
-                  // mediaId 없음 (오디오 없음)
-              });
-              currentTime += wordDuration * 0.8;
-              
-              if (i < rawWords.length - 1) {
-                  words.push({
-                      "id": generateShortId(10),
-                      "text": "",
-                      "startTime": currentTime,
-                      "duration": wordDuration * 0.2,
-                      "aligned": false,
-                      "type": 1,
-                      "originalDuration": wordDuration * 0.2,
-                      "originalStartTime": currentTime,
-                      "truncatedWords": [],
-                      "autoControl": false,
-                      "audioIds": [],
-                      "assetIds": [],
-                      "playbackRate": 1
-                  });
-                  currentTime += wordDuration * 0.2;
-              }
+          // audioAssetMap에 placeholder 추가
+          audioAssetMap.set(index, {
+              "version": 1,
+              "mediaId": placeholderAudioId,
+              "sourceOrigin": "VREW_RESOURCE",
+              "fileSize": silentWav.length,
+              "name": `${placeholderAudioId}.mp3`, // Vrew는 .mp3로 표시
+              "type": "AVMedia",
+              "videoAudioMetaInfo": {
+                  "duration": 1,
+                  "audioInfo": { 
+                      "sampleRate": 16000, 
+                      "codec": "mp3", 
+                      "channelCount": 1 
+                  }
+              },
+              "sourceFileType": "TTS",
+              "fileLocation": "IN_MEMORY",
+              "_speechText": script,
+              "_duration": 1,
+              "_isPlaceholder": true // 내부 표시용
+          });
+          
+          // type 7 word (TTS 대기 상태) + End marker
+          words.push({
+              "id": generateShortId(10),
+              "text": "",
+              "startTime": 0,
+              "duration": 1,
+              "aligned": false,
+              "type": 7,  // TTS 대기 상태!
+              "originalDuration": 1,
+              "originalStartTime": 0,
+              "truncatedWords": [],
+              "autoControl": false,
+              "mediaId": placeholderAudioId,
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1
           });
           
           // End Marker
           words.push({
               "id": generateShortId(10),
               "text": "",
-              "startTime": duration,
+              "startTime": 1,
               "duration": 0,
               "aligned": false,
               "type": 2,
               "originalDuration": 0,
-              "originalStartTime": duration,
+              "originalStartTime": 1,
               "truncatedWords": [],
               "autoControl": false,
+              "mediaId": placeholderAudioId,
               "audioIds": [],
               "assetIds": [],
               "playbackRate": 1
           });
+          
+          // ttsClipInfosMap에 TTS 대기 정보 추가 (errorInfo 포함!)
+          ttsClipInfosMap[placeholderAudioId] = {
+              "pitch": 1, 
+              "speed": 0, 
+              "volume": 4,
+              "speaker": lastTTSSettings.speaker,
+              "emotion": "calm",
+              "text": {
+                  "raw": script,
+                  "processed": script,
+                  "textAspectLang": "ko-KR"
+              },
+              "duration": 1,
+              "errorInfo": {
+                  "reason": "NOT_COMPLETED",
+                  "msg": "tts.not_completed"
+              }
+          };
       }
       
       // ttsClipInfosMap
