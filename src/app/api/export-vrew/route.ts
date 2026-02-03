@@ -507,14 +507,14 @@ export async function POST(req: NextRequest) {
 
     console.log(`[export-vrew] Building ZIP file...`);
     
-    // Write project.json
-    projectZip.file("project.json", JSON.stringify(projectJson, null, 2));
+    // Write project.json - 압축된 JSON (줄바꿈/들여쓰기 없이!)
+    // Vrew는 압축된 JSON을 기대함
+    projectZip.file("project.json", JSON.stringify(projectJson));
     
-    // ZIP 생성 최적화 옵션
+    // ZIP 생성 - STORE 방식 (실제 Vrew 파일과 동일)
     const vrewContent = await projectZip.generateAsync({ 
         type: 'uint8array',
-        compression: 'DEFLATE',
-        compressionOptions: { level: 6 } // 밸런스 있는 압축 레벨
+        compression: 'STORE'  // 압축 안 함 (실제 Vrew와 동일)
     });
     
     console.log(`[export-vrew] Export complete! File size: ${(vrewContent.length / 1024 / 1024).toFixed(2)}MB`);
