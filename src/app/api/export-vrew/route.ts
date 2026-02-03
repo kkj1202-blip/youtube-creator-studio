@@ -125,26 +125,59 @@ export async function POST(req: NextRequest) {
     
     // 이미지 병렬 처리
     await processInBatches(scenes, BATCH_SIZE, async (scene: any, index: number) => {
-        if (!scene.imageUrl) return;
+        if (!scene.imageUrl) {
+            console.log(`[export-vrew] Scene ${index}: No imageUrl`);
+            return;
+        }
+        
+        console.log(`[export-vrew] Scene ${index}: Processing imageUrl = ${scene.imageUrl.substring(0, 100)}...`);
         
         const imageId = generateUUID();
         let imgBuffer: Buffer | null = null;
 
         try {
             if (scene.imageUrl.startsWith('data:')) {
+                // Base64 data URL
                 const base64Data = scene.imageUrl.split(',')[1];
                 imgBuffer = Buffer.from(base64Data, 'base64');
+                console.log(`[export-vrew] Scene ${index}: Loaded from data URL, size=${imgBuffer.length}`);
             } else if (scene.imageUrl.startsWith('http')) {
+                // External HTTP URL
                 const ab = await fetchWithTimeout(scene.imageUrl);
                 if (ab) {
                     imgBuffer = Buffer.from(ab);
+                    console.log(`[export-vrew] Scene ${index}: Loaded from HTTP, size=${imgBuffer.length}`);
                 }
-            } else {
-                // Local File
+            } else if (scene.imageUrl.startsWith('/uploads/') || scene.imageUrl.startsWith('/public/')) {
+                // 상대 경로 (/uploads/...) - public 폴더에서 읽기
+                const relativePath = scene.imageUrl.startsWith('/public/') 
+                    ? scene.imageUrl.replace('/public/', '') 
+                    : scene.imageUrl.replace('/', '');
+                const localPath = path.join(process.cwd(), 'public', relativePath);
+                console.log(`[export-vrew] Scene ${index}: Trying local path = ${localPath}`);
+                if (fs.existsSync(localPath)) {
+                    imgBuffer = await fs.promises.readFile(localPath);
+                    console.log(`[export-vrew] Scene ${index}: Loaded from local, size=${imgBuffer.length}`);
+                } else {
+                    console.error(`[export-vrew] Scene ${index}: File not found at ${localPath}`);
+                }
+            } else if (scene.imageUrl.startsWith('file://')) {
+                // file:// URL
                 let localPath = decodeURIComponent(scene.imageUrl.replace(/^file:\/\/\/?/, ''));
                 localPath = path.normalize(localPath);
                 if (fs.existsSync(localPath)) {
                     imgBuffer = await fs.promises.readFile(localPath);
+                    console.log(`[export-vrew] Scene ${index}: Loaded from file://, size=${imgBuffer.length}`);
+                }
+            } else {
+                // 기타 경로 - public 폴더 기준으로 시도
+                const localPath = path.join(process.cwd(), 'public', scene.imageUrl);
+                console.log(`[export-vrew] Scene ${index}: Trying fallback path = ${localPath}`);
+                if (fs.existsSync(localPath)) {
+                    imgBuffer = await fs.promises.readFile(localPath);
+                    console.log(`[export-vrew] Scene ${index}: Loaded from fallback, size=${imgBuffer.length}`);
+                } else {
+                    console.error(`[export-vrew] Scene ${index}: File not found at ${localPath}`);
                 }
             }
 
