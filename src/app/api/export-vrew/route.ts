@@ -210,6 +210,7 @@ export async function POST(req: NextRequest) {
     const scenesPayload: any[] = [];
     const propsAssets: Record<string, any> = {};
     const ttsClipInfosMap: Record<string, any> = {};
+    const originalClipsMap: Record<string, any[]> = {};
 
     const lastTTSSettings = {
       "pitch": 1, "speed": 0, "volume": 4,
@@ -334,8 +335,24 @@ export async function POST(req: NextRequest) {
               "playbackRate": 1,
               "mediaId": audioMediaId
           });
+      } else {
+          // 오디오 없을 때: 최소한 End Marker는 필요할 수 있음
+          words.push({
+              "id": generateShortId(10),
+              "text": "",
+              "startTime": duration,
+              "duration": 0,
+              "aligned": false,
+              "type": 2,
+              "originalDuration": 0,
+              "originalStartTime": duration,
+              "truncatedWords": [],
+              "autoControl": false,
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1
+          });
       }
-      // 오디오 없으면 words는 빈 배열 [] 그대로 유지
       
       // ttsClipInfosMap
       if (matchedAudio) {
@@ -354,12 +371,14 @@ export async function POST(req: NextRequest) {
           };
       }
 
+      // originalClipsMap에 클립 ID 추가
+      originalClipsMap[clipId] = [];
+
       // Scene payload
       scenesPayload.push({
         "id": sceneId,
         "clips": [
            {
-              "id": clipId,
               "words": words,
               "captionMode": "MANUAL",
               "captions": [
@@ -369,6 +388,7 @@ export async function POST(req: NextRequest) {
               "assetIds": assetIds, 
               "dirty": { "blankDeleted": false, "caption": false, "video": false },
               "translationModified": { "result": false, "source": false },
+              "id": clipId,  // id를 마지막으로 이동 (실제 Vrew 구조와 동일)
               "audioIds": []
            }
         ],
@@ -458,7 +478,7 @@ export async function POST(req: NextRequest) {
         "pronunciationDisplay": true,
         "projectAudioLanguage": "ko",
         "audioLanguagesMap": {},
-        "originalClipsMap": {},
+        "originalClipsMap": originalClipsMap,
         "ttsClipInfosMap": ttsClipInfosMap
       },
       "comment": `3.5.4\t${now.toISOString()}`,
