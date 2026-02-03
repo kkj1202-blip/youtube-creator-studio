@@ -74,8 +74,9 @@ export async function POST(req: NextRequest) {
     const videoHeight = isShorts ? 1920 : 1080;
 
     // Create the Vrew Project Zip
-    // 🔴 지침서 v2: 모든 파일을 ZIP 루트에 배치 (media/ 폴더 금지!)
+    // ✅ 실제 Vrew 파일 분석 결과: media/ 폴더 사용!
     const projectZip = new JSZip();
+    const mediaFolder = projectZip.folder("media");
 
     // 1. Prepare Assets - 병렬 처리로 최적화
     // Map으로 빠른 lookup을 위해 저장
@@ -124,8 +125,8 @@ export async function POST(req: NextRequest) {
                     // 크기 읽기 실패해도 계속 진행
                 }
                 
-                // 🔴 지침서 v2: ZIP 루트에 직접 저장 (media/ 폴더 X)
-                projectZip.file(`${imageId}.png`, imgBuffer);
+                // ✅ 실제 Vrew: media/ 폴더에 저장
+                mediaFolder?.file(`${imageId}.png`, imgBuffer);
                 
                 imageAssetMap.set(index, {
                     "version": 1,
@@ -174,8 +175,8 @@ export async function POST(req: NextRequest) {
             if (audioBuffer) {
                 const duration = Number(scene.audioDuration) || Number(scene.imageDuration) || 5;
                 
-                // 🔴 지침서 v2: ZIP 루트에 직접 저장 (media/ 폴더 X)
-                projectZip.file(`${audioId}.mp3`, audioBuffer);
+                // ✅ 실제 Vrew: media/ 폴더에 저장
+                mediaFolder?.file(`${audioId}.mp3`, audioBuffer);
                 
                 audioAssetMap.set(index, {
                     "version": 1,

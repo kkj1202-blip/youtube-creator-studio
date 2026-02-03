@@ -74,8 +74,8 @@ export async function POST(req: NextRequest) {
     const videoHeight = isShorts ? 1920 : 1080;
 
     // Create the Vrew Project Zip
+    // 🔴 지침서 v2: 모든 파일을 ZIP 루트에 배치 (media/ 폴더 금지!)
     const projectZip = new JSZip();
-    const mediaFolder = projectZip.folder("media");
 
     // 1. Prepare Assets - 병렬 처리로 최적화
     // Map으로 빠른 lookup을 위해 저장
@@ -124,8 +124,8 @@ export async function POST(req: NextRequest) {
                     // 크기 읽기 실패해도 계속 진행
                 }
                 
-                // Store in media/ folder
-                mediaFolder?.file(`${imageId}.png`, imgBuffer);
+                // 🔴 지침서 v2: ZIP 루트에 직접 저장 (media/ 폴더 X)
+                projectZip.file(`${imageId}.png`, imgBuffer);
                 
                 imageAssetMap.set(index, {
                     "version": 1,
@@ -174,7 +174,8 @@ export async function POST(req: NextRequest) {
             if (audioBuffer) {
                 const duration = Number(scene.audioDuration) || Number(scene.imageDuration) || 5;
                 
-                mediaFolder?.file(`${audioId}.mp3`, audioBuffer);
+                // 🔴 지침서 v2: ZIP 루트에 직접 저장 (media/ 폴더 X)
+                projectZip.file(`${audioId}.mp3`, audioBuffer);
                 
                 audioAssetMap.set(index, {
                     "version": 1,
@@ -263,86 +264,77 @@ export async function POST(req: NextRequest) {
       }
 
       // Build words array
+      // 🔴 지침서 v2: 오디오 없으면 words: [] 빈 배열!
       const words: any[] = [];
-      const rawWords = script.split(/\s+/).filter((w: string) => w.length > 0);
-      const totalWords = rawWords.length || 1;
       
-      let currentTime = 0;
-      const wordDuration = duration / (totalWords + 1);
-      const audioMediaId = matchedAudio?.mediaId || null;
-      
-      rawWords.forEach((wordText: string, i: number) => {
-          const wordEntry: any = {
-              "id": generateShortId(10),
-              "text": wordText,
-              "startTime": currentTime,
-              "duration": wordDuration * 0.8,
-              "aligned": false,
-              "type": 0,
-              "originalDuration": wordDuration * 0.8,
-              "originalStartTime": currentTime,
-              "truncatedWords": [],
-              "autoControl": false,
-              "audioIds": [],
-              "assetIds": [],
-              "playbackRate": 1
-          };
+      if (matchedAudio) {
+          // 오디오가 있을 때만 words 배열 생성
+          const rawWords = script.split(/\s+/).filter((w: string) => w.length > 0);
+          const totalWords = rawWords.length || 1;
+          const audioMediaId = matchedAudio.mediaId;
           
-          if (audioMediaId) {
-              wordEntry.mediaId = audioMediaId;
-          }
+          let currentTime = 0;
+          const wordDuration = duration / (totalWords + 1);
           
-          words.push(wordEntry);
-          currentTime += wordDuration * 0.8;
-          
-          if (i < rawWords.length - 1) {
-              const blankEntry: any = {
+          rawWords.forEach((wordText: string, i: number) => {
+              words.push({
                   "id": generateShortId(10),
-                  "text": "",
+                  "text": wordText,
                   "startTime": currentTime,
-                  "duration": wordDuration * 0.2,
+                  "duration": wordDuration * 0.8,
                   "aligned": false,
-                  "type": 1,
-                  "originalDuration": wordDuration * 0.2,
+                  "type": 0,
+                  "originalDuration": wordDuration * 0.8,
                   "originalStartTime": currentTime,
                   "truncatedWords": [],
                   "autoControl": false,
                   "audioIds": [],
                   "assetIds": [],
-                  "playbackRate": 1
-              };
+                  "playbackRate": 1,
+                  "mediaId": audioMediaId
+              });
+              currentTime += wordDuration * 0.8;
               
-              if (audioMediaId) {
-                  blankEntry.mediaId = audioMediaId;
+              if (i < rawWords.length - 1) {
+                  words.push({
+                      "id": generateShortId(10),
+                      "text": "",
+                      "startTime": currentTime,
+                      "duration": wordDuration * 0.2,
+                      "aligned": false,
+                      "type": 1,
+                      "originalDuration": wordDuration * 0.2,
+                      "originalStartTime": currentTime,
+                      "truncatedWords": [],
+                      "autoControl": false,
+                      "audioIds": [],
+                      "assetIds": [],
+                      "playbackRate": 1,
+                      "mediaId": audioMediaId
+                  });
+                  currentTime += wordDuration * 0.2;
               }
-              
-              words.push(blankEntry);
-              currentTime += wordDuration * 0.2;
-          }
-      });
+          });
 
-      // End Marker
-      const endMarker: any = {
-          "id": generateShortId(10),
-          "text": "",
-          "startTime": duration,
-          "duration": 0,
-          "aligned": false,
-          "type": 2,
-          "originalDuration": 0,
-          "originalStartTime": duration,
-          "truncatedWords": [],
-          "autoControl": false,
-          "audioIds": [],
-          "assetIds": [],
-          "playbackRate": 1
-      };
-      
-      if (audioMediaId) {
-          endMarker.mediaId = audioMediaId;
+          // End Marker (오디오 있을 때만)
+          words.push({
+              "id": generateShortId(10),
+              "text": "",
+              "startTime": duration,
+              "duration": 0,
+              "aligned": false,
+              "type": 2,
+              "originalDuration": 0,
+              "originalStartTime": duration,
+              "truncatedWords": [],
+              "autoControl": false,
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1,
+              "mediaId": audioMediaId
+          });
       }
-      
-      words.push(endMarker);
+      // 오디오 없으면 words는 빈 배열 [] 그대로 유지
       
       // ttsClipInfosMap
       if (matchedAudio) {
