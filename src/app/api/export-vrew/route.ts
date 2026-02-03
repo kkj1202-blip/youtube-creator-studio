@@ -506,12 +506,27 @@ export async function POST(req: NextRequest) {
 
     console.log(`[export-vrew] Building ZIP file...`);
     
-    // Write project.json - 압축된 JSON (줄바꿈/들여쓰기 없이!)
-    // Vrew는 압축된 JSON을 기대함
-    projectZip.file("project.json", JSON.stringify(projectJson));
+    // 빈 media/ 폴더 제거 (JSZip이 자동 생성한 것)
+    if (projectZip.files['media/'] && !projectZip.files['media/'].dir === false) {
+        delete projectZip.files['media/'];
+    }
+    
+    // 새 ZIP 생성 - project.json을 먼저 추가하고 media 파일들 추가
+    const finalZip = new JSZip();
+    
+    // 1. project.json 먼저 (압축된 JSON)
+    finalZip.file("project.json", JSON.stringify(projectJson));
+    
+    // 2. media 파일들 추가 (폴더 엔트리 없이 파일만)
+    for (const [name, file] of Object.entries(projectZip.files)) {
+        if (name !== 'media/' && name.startsWith('media/') && !file.dir) {
+            const content = await (file as any).async('uint8array');
+            finalZip.file(name, content);
+        }
+    }
     
     // ZIP 생성 - STORE 방식 (실제 Vrew 파일과 동일)
-    const vrewContent = await projectZip.generateAsync({ 
+    const vrewContent = await finalZip.generateAsync({ 
         type: 'uint8array',
         compression: 'STORE'  // 압축 안 함 (실제 Vrew와 동일)
     });
