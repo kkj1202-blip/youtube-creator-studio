@@ -219,77 +219,96 @@ export async function POST(req: NextRequest) {
       // Build words array - Vrew uses specific word structure
       const words: any[] = [];
 
-      if (matchedAudio) {
-          // Split script into words for Vrew subtitle sync
-          const rawWords = script.split(/\s+/).filter((w: string) => w.length > 0);
-          const totalWords = rawWords.length || 1;
-          
-          // Calculate timing - simple even distribution
-          let currentTime = 0;
-          const wordDuration = duration / (totalWords + 1); // +1 for spacing
-          
-          rawWords.forEach((wordText: string, i: number) => {
-              // Add word (type 0)
-              words.push({
-                  "id": generateShortId(10),
-                  "text": wordText,
-                  "startTime": currentTime,
-                  "duration": wordDuration * 0.8, // 80% for word
-                  "aligned": false,
-                  "type": 0,
-                  "originalDuration": wordDuration * 0.8,
-                  "originalStartTime": currentTime,
-                  "truncatedWords": [],
-                  "autoControl": false,
-                  "mediaId": matchedAudio.mediaId,
-                  "audioIds": [],
-                  "assetIds": [],
-                  "playbackRate": 1
-              });
-              
-              currentTime += wordDuration * 0.8;
-              
-              // Add blank/pause between words (type 1) - except for last word
-              if (i < rawWords.length - 1) {
-                  words.push({
-                      "id": generateShortId(10),
-                      "text": "",
-                      "startTime": currentTime,
-                      "duration": wordDuration * 0.2, // 20% for pause
-                      "aligned": false,
-                      "type": 1,
-                      "originalDuration": wordDuration * 0.2,
-                      "originalStartTime": currentTime,
-                      "truncatedWords": [],
-                      "autoControl": false,
-                      "mediaId": matchedAudio.mediaId,
-                      "audioIds": [],
-                      "assetIds": [],
-                      "playbackRate": 1
-                  });
-                  currentTime += wordDuration * 0.2;
-              }
-          });
-
-          // Add End Marker (type 2)
-          words.push({
+      // Split script into words for Vrew subtitle sync
+      const rawWords = script.split(/\s+/).filter((w: string) => w.length > 0);
+      const totalWords = rawWords.length || 1;
+      
+      // Calculate timing - simple even distribution
+      let currentTime = 0;
+      const wordDuration = duration / (totalWords + 1); // +1 for spacing
+      
+      // mediaId는 오디오가 있으면 오디오 ID, 없으면 null
+      const audioMediaId = matchedAudio?.mediaId || null;
+      
+      rawWords.forEach((wordText: string, i: number) => {
+          // Add word (type 0)
+          const wordEntry: any = {
               "id": generateShortId(10),
-              "text": "",
-              "startTime": duration,
-              "duration": 0,
+              "text": wordText,
+              "startTime": currentTime,
+              "duration": wordDuration * 0.8, // 80% for word
               "aligned": false,
-              "type": 2,
-              "originalDuration": 0,
-              "originalStartTime": duration,
+              "type": 0,
+              "originalDuration": wordDuration * 0.8,
+              "originalStartTime": currentTime,
               "truncatedWords": [],
               "autoControl": false,
-              "mediaId": matchedAudio.mediaId,
               "audioIds": [],
               "assetIds": [],
               "playbackRate": 1
-          });
+          };
           
-          // Add to ttsClipInfosMap
+          // 오디오가 있을 때만 mediaId 추가
+          if (audioMediaId) {
+              wordEntry.mediaId = audioMediaId;
+          }
+          
+          words.push(wordEntry);
+          
+          currentTime += wordDuration * 0.8;
+          
+          // Add blank/pause between words (type 1) - except for last word
+          if (i < rawWords.length - 1) {
+              const blankEntry: any = {
+                  "id": generateShortId(10),
+                  "text": "",
+                  "startTime": currentTime,
+                  "duration": wordDuration * 0.2, // 20% for pause
+                  "aligned": false,
+                  "type": 1,
+                  "originalDuration": wordDuration * 0.2,
+                  "originalStartTime": currentTime,
+                  "truncatedWords": [],
+                  "autoControl": false,
+                  "audioIds": [],
+                  "assetIds": [],
+                  "playbackRate": 1
+              };
+              
+              if (audioMediaId) {
+                  blankEntry.mediaId = audioMediaId;
+              }
+              
+              words.push(blankEntry);
+              currentTime += wordDuration * 0.2;
+          }
+      });
+
+      // Add End Marker (type 2)
+      const endMarker: any = {
+          "id": generateShortId(10),
+          "text": "",
+          "startTime": duration,
+          "duration": 0,
+          "aligned": false,
+          "type": 2,
+          "originalDuration": 0,
+          "originalStartTime": duration,
+          "truncatedWords": [],
+          "autoControl": false,
+          "audioIds": [],
+          "assetIds": [],
+          "playbackRate": 1
+      };
+      
+      if (audioMediaId) {
+          endMarker.mediaId = audioMediaId;
+      }
+      
+      words.push(endMarker);
+      
+      // Add to ttsClipInfosMap only if audio exists
+      if (matchedAudio) {
           ttsClipInfosMap[matchedAudio.mediaId] = {
               "duration": duration,
               "text": {
