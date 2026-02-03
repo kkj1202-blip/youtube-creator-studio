@@ -26,14 +26,18 @@ import {
   EyeOff,
   Users,
   Sparkles,
+  Copy,
+  Scissors,
 } from 'lucide-react';
+import VrewBatchExport from '@/components/tools/VrewBatchExport';
 import { useStore } from '@/store/useStore';
-import { Button, Card, Select, Toggle, Slider, Modal } from '@/components/ui';
+import { Button, Card, Modal } from '@/components/ui';
 import ImageUploader from './ImageUploader';
 import CharacterAnalyzer from './CharacterAnalyzer';
-import type { Scene, EmotionTag, TransitionType, KenBurnsEffect } from '@/types';
+import type { Project } from '@/types';
 import {
   generateAllImages,
+  generateAllPrompts,
   generateAllVoices,
   renderAllScenes,
   runFullPipeline,
@@ -45,15 +49,11 @@ import {
   downloadImage,
   downloadAllToDirectory,
   isDirectoryPickerSupported,
-  isFileSavePickerSupported,
 } from '@/lib/api/renderService';
+import { exportNativeVrewProject } from '@/lib/api/exportService';
 import { imageStyleLibrary } from '@/lib/imageStyles';
 
-import {
-  emotionOptions,
-  transitionOptions,
-  kenBurnsOptions,
-} from '@/constants/options';
+
 
 interface ProgressState {
   isRunning: boolean;
@@ -105,6 +105,7 @@ const BatchActions: React.FC = () => {
 
   const [showBatchImageUploader, setShowBatchImageUploader] = useState(false);
   const [showCharacterAnalyzer, setShowCharacterAnalyzer] = useState(false);
+  const [showVrewBatchExport, setShowVrewBatchExport] = useState(false);
   const [showErrorDetails, setShowErrorDetails] = useState(false);
   const [processingState, setProcessingState] = useState<ProgressState>({
     isRunning: false,
@@ -116,13 +117,18 @@ const BatchActions: React.FC = () => {
     currentSceneNumber: 0,
   });
   // bulkSettings 제거됨 - 프로젝트 설정으로 통합
-
-  if (!currentProject) return null;
-
-  const scenes = currentProject.scenes;
   
+  const scenes = useMemo(() => currentProject?.scenes || [], [currentProject]);
+
   // 상세 통계
   const stats = useMemo(() => {
+    if (!currentProject) return {
+      total: 0, withImage: 0, withAudio: 0, rendered: 0, processing: 0,
+      errors: 0, errorDetails: { image: 0, voice: 0, render: 0 },
+      failedScenes: { image: [], voice: [], render: [] },
+      errorMessages: []
+    };
+
     const errorScenes = scenes.filter((s) => s.error);
     const errorDetails = {
       image: errorScenes.filter(s => !s.imageUrl).length,
@@ -132,7 +138,7 @@ const BatchActions: React.FC = () => {
     
     // 실패한 씬 목록
     const failedScenes = {
-      image: scenes.filter(s => !s.imageUrl && s.script.trim()),
+      image: scenes.filter(s => !s.imageUrl && s.script.trim()), // 빈 배열 반환 시 filter 등 메서드는 안전
       voice: scenes.filter(s => !s.audioGenerated && s.script.trim()),
       render: scenes.filter(s => !s.rendered && s.imageUrl && s.audioGenerated),
     };
@@ -151,7 +157,7 @@ const BatchActions: React.FC = () => {
         error: s.error || '알 수 없는 오류',
       })),
     };
-  }, [scenes]);
+  }, [scenes, currentProject]);
 
   // 기존 이미지가 있는 씬 맵
   const existingSceneImages = useMemo(() => {
@@ -185,10 +191,12 @@ const BatchActions: React.FC = () => {
     return settings.elevenLabsAccounts.findIndex(acc => acc.isActive && acc.apiKey);
   }, [settings.elevenLabsAccounts]);
   
-  const hasVoiceApiKey = activeAccountIndex !== -1;
+  const hasVoiceApiKey = activeAccountIndex !== -1 || !!settings.fishAudioApiKey || !!settings.googleTtsApiKey;
   const hasDefaultVoice = !!(
-    currentProject.defaultVoiceId || 
-    (activeAccountIndex !== -1 && settings.elevenLabsAccounts[activeAccountIndex]?.voices?.[0]?.id)
+    currentProject?.defaultVoiceId || 
+    (activeAccountIndex !== -1 && settings.elevenLabsAccounts[activeAccountIndex]?.voices?.[0]?.id) ||
+    settings.fishAudioVoices?.[0]?.id ||
+    settings.googleVoices?.[0]?.id
   );
 
   // 일괄 이미지 업로드 처리
@@ -213,8 +221,8 @@ const BatchActions: React.FC = () => {
   
   // 이미지 생성 실패한 씬만 재시도
   const handleRetryFailedImages = useCallback(async () => {
-    if (!hasImageApiKey) {
-      alert('설정에서 이미지 생성 API 키를 입력하세요.');
+    if (!hasImageApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk') {
+      alert('설정에서 이미지 생성 API 키를 입력하거나 이미지 소스를 변경하세요.');
       return;
     }
 
@@ -240,14 +248,18 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
-      // 실패한 씬만 포함한 임시 프로젝트 생성
-      const tempProject = {
+      if (!currentProject) {
+        throw new Error('프로젝트가 없습니다.');
+      }
+
+       // 실패한 씬만 포함한 임시 프로젝트 생성
+       const tempProject = {
         ...currentProject,
         scenes: failedScenes,
       };
 
       const result = await generateAllImages(
-        tempProject,
+        tempProject as Project,
         settings.kieApiKey,
         (progress) => {
           setProcessingState(prev => ({
@@ -279,12 +291,12 @@ const BatchActions: React.FC = () => {
         startTime: null,
       }));
     }
-  }, [currentProject, settings.kieApiKey, hasImageApiKey, stats.failedScenes.image, updateScene]);
+  }, [currentProject, settings.kieApiKey, hasImageApiKey, stats.failedScenes.image, updateScene, settings.imageSource]);
 
   // 음성 생성 실패한 씬만 재시도
   const handleRetryFailedVoices = useCallback(async () => {
     if (!hasVoiceApiKey) {
-      alert('설정에서 ElevenLabs API 키를 입력하고 계정을 활성화하세요.');
+      alert('음성 생성 API 키가 설정되지 않았습니다.');
       return;
     }
 
@@ -299,10 +311,6 @@ const BatchActions: React.FC = () => {
       updateScene(scene.id, { error: undefined });
     });
 
-    const apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
-    const defaultVoiceId = currentProject.defaultVoiceId || 
-      settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id;
-
     setProcessingState(prev => ({
       ...prev,
       isRunning: true,
@@ -314,15 +322,18 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
+      if (!currentProject) {
+        throw new Error('프로젝트가 없습니다.');
+      }
+
       const tempProject = {
         ...currentProject,
         scenes: failedScenes,
       };
 
       const result = await generateAllVoices(
-        tempProject,
-        apiKey,
-        defaultVoiceId,
+        tempProject as Project,
+        settings,
         (progress) => {
           setProcessingState(prev => ({
             ...prev,
@@ -353,7 +364,7 @@ const BatchActions: React.FC = () => {
         startTime: null,
       }));
     }
-  }, [currentProject, settings.elevenLabsAccounts, activeAccountIndex, hasVoiceApiKey, stats.failedScenes.voice, updateScene]);
+  }, [currentProject, settings, hasVoiceApiKey, stats.failedScenes.voice, updateScene]);
 
   // 렌더링 실패한 씬만 재시도
   const handleRetryFailedRenders = useCallback(async () => {
@@ -379,13 +390,17 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
+      if (!currentProject) {
+        throw new Error('프로젝트가 없습니다.');
+      }
+
       const tempProject = {
         ...currentProject,
         scenes: failedScenes,
       };
 
       const result = await renderAllScenes(
-        tempProject,
+        tempProject as Project,
         (progress) => {
           setProcessingState(prev => ({
             ...prev,
@@ -435,8 +450,92 @@ const BatchActions: React.FC = () => {
     alert(`✅ 캐릭터 ${characters.length}명이 승인되었습니다!\n\n승인된 캐릭터: ${characters.map(c => c.name).join(', ')}\n\n이제 "전체 이미지 생성" 버튼을 클릭하거나,\n각 씬에서 개별적으로 이미지를 생성할 수 있습니다.`);
   }, []);
 
+  const handleCopyPrompts = useCallback(async () => {
+    if (!currentProject) return;
+    
+    // Whisk/ImageFX 스타일에 맞게 포맷팅
+    // 보통 1줄에 1개씩 또는 번호 없이 리스트업
+    // 여기서는 번호와 함께 명확히 구분
+    const textToCopy = currentProject.scenes
+      .map((s, i) => `Scene ${i+1}: ${s.imagePrompt || '(프롬프트 없음)'}`)
+      .join('\n\n');
+
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+      alert('📋 모든 프롬프트가 복사되었습니다!\n\nWhisk(Google ImageFX)나 다른 도구에 붙여넣으세요.');
+    } catch (err) {
+      console.error('Failed to copy keys:', err);
+      alert('복사에 실패했습니다. 권한을 확인해주세요.');
+    }
+  }, [currentProject]);
+
+  const handleGeneratePromptsOnly = useCallback(async () => {
+    if (!currentProject) return;
+
+    setProcessingState(prev => ({
+      ...prev,
+      isRunning: true,
+      currentStage: 'image',
+      progress: null,
+      errors: [],
+      startTime: Date.now(),
+      currentSceneNumber: 0,
+    }));
+
+    try {
+      const result = await generateAllPrompts(
+        currentProject,
+        (progress) => {
+          setProcessingState(prev => ({
+            ...prev,
+            progress,
+            errors: progress.errors,
+            currentSceneNumber: progress.completed + 1,
+          }));
+        },
+        updateScene
+      );
+
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        completed: { ...prev.completed, image: result.completed }, // Count as image step progress
+        errors: result.errors,
+        startTime: null,
+      }));
+
+      // 프롬프트 생성 후 자동 복사 제안
+      if (confirm(`✅ 프롬프트 ${result.completed}개 생성 완료!\n\n클립보드에 복사해서 Whisk/ImageFX에 붙여넣으시겠습니까?`)) {
+        await handleCopyPrompts();
+      }
+
+    } catch (error) {
+      setProcessingState(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: 'idle',
+        errors: [error instanceof Error ? error.message : '알 수 없는 오류'],
+        startTime: null,
+      }));
+    }
+  }, [currentProject, updateScene, handleCopyPrompts]);
+
   const handleGenerateAllImages = useCallback(async () => {
-    if (!hasImageApiKey) {
+    // Whisk 모드인 경우 쿠키 확인
+    if (settings.imageSource === 'whisk') {
+        if (!settings.whiskCookie) {
+             alert('Whisk (Google ImageFX) 자동화를 위해서는 쿠키 설정이 필요합니다.\n설정 > API 설정에서 쿠키를 입력해주세요.');
+             return;
+        }
+    } 
+    // KIE 모드인 경우 API 키 확인
+    else if (!hasImageApiKey) {
+      // API 키가 없으면 프롬프트만 생성할 것인지 물어보기
+      if (confirm('이미지 생성 API 키가 설정되지 않았습니다.\n\n대신 "프롬프트만 생성"하여 Whisk/ImageFX 등에서 사용하시겠습니까?')) {
+        handleGeneratePromptsOnly();
+        return;
+      }
       alert('설정에서 이미지 생성 API 키를 입력하세요.');
       return;
     }
@@ -452,6 +551,8 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
+      if (!currentProject) return;
+      
       const result = await generateAllImages(
         currentProject,
         settings.kieApiKey,
@@ -463,7 +564,12 @@ const BatchActions: React.FC = () => {
             currentSceneNumber: progress.completed + 1,
           }));
         },
-        updateScene
+        updateScene,
+        undefined, // Options
+        settings.whiskCookie, // Whisk Cookie
+        settings.imageSource, // Image Source
+        settings.whiskMode || 'api', // Whisk Mode
+        currentProject.imageConsistency?.referenceImageUrls // Reference Images
       );
 
       setProcessingState(prev => ({
@@ -487,11 +593,11 @@ const BatchActions: React.FC = () => {
         startTime: null,
       }));
     }
-  }, [currentProject, settings.kieApiKey, hasImageApiKey, updateScene]);
+  }, [currentProject, settings, hasImageApiKey, updateScene, handleGeneratePromptsOnly]);
 
   const handleGenerateAllAudio = useCallback(async () => {
     if (!hasVoiceApiKey) {
-      alert('설정에서 ElevenLabs API 키를 입력하고 계정을 활성화하세요.');
+      alert('음성 생성 API 키가 설정되지 않았습니다.');
       return;
     }
 
@@ -499,10 +605,6 @@ const BatchActions: React.FC = () => {
       alert('기본 보이스를 선택하세요.');
       return;
     }
-
-    const apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
-    const defaultVoiceId = currentProject.defaultVoiceId || 
-      settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id;
 
     setProcessingState(prev => ({
       ...prev,
@@ -515,10 +617,11 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
+      if (!currentProject) return;
+
       const result = await generateAllVoices(
         currentProject,
-        apiKey,
-        defaultVoiceId,
+        settings,
         (progress) => {
           setProcessingState(prev => ({
             ...prev,
@@ -551,7 +654,7 @@ const BatchActions: React.FC = () => {
         startTime: null,
       }));
     }
-  }, [currentProject, settings.elevenLabsAccounts, activeAccountIndex, hasVoiceApiKey, hasDefaultVoice, updateScene]);
+  }, [currentProject, settings, hasVoiceApiKey, hasDefaultVoice, updateScene]);
 
   const handleRenderAllScenes = useCallback(async () => {
     setProcessingState(prev => ({
@@ -565,8 +668,10 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
+      if (!currentProject) return;
+
       const result = await renderAllScenes(
-        currentProject,
+        currentProject!,
         (progress) => {
           setProcessingState(prev => ({
             ...prev,
@@ -607,10 +712,6 @@ const BatchActions: React.FC = () => {
       return;
     }
 
-    const voiceApiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
-    const defaultVoiceId = currentProject.defaultVoiceId ||
-      settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id;
-
     setProcessingState(prev => ({
       ...prev,
       isRunning: true,
@@ -622,6 +723,8 @@ const BatchActions: React.FC = () => {
     }));
 
     try {
+      if (!currentProject) return;
+
       // 최신 프로젝트 상태를 가져오는 콜백 (렌더링 시 최신 씬 데이터 사용)
       const getLatestProject = () => {
         const state = useStore.getState();
@@ -636,9 +739,7 @@ const BatchActions: React.FC = () => {
 
       const result = await runFullPipeline(
         currentProject,
-        settings.kieApiKey,
-        voiceApiKey,
-        defaultVoiceId,
+        settings,
         (stage, progress) => {
           console.log(`[BatchActions] 단계: ${stage}, 완료: ${progress.completed}/${progress.total}`);
           setProcessingState(prev => ({
@@ -766,6 +867,8 @@ const BatchActions: React.FC = () => {
     alert(`✅ ${targets.length}개의 ${typeLabel} 다운로드 완료!\n\n📁 저장 위치: 브라우저 다운로드 폴더`);
   };
 
+  if (!currentProject) return null;
+
   return (
     <div className="space-y-4">
       {/* Status Overview */}
@@ -795,6 +898,28 @@ const BatchActions: React.FC = () => {
         </div>
 
         {/* Progress Bar */}
+        <div className="flex gap-2 mb-4">
+             <Button
+                variant="outline"
+                className="flex-1 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+                onClick={async () => {
+                  try {
+                    await exportNativeVrewProject(currentProject);
+                    alert(
+                      '✅ Vrew 실행파일(.vrew) 생성 완료!\n\n' +
+                      '📂 다운로드된 파일을 실행하면 Vrew가 바로 열립니다.\n' +
+                      '(더 이상 XML 가져오기를 할 필요가 없습니다!)'
+                    );
+                  } catch (e) {
+                    alert('내보내기 실패: ' + (e instanceof Error ? e.message : String(e)));
+                  }
+                }}
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Vrew 파일(.vrew) 바로 생성하기
+              </Button>
+        </div>
+
         <div className="space-y-2">
           <div className="flex justify-between text-sm">
             <span className="text-muted">전체 진행률</span>
@@ -936,7 +1061,7 @@ const BatchActions: React.FC = () => {
                 size="sm"
                 className="w-full justify-between bg-card-hover"
                 onClick={handleRetryFailedImages}
-                disabled={!hasImageApiKey}
+                disabled={!hasImageApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk'}
                 icon={<ImageIcon className="w-4 h-4 text-error" />}
               >
                 <span>이미지 없는 씬 재생성</span>
@@ -1051,7 +1176,7 @@ const BatchActions: React.FC = () => {
               variant="outline"
               className="w-full border-primary/50 hover:bg-primary/10"
               onClick={() => setShowCharacterAnalyzer(true)}
-              disabled={processingState.isRunning || !hasImageApiKey || stats.total === 0}
+              disabled={processingState.isRunning || (!hasImageApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk') || stats.total === 0}
               icon={<Users className="w-4 h-4" />}
             >
               <span className="flex items-center gap-2">
@@ -1060,16 +1185,47 @@ const BatchActions: React.FC = () => {
               </span>
             </Button>
           ) : (
-            <Button
-              variant="ghost"
-              className="w-full"
-              onClick={handleGenerateAllImages}
-              disabled={processingState.isRunning || !hasImageApiKey}
-              isLoading={processingState.currentStage === 'image'}
-              icon={<ImageIcon className="w-4 h-4" />}
-            >
-              메인 캐릭터 스타일로 전체 이미지 생성
-            </Button>
+            <div className="space-y-1">
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={handleGenerateAllImages}
+                disabled={processingState.isRunning || (!hasImageApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk')}
+                isLoading={processingState.currentStage === 'image'}
+                icon={<ImageIcon className="w-4 h-4" />}
+              >
+                메인 캐릭터 스타일로 전체 이미지 생성
+              </Button>
+              
+              {/* Whisk/Free User Options */}
+              <div className="flex gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-xs border-dashed"
+                  onClick={handleGeneratePromptsOnly}
+                  disabled={processingState.isRunning}
+                  title="이미지 생성 없이 프롬프트만 생성"
+                >
+                  <Sparkles className="w-3 h-3 mr-1 text-purple-500" />
+                  프롬프트만 생성
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1 text-xs border-dashed"
+                  onClick={handleCopyPrompts}
+                  disabled={processingState.isRunning || !currentProject.scenes.some(s => s.imagePrompt)}
+                  title="생성된 프롬프트를 클립보드에 복사"
+                >
+                  <Copy className="w-3 h-3 mr-1" />
+                  프롬프트 복사
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted text-center">
+                * Whisk(ImageFX) 사용자는 &apos;프롬프트 복사&apos; 후 붙여넣으세요
+              </p>
+            </div>
           )}
           <p className="text-xs text-muted text-center mb-2">
             {currentProject.approvedCharacters?.length 
@@ -1082,7 +1238,7 @@ const BatchActions: React.FC = () => {
               variant="ghost"
               size="sm"
               onClick={handleGenerateAllImages}
-              disabled={processingState.isRunning || !hasImageApiKey}
+              disabled={processingState.isRunning || (!hasImageApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk')}
               isLoading={processingState.currentStage === 'image'}
               icon={<ImageIcon className="w-4 h-4" />}
               title="캐릭터 분석 없이 바로 생성"
@@ -1111,10 +1267,14 @@ const BatchActions: React.FC = () => {
             </Button>
           </div>
 
-          {(!hasImageApiKey || !hasVoiceApiKey) && (
-            <div className="text-xs text-warning bg-warning/10 p-2 rounded">
-              {!hasImageApiKey && '⚠️ 이미지 API 키 필요 '}
-              {!hasVoiceApiKey && '⚠️ 음성 API 키 필요 (계정 활성화 필요)'}
+          {!hasImageApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk' && (
+            <div className="text-sm text-warning bg-warning/10 p-2 rounded flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />설정에서 KIE API 키를 입력하세요.
+            </div>
+          )}
+          {!hasVoiceApiKey && (
+            <div className="text-sm text-warning bg-warning/10 p-2 rounded flex items-center gap-2">
+              <AlertCircle className="w-4 h-4" />음성 API 키 필요 (계정 활성화 필요)
             </div>
           )}
 
@@ -1295,6 +1455,14 @@ const BatchActions: React.FC = () => {
           onClose={() => setShowCharacterAnalyzer(false)}
         />
       </Modal>
+
+      {/* Vrew Batch Export Modal */}
+      {showVrewBatchExport && (
+        <VrewBatchExport
+            isOpen={showVrewBatchExport}
+            onClose={() => setShowVrewBatchExport(false)}
+        />
+      )}
     </div>
   );
 };

@@ -13,54 +13,80 @@ interface RequestBody {
 }
 
 async function callGemini(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-      }],
-      generationConfig: {
-        temperature: 0.8,
-        maxOutputTokens: 1024,
+  try {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
+        }],
+        generationConfig: {
+          temperature: 0.8,
+          maxOutputTokens: 1024,
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const data = await response.json();
+        errorDetail = data.error?.message || JSON.stringify(data);
+      } catch (e) {
+        errorDetail = await response.text();
       }
-    }),
-  });
+      
+      if (errorDetail.includes('expired') || errorDetail.includes('renew')) {
+        throw new Error('Gemini API 키가 만료되었습니다.');
+      }
+      throw new Error(`Gemini API 오류: ${response.status} - ${errorDetail}`);
+    }
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API Error: ${response.status} - ${error}`);
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error('Gemini 연결 중 오류 발생');
   }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 async function callOpenAI(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.8,
-      max_tokens: 1024,
-    }),
-  });
+  try {
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.8,
+        max_tokens: 1024,
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API Error: ${response.status} - ${error}`);
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const data = await response.json();
+        errorDetail = data.error?.message || JSON.stringify(data);
+      } catch (e) {
+        errorDetail = await response.text();
+      }
+      throw new Error(`OpenAI API 오류: ${response.status} - ${errorDetail}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error('OpenAI 연결 중 오류 발생');
   }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
 }
 
 export async function POST(request: NextRequest) {

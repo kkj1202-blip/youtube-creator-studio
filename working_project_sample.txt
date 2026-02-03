@@ -1,0 +1,45 @@
+
+[FILES SAMPLE]
+{
+  "version": 1,
+  "mediaId": "96ae097b-a240-4e83-9ce2-5b7f2a2004cc",
+  "sourceOrigin": "USER",
+  "fileSize": 2561654542,
+  "name": "0130.mp4",
+  "type": "AVMedia",
+  "videoAudioMetaInfo": {
+    "videoInfo": {
+      "size": {
+        "width": 3868,
+        "height": 2160
+      },
+      "frameRate": 30,
+      "codec": "hevc",
+      "colorSpace": "bt709"
+    },
+    "audioInfo": {
+      "sampleRate": 44100,
+      "codec": "aac",
+      "channelCount": 2
+    },
+    "duration": 747.15,
+    "presumedDevice": "unknown",
+    "mediaContainer": "mp4"
+  },
+  "sourceFileType": "VIDEO_AUDIO",
+  "fileLocation": "LOCAL",
+  "path": "C:\\Users\\kkj12\\OneDrive\\바탕 화면\\3번 장바구니 경제\\노란봉투\\0130.mp4",
+  "relativePath": "./0130.mp4"
+}
+
+[TRANSCRIPT KEYS]
+dict_keys(['scenes'])
+
+[TEMPLATE DATA TO COPY]
+--- version ---
+--- props ---
+MISSING: globalEffects
+MISSING: styles
+MISSING: remixInfos
+
+[DOC INFO]

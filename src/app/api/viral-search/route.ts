@@ -134,13 +134,13 @@ async function fetchTikTokTrending(region: string = 'US', limit: number = 20): P
     console.log(`🚀 Starting keyword-based TikTok fetch (region: ${regionCode})...`);
 
     // 1) 트렌딩 피드 (소수지만 일단 포함)
-    const trendingPromise = fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=50`, {
+    const trendingPromise = fetch(`https://www.tikwm.com/api/feed/list?region=${regionCode}&count=${limit}`, {
       headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
     }).then(r => r.json()).catch(() => null);
 
-    // 2) 키워드 검색으로 최신 영상 수집 (각각 50개씩)
+    // 2) 키워드 검색으로 최신 영상 수집 (각각 limit개씩)
     const searchPromises = SEARCH_KEYWORDS.map(keyword =>
-      fetch(`https://www.tikwm.com/api/feed/search?keywords=${encodeURIComponent(keyword)}&count=50`, {
+      fetch(`https://www.tikwm.com/api/feed/search?keywords=${encodeURIComponent(keyword)}&count=${limit}`, {
         headers: { 'Accept': 'application/json', 'User-Agent': 'Mozilla/5.0' },
       }).then(r => r.json()).catch(() => null)
     );
@@ -278,7 +278,7 @@ async function fetchTikTokSearch(keyword: string, limit: number = 20): Promise<V
 }
 
 // Instagram RapidAPI를 통한 실제 데이터 조회
-async function fetchInstagramReels(region: string = 'global', limit: number = 20): Promise<VideoData[]> {
+async function fetchInstagramReels(_region: string = 'global', limit: number = 20): Promise<VideoData[]> {
   const apiKey = process.env.RAPIDAPI_KEY;
   
   console.log('🔑 Instagram API Check - RAPIDAPI_KEY present:', !!apiKey, apiKey ? `(${apiKey.length} chars)` : '');
@@ -307,7 +307,14 @@ async function fetchInstagramReels(region: string = 'global', limit: number = 20
     if (!response.ok) {
       const errorText = await response.text();
       console.error('📸 Instagram API Error Response:', errorText);
-      throw new Error(`Instagram API error: ${response.status}`);
+      // 204 No Content etc -> return empty to trigger fallback
+      return [];
+    }
+
+    // 204 No Content check
+    if (response.status === 204) {
+      console.log('📸 Instagram API returned 204 (No Content)');
+      return [];
     }
 
     const data = await response.json();
@@ -346,108 +353,43 @@ async function fetchInstagramReels(region: string = 'global', limit: number = 20
   }
 }
 
-// Instagram Mock 데이터
+// Instagram Mock 데이터 (대량 생성)
 function getInstagramMockData(query?: string, region: string = 'global'): VideoData[] {
   const isKorea = region === 'korea';
-  
-  if (isKorea) {
-    return [
-      {
-        id: 'ig_kr_1',
-        platform: 'instagram',
-        url: 'https://www.instagram.com/reel/KR123',
-        thumbnail: 'https://picsum.photos/seed/igkr1/400/600',
-        title: query ? `${query} 바이럴 릴스` : '🎬 폭발적 인기 릴스',
-        author: '@insta_viral_kr',
-        views: 3200000,
-        likes: 520000,
-        comments: 18000,
-        uploadDate: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-        duration: 30,
-      },
-      {
-        id: 'ig_kr_2',
-        platform: 'instagram',
-        url: 'https://www.instagram.com/reel/KR456',
-        thumbnail: 'https://picsum.photos/seed/igkr2/400/600',
-        title: '하루만에 터진 릴스 비결 🚀',
-        author: '@reel_master_kr',
-        views: 1500000,
-        likes: 280000,
-        comments: 9200,
-        uploadDate: new Date(Date.now() - 14 * 60 * 60 * 1000).toISOString(),
-        duration: 45,
-      },
-      {
-        id: 'ig_kr_3',
-        platform: 'instagram',
-        url: 'https://www.instagram.com/reel/KR789',
-        thumbnail: 'https://picsum.photos/seed/igkr3/400/600',
-        title: '릴스 알고리즘 해킹 🔓',
-        author: '@growth_tips_kr',
-        views: 890000,
-        likes: 145000,
-        comments: 5600,
-        uploadDate: new Date(Date.now() - 22 * 60 * 60 * 1000).toISOString(),
-        duration: 60,
-      },
-    ];
-  } else {
-    return [
-      {
-        id: 'ig_us_1',
-        platform: 'instagram',
-        url: 'https://www.instagram.com/reel/US123',
-        thumbnail: 'https://picsum.photos/seed/igus1/400/600',
-        title: query ? `${query} trending reel` : '🔥 This is insane! #viral',
-        author: '@kyliejenner',
-        views: 52000000,
-        likes: 9800000,
-        comments: 185000,
-        uploadDate: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
-        duration: 28,
-      },
-      {
-        id: 'ig_us_2',
-        platform: 'instagram',
-        url: 'https://www.instagram.com/reel/US456',
-        thumbnail: 'https://picsum.photos/seed/igus2/400/600',
-        title: 'POV: When the beat drops 🎶 #reels',
-        author: '@therock',
-        views: 38000000,
-        likes: 7200000,
-        comments: 120000,
-        uploadDate: new Date(Date.now() - 9 * 60 * 60 * 1000).toISOString(),
-        duration: 35,
-      },
-      {
-        id: 'ig_us_3',
-        platform: 'instagram',
-        url: 'https://www.instagram.com/reel/US789',
-        thumbnail: 'https://picsum.photos/seed/igus3/400/600',
-        title: 'Life hack you need to know 💡 #tips',
-        author: '@5.min.crafts',
-        views: 25000000,
-        likes: 4500000,
-        comments: 78000,
-        uploadDate: new Date(Date.now() - 16 * 60 * 60 * 1000).toISOString(),
-        duration: 60,
-      },
-      {
-        id: 'ig_us_4',
-        platform: 'instagram',
-        url: 'https://www.instagram.com/reel/US101',
-        thumbnail: 'https://picsum.photos/seed/igus4/400/600',
-        title: 'Wait for it... 😱 #satisfying',
-        author: '@oddlysatisfying',
-        views: 19000000,
-        likes: 3200000,
-        comments: 45000,
-        uploadDate: new Date(Date.now() - 22 * 60 * 60 * 1000).toISOString(),
-        duration: 42,
-      },
-    ];
+  const prefix = isKorea ? 'KR' : 'US';
+  const titles = isKorea 
+    ? ['🔥 대박 릴스', '🚀 급상승', '😱 충격 영상', '😂 웃긴 영상', '❤️ 감동 주의', '✨ 꿀팁 방출', '🎬 비하인드', '🎵 챌린지', '🐱 귀여운 냥이', '🐶 댕댕이', '🥘 맛집 탐방', '✈️ 여행 브이로그']
+    : ['🔥 Viral Reel', '🚀 Trending', '😱 Shocking', '😂 LOL', '❤️ Heartwarming', '✨ Life Hack', '🎬 Behind Scenes', '🎵 Dance Challenge', '🐱 Cute Cat', '🐶 Funny Dog', '🥘 Foodie', '✈️ Travel Vlog'];
+  const authors = isKorea
+    ? ['@insta_star_kr', '@reel_master', '@k_vibe', '@seoul_life', '@daily_mood', '@trend_setter']
+    : ['@viral_us', '@reel_god', '@ny_vibes', '@daily_dose', '@meme_king', '@trend_hub'];
+
+  const mocks: VideoData[] = [];
+
+  for (let i = 0; i < 12; i++) {
+    const id = `ig_${prefix}_fake_${i}`;
+    const title = titles[i % titles.length];
+    const author = authors[i % authors.length];
+    
+    // Picsum Photos which returns real looking images
+    // Using seed to keep images consistent per ID but different per item
+    
+    mocks.push({
+      id,
+      platform: 'instagram',
+      url: `https://www.instagram.com/reel/demo_${i}`,
+      thumbnail: `https://picsum.photos/seed/${id}/400/600`,
+      title: `[Demo] ${query ? query + ' ' : ''}${title}`,
+      author,
+      views: Math.floor(Math.random() * 5000000) + 100000,
+      likes: Math.floor(Math.random() * 500000) + 10000,
+      comments: Math.floor(Math.random() * 10000) + 500,
+      uploadDate: new Date(Date.now() - Math.floor(Math.random() * 72 * 60 * 60 * 1000)).toISOString(),
+      duration: 15 + Math.floor(Math.random() * 45),
+    });
   }
+  
+  return mocks;
 }
 
 // TikTok Mock 데이터 (API 실패 시 폴백)
@@ -609,10 +551,13 @@ export async function POST(request: NextRequest) {
       // Instagram - RapidAPI로 시도, 실패시 Mock
       videos = await fetchInstagramReels(region, limit);
       
-      if (videos.length === 0) {
-        console.log('Instagram API failed or no key, using mock data');
-        videos = getInstagramMockData(query, region);
-        source = 'mock';
+      // 결과가 너무 적으면(3개 미만) API 문제로 간주하고 데모 데이터 사용
+      if (videos.length < 3) {
+        console.log(`Instagram API returned filtered/empty list (${videos.length} items), using extended mock data`);
+        const mocks = getInstagramMockData(query, region);
+        // API 결과가 있으면 앞에 붙여줌
+        videos = [...videos, ...mocks];
+        source = videos.length > mocks.length ? 'mixed' : 'mock';
       }
     }
 
@@ -621,13 +566,21 @@ export async function POST(request: NextRequest) {
       videos = videos.filter(v => v.views >= minViews);
     }
 
+    // [수정됨] 3일 제한(maxAge)을 엄격하게 적용하면 결과가 0개가 되므로 제거했습니다.
+    // 대신, 아래 정렬 로직에서 최신 영상에 가산점을 주거나, 화면에 날짜를 표시하여 사용자가 판단하게 합니다.
+    /*
     if (maxAge) {
       const cutoff = Date.now() - maxAge * 60 * 60 * 1000;
       videos = videos.filter(v => new Date(v.uploadDate).getTime() >= cutoff);
     }
+    */
 
-    // 조회수 기준 정렬
-    videos.sort((a, b) => b.views - a.views);
+    // [스마트 정렬] 조회수 + (좋아요 * 5) + (댓글 * 10) 점수로 정렬하여 "진짜 반응 좋은" 영상을 위로 올림
+    videos.sort((a, b) => {
+      const scoreA = (a.views) + (a.likes * 5) + (a.comments * 10);
+      const scoreB = (b.views) + (b.likes * 5) + (b.comments * 10);
+      return scoreB - scoreA;
+    });
 
     // limit 적용
     videos = videos.slice(0, limit);
@@ -638,6 +591,7 @@ export async function POST(request: NextRequest) {
       region,
       source,
       count: videos.length,
+      note: 'Date filter removed for better results. Sorted by Smart Engagement Score.',
     });
   } catch (error) {
     console.error('Viral search error:', error);

@@ -43,75 +43,119 @@ export interface SceneAnalysis {
 
 // Gemini API 호출
 async function callGemini(apiKey: string, prompt: string): Promise<string> {
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: prompt }]
-      }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 4096,
+  try {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: prompt }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 4096,
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const data = await response.json();
+        errorDetail = data.error?.message || JSON.stringify(data);
+      } catch (e) {
+        errorDetail = await response.text();
       }
-    }),
-  });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API 오류: ${response.status} - ${error}`);
+      // 만료된 키 감지
+      if (errorDetail.includes('expired') || errorDetail.includes('renew')) {
+        throw new Error(`Gemini API 키가 만료되었습니다. (400 Expired)`);
+      }
+      
+      throw new Error(`Gemini API 오류: ${response.status} - ${errorDetail}`);
+    }
+
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error('Gemini 연결 중 알 수 없는 오류가 발생했습니다.');
   }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 // OpenAI API 호출
 async function callOpenAI(apiKey: string, prompt: string): Promise<string> {
-  const response = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: '당신은 영상 제작을 위한 대본 분석 전문가입니다. JSON 형식으로 응답하세요.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 4096,
-    }),
-  });
+  try {
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: '당신은 영상 제작을 위한 대본 분석 전문가입니다. JSON 형식으로 응답하세요.' },
+          { role: 'user', content: prompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 4096,
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API 오류: ${response.status} - ${error}`);
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const data = await response.json();
+        errorDetail = data.error?.message || JSON.stringify(data);
+      } catch (e) {
+        errorDetail = await response.text();
+      }
+      throw new Error(`OpenAI API 오류: ${response.status} - ${errorDetail}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error('OpenAI 연결 중 알 수 없는 오류가 발생했습니다.');
   }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
 }
 
 // LLM 호출 (Gemini 우선, 실패시 OpenAI)
 export async function callLLM(config: LLMConfig, prompt: string): Promise<string> {
-  if (config.provider === 'gemini' && config.geminiApiKey) {
+  // 사용 가능한 키 확인
+  const hasGemini = !!config.geminiApiKey;
+  const hasOpenAI = !!config.openaiApiKey;
+
+  if (config.provider === 'gemini' && hasGemini) {
     try {
-      return await callGemini(config.geminiApiKey, prompt);
+      return await callGemini(config.geminiApiKey!, prompt);
     } catch (error) {
-      console.error('[LLM] Gemini 실패, OpenAI로 시도:', error);
-      if (config.openaiApiKey) {
-        return await callOpenAI(config.openaiApiKey, prompt);
+      console.error('[LLM] Gemini 실패:', error);
+      
+      // OpenAI로 Fallback 시도 (키가 있는 경우에만)
+      if (hasOpenAI) {
+        console.log('[LLM] OpenAI로 자동 전환 시도...');
+        try {
+          return await callOpenAI(config.openaiApiKey!, prompt);
+        } catch (oaError) {
+          console.error('[LLM] OpenAI Fallback 실패:', oaError);
+          // 원래 에러와 Fallback 에러를 함께 알림
+          throw new Error(`Gemini 중단 및 OpenAI 전환 실패. (Gemini: ${error instanceof Error ? error.message : 'Unknown'})`);
+        }
       }
       throw error;
     }
-  } else if (config.openaiApiKey) {
-    return await callOpenAI(config.openaiApiKey, prompt);
+  } else if (hasOpenAI) {
+    return await callOpenAI(config.openaiApiKey!, prompt);
+  } else if (hasGemini) {
+    return await callGemini(config.geminiApiKey!, prompt);
   }
-  throw new Error('LLM API 키가 설정되지 않았습니다.');
+  
+  throw new Error('사용 가능한 LLM API 키(Gemini 또는 OpenAI)가 설정되지 않았습니다.');
 }
 
 // 대본에서 캐릭터 분석
@@ -231,7 +275,7 @@ export async function generateCharacterImagePrompt(
 ${referenceDescription ? `참조 이미지 설명: ${referenceDescription}` : ''}
 
 다음 형식으로 영어 프롬프트만 출력하세요 (다른 텍스트 없이):
-${stylePrompt}, portrait of [상세한 캐릭터 외형 묘사를 스타일에 맞게], [표정], [의상], centered composition, looking at camera, highly detailed
+${stylePrompt}, portrait of [상세한 캐릭터 외형 묘사를 스타일에 맞게], [표정], [의상], centered composition, natural pose, highly detailed
 
 주의사항:
 1. 스타일 프롬프트를 반드시 맨 앞에 포함

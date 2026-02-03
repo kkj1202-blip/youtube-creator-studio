@@ -1,0 +1,128 @@
+{
+  "scenes": [
+    {
+      "id": "Mws9RNeKkF",
+      "clips": [
+        {
+          "words": [
+            {
+              "id": "F7r8qE7khe",
+              "text": "\uc548\ub155\ud558\uc138\uc694",
+              "startTime": 0,
+              "duration": 1.11,
+              "aligned": false,
+              "type": 0,
+              "originalDuration": 1.11,
+              "originalStartTime": 0,
+              "truncatedWords": [],
+              "autoControl": false,
+              "mediaId": "sLczG-3IxF",
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1
+            },
+            {
+              "id": "j30m1p_59f",
+              "text": "",
+              "startTime": 1.11,
+              "duration": 0.79,
+              "aligned": false,
+              "type": 1,
+              "originalDuration": 0.79,
+              "originalStartTime": 1.11,
+              "truncatedWords": [],
+              "autoControl": false,
+              "mediaId": "sLczG-3IxF",
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1
+            },
+            {
+              "id": "_ZRynpaeDp",
+              "text": "\ub098\ub294",
+              "startTime": 1.9,
+              "duration": 0.35,
+              "aligned": false,
+              "type": 0,
+              "originalDuration": 0.35,
+              "originalStartTime": 1.9,
+              "truncatedWords": [],
+              "autoControl": false,
+              "mediaId": "sLczG-3IxF",
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1
+            },
+            {
+              "id": "vmQnRh6iIF",
+              "text": "\uc548\ud2f0\uadf8\ub798\ube44\ud2f0\uc785\ub2c8\ub2e4",
+              "startTime": 2.25,
+              "duration": 1.77,
+              "aligned": false,
+              "type": 0,
+              "originalDuration": 1.77,
+              "originalStartTime": 2.25,
+              "truncatedWords": [],
+              "autoControl": false,
+              "mediaId": "sLczG-3IxF",
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1
+            },
+            {
+              "id": "BdLxAeH-EF",
+              "text": "",
+              "startTime": 4.02,
+              "duration": 0,
+              "aligned": false,
+              "type": 2,
+              "originalDuration": 0,
+              "originalStartTime": 4.02,
+              "truncatedWords": [],
+              "autoControl": false,
+              "mediaId": "sLczG-3IxF",
+              "audioIds": [],
+              "assetIds": [],
+              "playbackRate": 1
+            }
+          ],
+          "captionMode": "MANUAL",
+          "captions": [
+            {
+              "text": [
+                {
+                  "insert": "\uc548\ub155\ud558\uc138\uc694 \ub098\ub294 \uc548\ud2f0\uadf8\ub798\ube44\ud2f0\uc785\ub2c8\ub2e4\n"
+                }
+              ]
+            },
+            {
+              "text": [
+                {
+                  "insert": "\n"
+                }
+              ]
+            }
+          ],
+          "assetIds": [
+            "9de34c65-d9f7-4ab7-b657-10668d7af317"
+          ],
+          "dirty": {
+            "blankDeleted": false,
+            "caption": false,
+            "video": false
+          },
+          "translationModified": {
+            "result": false,
+            "source": false
+          },
+          "id": "pbUalgyLXS",
+          "audioIds": []
+        }
+      ],
+      "name": "",
+      "dirty": {
+        "video": false
+      }
+    }
+  ]
+}

@@ -12,14 +12,12 @@ import {
   Scissors,
   TrendingUp,
   BarChart3,
-  Calendar,
-  FolderOpen,
-  Music,
   Settings,
   ChevronLeft,
   ChevronRight,
   Sparkles,
   Flame,
+  Zap,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 
@@ -40,6 +38,8 @@ const toolsNavItems: NavItem[] = [
   { id: 'subtitle', label: '자막 생성기', icon: <MessageSquare className="w-5 h-5" />, href: '/tools/subtitle' },
   { id: 'script', label: '대본 작성 AI', icon: <FileText className="w-5 h-5" />, href: '/tools/script' },
   { id: 'clip', label: '롱폼→쇼츠 변환', icon: <Scissors className="w-5 h-5" />, href: '/tools/clip' },
+  { id: 'vrew', label: '브루 최적화', icon: <FileText className="w-5 h-5 text-indigo-400" />, href: '/tools/vrew-optimizer', badge: 'NEW' },
+  { id: 'whisk', label: 'Whisk 자동화', icon: <Zap className="w-5 h-5 text-yellow-400" />, href: '/tools/whisk-automation', badge: 'PRO' },
 ];
 
 const analysisNavItems: NavItem[] = [
@@ -50,9 +50,7 @@ const analysisNavItems: NavItem[] = [
 ];
 
 const manageNavItems: NavItem[] = [
-  { id: 'calendar', label: '콘텐츠 캘린더', icon: <Calendar className="w-5 h-5" />, href: '/manage/calendar' },
-  { id: 'files', label: '소스 파일 정리', icon: <FolderOpen className="w-5 h-5" />, href: '/manage/files' },
-  { id: 'bgm', label: 'BGM 라이브러리', icon: <Music className="w-5 h-5" />, href: '/manage/bgm' },
+  { id: 'new-program', label: '새로운 프로그램', icon: <Sparkles className="w-5 h-5" />, href: '/manage/new-program' },
 ];
 
 const NavSection: React.FC<{ title: string; items: NavItem[]; collapsed: boolean }> = ({

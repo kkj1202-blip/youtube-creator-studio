@@ -26,6 +26,9 @@ export interface RenderOptions {
   // 모션 효과
   motionEffect?: MotionEffect;
   motionIntensity?: number;
+  duration?: number; // 명시적 영상 길이 (초)
+  padding?: number; // 오디오 후 추가 여백 (초) - duration이 없을 때 사용
+  text?: string; // 자막 텍스트
 }
 
 export interface RenderResult {
@@ -139,7 +142,7 @@ async function loadAudioSafe(url: string): Promise<{
       
       // 피크 볼륨 분석
       const peak = analyzePeakVolume(decoded);
-      const normalizationGain = calculateNormalizationGain(peak, 0.85); // 목표 85%
+      const normalizationGain = calculateNormalizationGain(peak, 0.92); // 목표 92% (일관성 향상)
       
       console.log('[Audio] 디코딩 완료:', duration.toFixed(2), '초');
       console.log('[Audio] 피크 볼륨:', (peak * 100).toFixed(1) + '%');
@@ -170,12 +173,12 @@ function getResolution(res: string, ar: '16:9' | '9:16'): [number, number] {
 
 function getBitrate(br: string): number {
   const map: Record<string, number> = {
-    'low': 3_000_000,
-    'medium': 6_000_000,
-    'high': 10_000_000,
-    'ultra': 15_000_000,
+    'low': 5_000_000,      // 5Mbps (상향)
+    'medium': 10_000_000,  // 10Mbps (상향)
+    'high': 15_000_000,    // 15Mbps (상향)
+    'ultra': 25_000_000,   // 25Mbps (고품질)
   };
-  return map[br] || 10_000_000;
+  return map[br] || 15_000_000;  // 기본값도 high로 상향
 }
 
 // ============ Ken Burns 효과 ============
@@ -213,9 +216,9 @@ function calculateKenBurns(
   // 최종 intensity 계산 (영상 길이에 반비례)
   const scaledIntensity = intensity * durationScale;
   
-  // intensity를 0.05 ~ 1.5 범위로 변환 (5% ~ 150% 효과)
-  // 기존보다 max를 늘려서 긴 영상에서도 충분한 움직임 보장
-  const power = Math.max(0.05, Math.min(1.5, scaledIntensity / 100));
+  // intensity를 0.1 ~ 2.0 범위로 변환 (더 강한 효과)
+  // 기존 /100 → /50으로 변경하여 사용자 설정값이 더 직관적으로 반영
+  const power = Math.max(0.1, Math.min(2.0, scaledIntensity / 50));
   
   // 선형 보간 (linear) - 영상 전체에 걸쳐 균일하게 움직임
   // 기존 ease-in-out은 끝부분에서 멈춘 것처럼 보이는 문제 있음
@@ -386,7 +389,8 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     throw error;
   }
 
-  const duration = audioDuration;
+  // 명시적 duration 우선, 없으면 오디오 길이 + 패딩
+  const duration = options.duration || (audioDuration + (options.padding || 0));
   console.log('[Render] 리소스 준비 완료');
   console.log('[Render] 이미지:', img.width, 'x', img.height);
   console.log('[Render] 오디오:', duration.toFixed(2), '초');
@@ -473,6 +477,55 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
     
     // 투명도 복원
     ctx.globalAlpha = 1.0;
+
+    // ============ 자막 그리기 (Subtitles) ============
+    if (options.text) {
+      const fontSize = Math.floor(canvasHeight * 0.05); // 높이의 5%
+      ctx.font = `bold ${fontSize}px "Pretendard", "Noto Sans KR", sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      
+      // 자막 스타일
+      ctx.fillStyle = '#FFFFFF';
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = fontSize * 0.15;
+      ctx.lineJoin = 'round';
+      
+      // 줄바꿈 처리 (Word Wrapping)
+      const text = options.text;
+      const maxWidth = canvasWidth * 0.9; // 화면 너비의 90%
+      const lineHeight = fontSize * 1.3;
+      const words = text.split(' ');
+      let line = '';
+      const lines = [];
+      
+      for (let n = 0; n < words.length; n++) {
+        const testLine = line + words[n] + ' ';
+        const metrics = ctx.measureText(testLine);
+        const testWidth = metrics.width;
+        
+        if (testWidth > maxWidth && n > 0) {
+          lines.push(line);
+          line = words[n] + ' ';
+        } else {
+          line = testLine;
+        }
+      }
+      lines.push(line);
+      
+      // 자막 위치 (하단에서 10% 띄움)
+      const bottomPadding = canvasHeight * 0.1;
+      let y = canvasHeight - bottomPadding - ((lines.length - 1) * lineHeight);
+      
+      // 자막 그리기 Loop
+      lines.forEach((lineText) => {
+        // 외곽선 먼저
+        ctx.strokeText(lineText, canvasWidth / 2, y);
+        // 채우기 나중
+        ctx.fillText(lineText, canvasWidth / 2, y);
+        y += lineHeight;
+      });
+    }
   }
 
   onProgress?.(20, '오디오 준비 중...');
@@ -652,16 +705,22 @@ export async function renderVideo(options: RenderOptions): Promise<RenderResult>
       // 프레임 그리기 (currentTime 전달로 모션 효과 작동)
       drawFrame(progress, alpha, elapsed);
 
+      // 종료 조건 체크
+      if (elapsed >= duration) {
+        console.log('[Render] 설정된 시간 도달 - 녹화 종료');
+        stopRecording();
+        return;
+      }
+
       // 다음 프레임
-      if (progress < 1.0) {
+      if (isActive) {
         animationId = requestAnimationFrame(renderLoop);
       }
     };
 
-    // 오디오 종료 시 녹화 중지
+    // 오디오 종료 시 로그만 출력 (녹화 중지는 시간 기반으로 변경)
     audioSource.onended = () => {
-      console.log('[Render] 오디오 재생 종료');
-      setTimeout(stopRecording, 300);
+      console.log('[Render] 오디오 재생 종료 (영상은 계속 진행)');
     };
 
     // 진행률 업데이트

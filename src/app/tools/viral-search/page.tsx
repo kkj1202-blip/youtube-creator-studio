@@ -2,6 +2,7 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
 import Link from 'next/link';
 import {
   Download,
@@ -11,7 +12,6 @@ import {
   Eye,
   Heart,
   MessageCircle,
-  Clock,
   RefreshCw,
   ArrowLeft,
   Loader2,
@@ -233,22 +233,7 @@ export default function ViralSearchPage() {
 
               <div className="w-px h-6 bg-border" />
 
-              {/* Period */}
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-muted" />
-                <select
-                  value={maxAge}
-                  onChange={(e) => setMaxAge(Number(e.target.value))}
-                  className="bg-card border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-primary"
-                >
-                  <option value={6}>6시간</option>
-                  <option value={12}>12시간</option>
-                  <option value={24}>1일</option>
-                  <option value={72}>3일</option>
-                  <option value={168}>7일</option>
-                  <option value={720}>30일</option>
-                </select>
-              </div>
+              <div className="w-px h-6 bg-border" />
 
               {/* Min Views */}
               <div className="flex items-center gap-2">
@@ -258,7 +243,7 @@ export default function ViralSearchPage() {
                   onChange={(e) => setMinViews(Number(e.target.value))}
                   className="bg-card border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-primary"
                 >
-                  <option value={0}>전체</option>
+                  <option value={0}>조회수 전체</option>
                   <option value={10000}>1만+</option>
                   <option value={100000}>10만+</option>
                   <option value={500000}>50만+</option>
@@ -365,8 +350,8 @@ export default function ViralSearchPage() {
                 {/* Thumbnail */}
                 <div className="relative aspect-[9/16]">
                   <img
-                    src={video.thumbnail}
-                    alt=""
+                    src={`/api/proxy-image?url=${encodeURIComponent(video.thumbnail)}`}
+                    alt={video.title}
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
@@ -409,16 +394,24 @@ export default function ViralSearchPage() {
                     }`}>
                       {video.platform === 'tiktok' ? '🎵' : '📸'}
                     </span>
-                    <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px]">
+                    <span className={`px-1.5 py-0.5 rounded text-white text-[10px] font-medium ${
+                      (() => {
+                        const days = (new Date().getTime() - new Date(video.uploadDate).getTime()) / (1000 * 60 * 60 * 24);
+                        if (days < 3) return 'bg-green-500/90 shadow-lg shadow-green-500/20'; // 3일 이내 (초신상)
+                        if (days < 7) return 'bg-blue-500/80';  // 7일 이내 (신상)
+                        if (days < 30) return 'bg-yellow-500/80'; // 30일 이내 (트렌드)
+                        if (days < 90) return 'bg-orange-500/70'; // 3달 이내
+                        return 'bg-gray-500/60'; // 오래된 것
+                      })()
+                    }`}>
                       {parseRelativeDate(video.uploadDate)}
                     </span>
                   </div>
 
-                  {/* Duration */}
                   {video.duration && video.duration > 0 && (
                     <div className="absolute bottom-1 right-1 px-1 py-0.5 bg-black/70 rounded text-[10px] text-white flex items-center gap-0.5">
                       <Play className="w-2 h-2" />
-                      {Math.floor(video.duration / 60)}:{String(video.duration % 60).padStart(2, '0')}
+                      {formatDuration(video.duration)}
                     </div>
                   )}
                 </div>

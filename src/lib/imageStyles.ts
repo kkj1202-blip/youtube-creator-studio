@@ -23,8 +23,8 @@ export interface StyleCategory {
 }
 
 // ============ 기본 품질 프롬프트 (모든 스타일에 자동 추가) ============
-export const QUALITY_SUFFIX = ', masterpiece, best quality, 8k ultra HD, sharp focus, highly detailed';
-export const NEGATIVE_PROMPT = 'text, watermark, signature, logo, words, letters, writing, caption, subtitle, title, label, Korean text, Chinese text, Japanese text, any language text, typography, font, number, digit, script, inscription, blurry, low quality, distorted, deformed, ugly, bad anatomy, cropped, extra limbs, duplicate, disfigured';
+export const QUALITY_SUFFIX = ', masterpiece, best quality, ultra-detailed 8k, professional cinematic lighting, ray-tracing, global illumination, high-end production value, sharp focus, award-winning photography';
+export const NEGATIVE_PROMPT = 'text, watermark, signature, logo, words, letters, writing, caption, subtitle, title, label, Korean text, Chinese text, Japanese text, any language text, typography, font, number, digit, script, inscription, alphabet, characters, romanization, blurry, low quality, distorted, deformed, ugly, bad anatomy, cropped, extra limbs, duplicate, disfigured, out of frame, lowres, mutation, messy text, illegible writing';
 
 export const imageStyleLibrary: StyleCategory[] = [
   {
@@ -35,52 +35,52 @@ export const imageStyleLibrary: StyleCategory[] = [
       {
         id: 'lego',
         name: '레고 (Ultimate LEGO Cinematic)',
-        prompt: 'Official LEGO photography style, 8k macro lens shot, realistic plastic material with authentic studs-on-top construction, cinematic studio lighting with soft shadows, shallow depth of field, vibrant official LEGO color palette, ray-traced reflections on glossy plastic surfaces, miniature diorama feel, professional toy photography',
+        prompt: 'Professional LEGO photography, macro lens (100mm), authentic plastic material with fine scratches and stud detail, cinematic studio lighting, volumetric haze, ray-traced reflections on glossy plastic, shallow depth of field (f/1.8), vibrant official palette, miniature diorama aesthetic',
+      },
+      {
+        id: 'arcane-style',
+        name: '아케인 스타일 (Arcane Painterly)',
+        prompt: 'Arcane League of Legends animation style, masterful combination of 3D modeling and hand-painted 2D textures, heavy brushstrokes, high-contrast dramatic cinematic lighting, glowing bioluminescent highlights, intense emotional atmosphere, stylized realism, gritty painterly aesthetic, masterpiece CGI',
       },
       {
         id: '3d-animation',
-        name: '3D 애니메이션 (Next-Gen Pixar)',
-        prompt: 'Ultra high-end 3D CGI render, Pixar-grade character design with expressive stylized eyes, hyper-realistic subsurface scattering on skin, detailed fabric textures with individual threads visible, soft global illumination, 8k Octane render quality, volumetric lighting with god rays, cinematic depth of field, Disney-quality animation frame',
+        name: '3D 애니메이션 (Next-Gen Disney)',
+        prompt: 'Ultra-HD 3D animation, cutting-edge Disney/Pixar visual style, meticulous fabric simulation (micro-threads), soft global illumination, volumetric god rays, Octane render 8k, cinematic bokeh, vibrant color palette, high-end animation production value',
       },
       {
-        id: '2d-animation',
-        name: '2D 애니메이션 (Modern Vector Art)',
-        prompt: 'Premium 2D flat illustration, clean minimalist vector art with precise geometric lines, sophisticated high-contrast color palette, cell-shaded with smooth gradients, professional motion graphic aesthetic, trendy editorial illustration style, bold shapes and negative space, 4k digital art',
+        id: 'hybrid-3d-premium',
+        name: '프리미엄 3D (실사 반실사)',
+        prompt: 'Masterpiece CGI visual style, perfect blend of photorealistic textures and stylized 3D animation, premium Unreal Engine 5 render, cinematic lighting with subsurface scattering, high-end fashion/streetwear fabrics (silk, leather, metal), stylish urban backdrop with artistic bokeh, Octane render 8k, sharp focus on scene atmosphere',
       },
       {
-        id: 'pixar',
-        name: '픽사 (Pixar Emotional Storytelling)',
-        prompt: 'Hyper-detailed 3D Pixar-style animation, signature character proportions with large expressive eyes, warm emotional rim lighting, tactile world-building with micro-textures, rich environmental storytelling details, soft diffused shadows, cinematic 2.39:1 aspect composition, emotional color grading',
+        id: 'ghibli-v2',
+        name: '지브리 (Premium Watercolor)',
+        prompt: 'High-end Studio Ghibli background art, traditional hand-painted gouache and watercolor, intricate foliage and lush nature, nostalgic summer lighting, shimmering heat haze, painterly cumulonimbus clouds, soft pastel earthy tones, Hayao Miyazaki inspired composition, serene pastoral masterpiece',
       },
       {
-        id: 'ghibli',
-        name: '지브리 (Studio Ghibli Watercolor)',
-        prompt: 'Hand-painted gouache and watercolor background, Studio Ghibli aesthetic, lush nature with intricate foliage, soft natural sunlight filtering through leaves, nostalgic serene atmosphere, painterly clouds with soft edges, warm earthy color palette, Hayao Miyazaki inspired composition, dreamy pastoral scene',
-      },
-      {
-        id: 'stickman',
-        name: '3D 졸라맨 (Trendy Stickman)',
-        prompt: 'ONLY white stickman characters, 3D rendered minimalist white stick figure with smooth white body and small round head with simple black dot eyes, NO realistic humans, NO detailed faces, NO skin texture, simple geometric white character, cute minimalist 3D figure, soft shadows, modern CGI render, clean white stick figure on vibrant colorful 3D background, Pixar-style lighting, cheerful expression, dynamic pose, bright pop-color environment, soft ambient occlusion, all characters must be simple white stickman style',
+        id: 'retro-anime-90s',
+        name: '90s 레트로 애니메이션 (Lo-fi Aesthetic)',
+        prompt: '1990s vintage Japanese anime aesthetic, classic cel-shading, hand-drawn line art, lo-fi CRT grain, subtle color bleeding, chromatic aberration, nostalgic hazy atmosphere, neon city lights or soft rural landscapes, Sailor Moon and Cowboy Bebop inspired color grading, retro VHS vibe',
       },
       {
         id: 'claymation',
-        name: '클레이메이션 (Aardman Stop-Motion)',
-        prompt: 'Authentic clay sculpture with visible artist fingerprints and organic textures, Aardman-style stop-motion animation aesthetic, matte tactile finish, soft studio softbox lighting with gentle shadows, handcrafted miniature set design, warm nostalgic atmosphere, Plasticine texture detail, Wallace and Gromit quality',
+        name: '클레이메이션 (Stop-Motion)',
+        prompt: 'Handcrafted clay sculpture, visible artist fingerprints and organic imperfections, stop-motion animation aesthetic, matte tactile Plasticine texture, soft studio softbox lighting, miniature set design, warm nostalgic feel, Aardman quality',
       },
       {
-        id: 'shinkai',
-        name: '신카이 마코토 (Makoto Shinkai Celestial)',
-        prompt: 'Ultra-detailed scenic background, Makoto Shinkai signature style, dramatic lens flares and light rays, hyper-realistic sky with purple orange pink gradients at golden hour, sparkling stars and celestial elements, emotional cinematic atmosphere, intricate urban architecture, reflections on wet surfaces, Your Name aesthetic',
-      },
-      {
-        id: 'us-comics',
-        name: '미국 코믹스 (Modern Marvel DC)',
-        prompt: 'Dynamic American comic book art, heavy bold ink lines with confident strokes, dramatic chiaroscuro lighting, classic halftone dot patterns, vibrant saturated primary colors, action-oriented dynamic composition, heroic proportions, Ben-Day dots texture, modern Marvel/DC graphic novel aesthetic',
+        id: 'shinkai-makoto',
+        name: '신카이 마코토 (Ethereal Sky)',
+        prompt: 'Hyper-detailed scenic art, Makoto Shinkai signature style, dramatic lens flares, glowing light rays, vibrant purple-orange-blue sky gradients, sparkling celestial elements, intricate urban architecture with wet reflections, emotional cinematic atmosphere, Your Name aesthetic',
       },
       {
         id: 'k-webtoon',
-        name: 'K-웹툰 (Premium Korean Manhwa)',
-        prompt: 'Top-tier Korean webtoon digital painting, elegant character design with glowing flawless skin, trendy modern fashion styling, soft airbrushed gradients, vibrant Korean drama lighting effects, clean line art with varying weights, high-quality manhwa illustration, romantic webtoon aesthetic',
+        name: 'K-웹툰 (High-End Manhwa)',
+        prompt: 'Premium Korean webtoon illustration, elegant character design with pearlescent skin, trendy high-fashion styling, soft digital airbrushing, vibrant dramatic lighting effects, clean variable line weights, romantic aesthetic, high-quality manhwa cover art',
+      },
+      {
+        id: 'us-comics',
+        name: '미국 코믹스 (Modern Graphic Novel)',
+        prompt: 'Dynamic American comic book art, heavy bold ink lines, dramatic chiaroscuro lighting, subtle halftone dot patterns, saturated primary color palette, gritty graphic novel aesthetic, superhero proportions, cinematic layout',
       },
     ],
   },
@@ -90,39 +90,39 @@ export const imageStyleLibrary: StyleCategory[] = [
     icon: '🎮',
     styles: [
       {
-        id: 'minecraft',
-        name: '마인크래프트 (RTX Shader)',
-        prompt: 'Official Minecraft world with RTX ray-tracing enabled, volumetric fog and atmospheric haze, glowing emissive blocks with bloom effects, 8k high-resolution texture pack, cinematic shader lighting, realistic water reflections in blocky world, dramatic sky with cubic clouds, path-traced global illumination',
+        id: 'minecraft-rtx',
+        name: '마인크래프트 (RTX 2025)',
+        prompt: 'Advanced Minecraft world with 2025 RTX ray-tracing, path-traced global illumination, high-res PBR textures, glowing emissive blocks with realistic bloom, caustic water reflections, volumetric atmospheric fog, cubic cinematic clouds, photorealistic blocky aesthetic',
       },
       {
-        id: 'roblox',
-        name: '로블록스 (Premium Roblox Avatar)',
-        prompt: 'Premium Roblox avatar character style, smooth glossy plastic appearance, trendy streetwear clothing with detailed textures, bright playful global illumination, modern Roblox engine lighting quality, high-end collectible toy aesthetic, vibrant saturated colors, clean geometric shapes',
+        id: 'y2k-frutiger-aero',
+        name: 'Y2K / 프루티거 에어로 (Glossy Future)',
+        prompt: 'Frutiger Aero aesthetic, Y2K futuristic optimism, glossy glass and water textures, bright lime green and sky blue color palette, tropical fish and bubbles in translucent glass, high-gloss plastic surfaces, lens flares, clean 2000s tech-optimism atmosphere',
       },
       {
-        id: 'pixel-art',
-        name: '픽셀 아트 (HD-2D Octopath)',
-        prompt: 'Modern 32-bit HD-2D pixel art, advanced per-pixel lighting and particle effects, Octopath Traveler aesthetic, nostalgic yet crisp with depth of field effects, carefully crafted color palette, scanline texture overlay, retro game masterpiece with modern rendering, isometric or side-scrolling composition',
+        id: 'roblox-avatar',
+        name: '로블록스 아바타 (Premium Avatar)',
+        prompt: 'High-end Roblox style, smooth glossy plastic material, trendy streetwear with 3D clothing layers, professional global illumination, bright playful lighting, sharp clean geometric shapes, collectible toy aesthetic',
       },
       {
-        id: 'low-poly',
-        name: '로우 폴리 (Artistic Geometric)',
-        prompt: 'Geometric low-poly 3D art with defined triangular facets, soft pastel gradient coloring, clean minimalist world design, subtle ambient occlusion, trendy indie game aesthetic, paper-craft inspired textures, gentle shadows, modern casual game art style',
+        id: 'roblox-game-scene',
+        name: '로블록스 게임 (Cinematic Gameplay)',
+        prompt: 'Epic Roblox game scene, diverse blocky environment with advanced 2025 engine lighting, volumetric smoke and sparkles, dynamic camera angle, colorful community-created world, high-budget cinematic gameplay render, smooth plastic textures, vibrant and joyful atmosphere',
       },
       {
-        id: 'voxel',
-        name: '복셀 (Detailed Voxel Diorama)',
-        prompt: 'Intricate 3D voxel-based diorama, isometric 45-degree camera angle, tiny glowing cube details, magical toy-like miniature world, hyper-detailed voxel construction, soft tilt-shift bokeh effect, warm ambient lighting, cozy inviting atmosphere',
+        id: 'pixel-art-hd',
+        name: '픽셀 아트 (HD-2D Masterpiece)',
+        prompt: 'Modern 32-bit HD-2D pixel art, Octopath Traveler style, per-pixel dynamic lighting, advanced particle effects, nostalgic yet crisp depth of field, tilt-shift bokeh, retro game masterpiece, beautiful color-shifted shadows',
       },
       {
-        id: 'gta',
-        name: 'GTA 아트워크 (Rockstar Loading Screen)',
-        prompt: 'Bold black outlines with confident strokes, Rockstar Games loading screen art style, gritty heavily saturated textures, high-contrast dramatic lighting, urban street style atmosphere, stylized realism, GTA Vice City color grading with magenta and cyan, criminal underworld vibe',
+        id: 'low-poly-trendy',
+        name: '로우 폴리 (Trendy Geometric)',
+        prompt: 'Minimalist geometric low-poly 3D art, soft pastel color gradients, clean sculptural world design, subtle ambient occlusion, trendy indie game aesthetic, paper-craft inspired textures, gentle poetic lighting',
       },
       {
-        id: 'isometric',
-        name: '아이소메트릭 (3D Trendy Diorama)',
-        prompt: '3D isometric miniature scene, perfect orthographic camera view, clean soft studio lighting, pastel clay-like color palette, hyper-detailed 3D icon design, Apple-style minimalist aesthetic, gentle shadows, modern UI/UX illustration, cute tiny world',
+        id: 'isometric-diorama',
+        name: '아이소메트릭 (3D Premium Icon)',
+        prompt: '3D isometric miniature diorama, perfect orthographic view, clean soft studio lighting, Apple-style minimalist aesthetic, pastel clay-like materials, hyper-detailed 3D illustration, cute tiny world',
       },
     ],
   },
@@ -132,34 +132,29 @@ export const imageStyleLibrary: StyleCategory[] = [
     icon: '🎥',
     styles: [
       {
-        id: 'hyper-photo',
-        name: '실사화 (Hyper-Photorealistic)',
-        prompt: 'Photorealistic 8k RAW photograph, shot on Sony A7R V with 85mm f/1.2 lens, hyper-detailed skin pores and textures, natural cinematic three-point lighting, shallow depth of field with creamy bokeh, professional studio photography, ultra-sharp focus on subject',
+        id: 'hyper-photo-2025',
+        name: '실사화 (2025 Hyper-Reality)',
+        prompt: 'Photorealistic 8k RAW photo, shot on Sony A7R V, 50mm f/1.2 G-Master lens, cinematic three-point lighting, natural color grading, no airbrushing, detailed textures, authentic professional photography',
       },
       {
-        id: 'hollywood',
-        name: '시네마틱 영화 (Hollywood Blockbuster)',
-        prompt: 'Anamorphic widescreen 2.39:1 cinematic frame, Hollywood color grading with teal and orange contrast, subtle organic film grain, dramatic three-point lighting, shot on ARRI Alexa 65 with master prime lens, high-budget theatrical production value, movie scene composition',
+        id: 'biophilic-design',
+        name: '비오필릭 디자인 (Breathtaking Nature)',
+        prompt: 'Biophilic architectural photography, fusion of modern luxury architecture and lush indoor nature, cascading tropical plants, natural sunlight filtering through architectural glass, organic sweeping curves, serene sanctuary vibe, high-end futuristic eco-design aesthetic',
       },
       {
-        id: 'cgi-movie',
-        name: '시네마틱 3D (CGI Movie VFX)',
-        prompt: 'High-budget Hollywood CGI VFX render, Unreal Engine 5.5 movie-quality, hyper-detailed environment with subsurface scattering, physics-based rendering PBR materials, cinematic atmosphere with volumetric lighting, 8k theatrical resolution, ILM/Weta level quality',
+        id: 'vintage-35mm',
+        name: '35mm 필름 (90s Nostalgia)',
+        prompt: 'Authentic 1990s 35mm film photography, Kodak Portra 400 aesthetic, soft organic grain, subtle light leaks, natural sun flare, warm nostalgic color tones, candid look, vintage cinematic atmosphere, high-quality film scan',
       },
       {
-        id: 'joseon',
-        name: '조선시대 (18세기 Historical K-Drama)',
-        prompt: '18th-century Korean Joseon Dynasty historical scene, high-fidelity period webtoon aesthetic, historically accurate Hanbok with silk and cotton textures, expressive character with bold line art, traditional Hanok architecture background, warm candlelit atmosphere, vibrant saturated colors, cinematic K-drama composition',
+        id: 'hollywood-anamorphic',
+        name: '시네마틱 (Anamorphic Epic)',
+        prompt: '2.39:1 anamorphic widescreen cinema frame, ARRI Alexa 65 look, teal and orange cinematic color grading, dramatic chiaroscuro lighting, volumetric atmosphere, top-tier Hollywood production value, epic movie frame composition',
       },
       {
-        id: 'cyberpunk',
-        name: '사이버펑크 (Neon Noir Dystopia)',
-        prompt: 'Futuristic cyberpunk cityscape, heavy rain with neon reflections on wet pavement, atmospheric haze and volumetric fog, magenta cyan blue neon lighting, high-tech dystopian atmosphere, Blade Runner 2049 aesthetic, holographic advertisements, gritty noir mood',
-      },
-      {
-        id: 'retro-futurism',
-        name: '레트로 퓨처리즘 (Space Age 50s-60s)',
-        prompt: '1950s-60s retro-futurism sci-fi aesthetic, sleek chrome and polished metal surfaces, mid-century modern atomic age design, pastel mint coral colors, vintage space age vibe, NASA-punk rocket aesthetic, optimistic future vision, Googie architecture influence',
+        id: 'cyberpunk-neon',
+        name: '사이버펑크 (Neon Noir v2)',
+        prompt: 'Futuristic cyberpunk neon noir, heavy rainfall, reflections on wet asphalt, magenta-cyan-violet lighting, atmospheric volumetric fog, high-tech gritty dystopian cityscape, Blade Runner-esque industrial aesthetic',
       },
     ],
   },
@@ -169,59 +164,44 @@ export const imageStyleLibrary: StyleCategory[] = [
     icon: '🎨',
     styles: [
       {
-        id: 'watercolor',
-        name: '현대 수채화 (Ethereal Watercolor)',
-        prompt: 'Fluid ethereal watercolor painting, artistic ink bleeds with controlled splashes, dreamlike transparent washes, high-quality textured cold-press paper, expressive confident brushstrokes, beautiful white space composition, museum gallery quality fine art',
+        id: 'pop-surrealism',
+        name: '팝 초현실주의 (Dreamy Surreal)',
+        prompt: 'Modern pop surrealism, dreamlike colorful and slightly weird atmosphere, floating objects, saturated pastel palette, high-contrast whimsical lighting, smooth polished surfaces, imaginative and creative composition, lowbrow art aesthetic',
       },
       {
-        id: 'impasto',
-        name: '임파스토 유화 (Heavy Texture Oil)',
-        prompt: 'Thick impasto oil painting texture, visible bold palette knife strokes, heavy paint on stretched canvas, rich deep saturated colors, Van Gogh inspired expressionist technique, dramatic brushwork, museum quality fine art, tactile three-dimensional paint surface',
+        id: 'felted-wool',
+        name: '펠트 양모 (Cozy Felted)',
+        prompt: 'Extreme macro photography of needle-felted wool, soft fuzzy texture with visible individual fibers, cute handcrafted character, cozy warm tactile feel, soft diffused indoor lighting, hygge atmosphere, adorable handicraft aesthetic',
       },
       {
-        id: 'pop-art',
-        name: '팝아트 (Neo-Pop Warhol)',
-        prompt: 'Vibrant neon pop art with bold color blocks, CMYK printing aesthetic, high-impact fashion illustration, Andy Warhol meets Roy Lichtenstein, Ben-Day dots pattern, trendy pop-culture reference, bold graphic design, street art influence',
+        id: 'hyper-tactile-toy',
+        name: '하이퍼-택타일 토이 (Tactile Lab)',
+        prompt: 'Hyper-detailed 3D toy art, mix of matte rubber and glossy plastic materials, soft squishy textures, vibrant pop colors, studio product lighting with soft shadows, high-end designer toy aesthetic, urban vinyl style, creative character design',
       },
       {
-        id: 'synthwave',
-        name: '신스웨이브 (Retro Synth Outrun)',
-        prompt: '80s retro-futurism synthwave aesthetic, neon wireframe grid landscape, glowing gradient sunset with pink purple orange, VHS analog glitch effects, chrome text effects, Outrun arcade game style, nostalgic vapor wave atmosphere',
+        id: 'modern-sculpture',
+        name: '현대 조각 (Marble & Bronze)',
+        prompt: 'Contemporary minimalist sculpture, smooth polished marble or iridescent crystal material, museum gallery lighting, dramatic shadows, elegant geometric balance, high-end fine art photography, luxurious tactile finish',
       },
       {
-        id: 'pencil-sketch',
-        name: '연필 스케치 (Master Graphite)',
-        prompt: 'Detailed graphite pencil drawing, professional hatching and cross-hatching technique, archival quality paper texture, architectural master sketch, subtle charcoal smudge details, hand-drawn fine art aesthetic, museum quality draftsmanship',
+        id: 'impasto-modern',
+        name: '임파스토 (Heavy Oil Texture)',
+        prompt: 'Thick modern impasto oil painting, extremely heavy palette knife strokes, three-dimensional paint surface, rich saturated colors, expressive confident brushwork, museum gallery quality, tactile masterpiece',
       },
       {
-        id: 'paper-cut',
-        name: '종이 오리기 (Paper-cut Diorama)',
-        prompt: 'Multi-layered 3D paper cutting art, soft shadows between paper layers, tactile textured paper with visible fibers, intricate handcrafted paper engineering, beautiful paper diorama with depth, delicate paper sculpture aesthetic',
+        id: 'watercolor-ethereal',
+        name: '에테리얼 수채화 (Fluid Art)',
+        prompt: 'Fluid ethereal watercolor painting, artistic ink bleeds and controlled splashes, dreamlike transparency, high-quality cold-press paper texture, expressive brushstrokes, beautiful white space management, museum fine art',
       },
       {
-        id: 'amigurumi',
-        name: '니트/털실 (Amigurumi Craft)',
-        prompt: 'Extreme macro photography of knitted wool texture, amigurumi crocheted character, cozy soft tactile feel, vibrant yarn colors with visible stitches, warm handicraft aesthetic, adorable plush toy photography, hygge atmosphere',
+        id: 'synthwave-2025',
+        name: '신스웨이브 (Neo-Synth v2)',
+        prompt: 'Modern synthwave aesthetic, 80s retro-futurism with 2025 rendering, neon wireframe grid, glowing sunset gradient, chrome reflections, lo-fi analog glitch effects, nostalgic yet high-tech atmosphere',
       },
       {
-        id: 'popup-book',
-        name: '팝업북 (Magical Pop-up Book)',
-        prompt: 'Open magical storybook with 3D paper elements popping out, warm golden light emanating from pages, intricate paper fold engineering, fairytale fantasy aesthetic, dramatic cinematic lighting, children book illustration, sense of wonder',
-      },
-      {
-        id: 'neo-minimalism',
-        name: '네오 미니멀리즘 (Luxury Minimal)',
-        prompt: 'Extreme clean minimalism, soft gradient pastel backgrounds, geometric balance and harmony, premium luxury branding aesthetic, spacious calm composition, high-end product photography style, negative space mastery, Apple-inspired design',
-      },
-      {
-        id: 'chaotic-packaging',
-        name: '카오틱 패키징 (Maximalist Collage)',
-        prompt: 'Hyper-detailed maximalist collage, chaotic stickers labels and patterns, vibrant street fashion magazine aesthetic, trendy pop-culture explosion, high-density visual chaos, Y2K scrapbook energy, overwhelming visual interest',
-      },
-      {
-        id: 'barbiecore',
-        name: '바비코어 (Plastic Surrealism)',
-        prompt: 'Hyper-saturated hot pink Barbie world, surreal glossy plastic texture and materials, high-fashion doll aesthetic, dreamlike surrealist composition, ultra-feminine glamorous vibe, Barbie movie production design, plastic fantastic',
+        id: 'paper-cut-layered',
+        name: '종이 오리기 (Intricate Layers)',
+        prompt: 'Multi-layered 3D paper cutting art, soft shadows between paper layers, handcrafted paper engineering, beautiful paper diorama with depth, delicate paper sculpture aesthetic, soft top-down lighting',
       },
     ],
   },
@@ -250,6 +230,10 @@ export interface ConsistencySettings {
   backgroundDescription?: string; // 배경 설명
   colorPalette?: string;          // 색상 팔레트
   artDirection?: string;          // 아트 디렉션 추가 지시
+  leadCharacterIds?: string[];    // 주인공 캐릭터 IDs (최대 2명)
+  referenceImageUrls?: string[];  // 캐시된 레퍼런스 이미지 URLs (Whisk 연동용)
+  styleReferenceUrl?: string;     // 스타일 레퍼런스
+  compositionReferenceUrl?: string; // 구성/장면 레퍼런스
 }
 
 export function generateConsistencyPrompt(settings: ConsistencySettings): string {
@@ -583,7 +567,7 @@ const MAX_PROMPT_LENGTH = 900; // 안전 마진
 // 예산 할당 (씬 중심으로 재조정)
 const BUDGET = {
   styleCore: 100,     // 스타일 핵심 (짧게!)
-  scene: 300,         // 씬 설명 (가장 큰 예산!)
+  scene: 500,         // 씬 설명 (크게 확장!)
   character: 200,     // 캐릭터 일관성
   quality: 100,       // 품질 + 일관성
 };
@@ -591,62 +575,112 @@ const BUDGET = {
 export function buildFinalPrompt(
   sceneDescription: string,
   stylePrompt: string,
-  consistencySettings?: ConsistencySettings
+  consistencySettings?: ConsistencySettings,
+  hasReferences: boolean = false
 ): string {
   const parts: string[] = [];
   
-  // ============ 0. 텍스트 금지 (가장 먼저!) ============
-  parts.push('NO TEXT, NO WORDS, NO LETTERS, NO WRITING, NO CAPTIONS, NO SUBTITLES, NO KOREAN TEXT');
+  // ============ 0. 강력한 텍스트 금지 (짧고 강하게!) ============
+  parts.push('PURE VISUAL SCENE, WITHOUT ANY TEXT OR WORDS');
   
-  // ============ 1. 스타일 핵심 (짧게) ============
-  // 스타일의 핵심 부분만 추출 (100자)
+  // ============ 1. 씬 설명 (가장 중요! 맨 앞으로 이동) ============
+  let scenePart = '';
+  if (sceneDescription) {
+    // 이미 시각적 프롬프트(LLM 생성 등)인 경우 변환 없이 사용
+    const looksLikePrompt = sceneDescription.toUpperCase().includes('NO TEXT') || 
+                            sceneDescription.toLowerCase().includes('lighting') || 
+                            sceneDescription.toLowerCase().includes('cinematic') ||
+                            sceneDescription.toLowerCase().includes('background');
+    
+    if (looksLikePrompt) {
+      scenePart = sceneDescription
+        .replace(/PURE VISUAL SCENE, WITHOUT ANY TEXT OR WORDS/gi, '')
+        .replace(/NO TEXT, NO WORDS, NO LETTERS, PURE VISUAL SCENE,/gi, '')
+        .trim();
+    } else {
+      const englishScene = convertScriptToEnglishScene(sceneDescription);
+      scenePart = englishScene ? `Scene: ${englishScene}` : '';
+    }
+    
+    // 래퍼런스가 있을 때는 '상황'과 '행동'이 최우선 (얼빡샷 방지)
+    if (hasReferences && scenePart) {
+      // 2025.01 최종 수정: '전신샷(Full body)' 강제 제거 -> 자연스러운 시네마틱 구도 유도
+      // (사용자 피드백: 전신샷 키워드가 오히려 부자연스러운 스탠딩 샷을 유발할 가능성 있음)
+      scenePart = `(Wide shot illustrating the situation:1.6), (Environment and background focus:1.5), (Dynamic action:1.4), (Cinematic framing with rule of thirds), ${scenePart}`;
+    }
+    
+    if (scenePart) parts.push(scenePart.slice(0, BUDGET.scene));
+  } else {
+    parts.push('visual scene centered around the environment');
+  }
+
+  // ============ 2. 스타일 핵심 ============
   if (stylePrompt) {
     const styleCore = stylePrompt.slice(0, BUDGET.styleCore);
     parts.push(styleCore);
     
-    // 졸라맨/스틱맨 스타일은 실사 금지 추가
     const lowerStyle = stylePrompt.toLowerCase();
     if (lowerStyle.includes('stickman') || lowerStyle.includes('stick figure') || lowerStyle.includes('white minimalist')) {
       parts.push('ONLY simple white stickman characters, NO realistic humans, NO detailed faces, NO skin texture');
     }
   }
   
-  // ============ 2. 씬 설명 (가장 중요!) ============
-  // 한글 대본 → 영어 키워드 변환 + 원본 포함
-  if (sceneDescription) {
-    const englishScene = convertScriptToEnglishScene(sceneDescription);
-    // 영어 씬을 먼저, 한글 힌트를 뒤에 (더 긴 힌트)
-    const koreanHint = sceneDescription.slice(0, 80);
-    const scenePart = `[Action: ${englishScene}], (Korean context: ${koreanHint})`;
-    parts.push(scenePart.slice(0, BUDGET.scene));
-  }
+  // ============ 3. 품질 + 일관성 키워드 ============
+  parts.push('masterpiece, 8k, highly detailed');
   
-  // ============ 3. 캐릭터 일관성 ============
+  // ============ 4. 스타일 재강조 ============
+  if (stylePrompt) {
+    const styleKeywords = stylePrompt.split(',').slice(0, 3).join(', ');
+    parts.push(`STYLE: ${styleKeywords}`);
+  }
+
+  // ============ 5. 캐릭터 일관성 (맨 뒤로 이동!!) ============
+  // 인물 비중을 최소화하기 위해 가장 마지막에 배치
   if (consistencySettings?.characterDescription) {
     const characterPart = consistencySettings.characterDescription.slice(0, BUDGET.character);
-    parts.push(`[Same character: ${characterPart}]`);
+    
+    if (hasReferences) {
+        // 래퍼런스 모드: '일관성'은 유지하되, 크기나 앵글은 상황에 맞게 유동적으로.
+        // 기존의 'small character'나 'Upper body' 강제 로직 제거
+        parts.push(`(maintain character details), (natural integration into scene), (character performing action)`);
+    } else {
+        parts.push(`Character in scene: ${characterPart}, naturally blended`);
+    }
+  }
+
+  if (hasReferences) {
+    // 래퍼런스 핵심 지시: 부정어(NO xxx) 대신 긍정어(Wide Shot)만 사용하여 토큰 오염 방지
+    parts.push('(Extreme Wide Shot), (Full body visible), (Environmental storytelling), (Cinematic composition), (Rule of thirds)');
   }
   
-  // ============ 4. 품질 + 일관성 키워드 ============
-  parts.push('masterpiece, 8k, highly detailed, consistent character, same style');
+  // 텍스트 금지 (Global Text Ban)
+  parts.push('(clean image), (no text), (no watermark), (textless), (pure visual)');
   
   // 최종 조합
-  let finalPrompt = parts.join(', ');
+  const combined = parts.join(', ');
   
-  // 안전망: 초과하면 자름
+  // 중복 제거
+  const uniqueParts = Array.from(new Set(combined.split(',').map(p => p.trim()).filter(Boolean)));
+  let finalPrompt = uniqueParts.join(', ');
+  
+  // 보정
+  finalPrompt = finalPrompt
+    .replace(/\b(narrator|script|presenter|subtitle|caption|story|narrating|speaking|dialogue)\b/gi, '')
+    .replace(/\bmoney\b/gi, 'financial charts')
+    .replace(/\bdollar\b/gi, 'numerical data');
+
+  // 캐릭터 일관성 보정 (얼빡샷 원인 제거)
+  if (hasReferences) {
+     // 인물 관련 단어가 나오면 'scene with ~' 형태로 변환하여 인물 중심 탈피 시도
+     // finalPrompt = finalPrompt.replace(/\b(man|woman)\b/gi, 'character in scene'); 
+  }
+
+  // 한글 제거
+  finalPrompt = finalPrompt.replace(/[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/g, '').replace(/\s+/g, ' ').trim();
+
   if (finalPrompt.length > MAX_PROMPT_LENGTH) {
-    console.warn(`[buildFinalPrompt] 프롬프트 길이 초과: ${finalPrompt.length}자 → ${MAX_PROMPT_LENGTH}자로 자름`);
     finalPrompt = finalPrompt.slice(0, MAX_PROMPT_LENGTH);
   }
-  
-  // 디버그 로그
-  console.log('[buildFinalPrompt] v5.0 텍스트 금지 + 스타일 강화 프롬프트:');
-  console.log(`  0. 텍스트 금지: 적용됨`);
-  console.log(`  1. 스타일: ${stylePrompt?.slice(0, 30) || 'N/A'}...`);
-  console.log(`  2. 씬: ${sceneDescription?.slice(0, 40) || 'N/A'}...`);
-  console.log(`  3. 캐릭터: ${consistencySettings?.characterDescription?.slice(0, 30) || 'N/A'}...`);
-  console.log(`  - 총 길이: ${finalPrompt.length}/${MAX_PROMPT_LENGTH}자`);
-  console.log(`  - 최종: ${finalPrompt.slice(0, 150)}...`);
   
   return finalPrompt;
 }
@@ -654,62 +688,3 @@ export function buildFinalPrompt(
 /**
  * 네거티브 프롬프트 가져오기 (스타일별 강화)
  */
-export function getNegativePrompt(styleId?: string): string {
-  let negativePrompt = NEGATIVE_PROMPT;
-  
-  // 졸라맨 스타일일 때 실사 캐릭터 강력 차단
-  if (styleId === 'stickman') {
-    negativePrompt += ', realistic human, photorealistic person, detailed face, realistic skin, human face, portrait, realistic eyes, realistic body, detailed body, anatomically correct, realistic proportions, human skin, flesh, real person, photography of person, 3D realistic human';
-  }
-  
-  // 애니메이션/만화 스타일일 때 실사 차단
-  if (['2d-animation', 'ghibli', 'k-webtoon', 'us-comics', 'pixel-art'].includes(styleId || '')) {
-    negativePrompt += ', photorealistic, realistic, photograph, 3D render, CGI realistic';
-  }
-  
-  return negativePrompt;
-}
-
-/**
- * 스타일 프롬프트에서 핵심 키워드 추출 (스타일 강화용)
- */
-function extractStyleKeywords(stylePrompt: string): string {
-  if (!stylePrompt) return '';
-  
-  const keywords: string[] = [];
-  const lowerPrompt = stylePrompt.toLowerCase();
-  
-  // 스타일 유형 감지 및 강화 키워드 추가
-  if (lowerPrompt.includes('stickman') || lowerPrompt.includes('minimalist')) {
-    keywords.push('stickman style only', 'simple line art', 'no realistic rendering');
-  }
-  if (lowerPrompt.includes('3d') || lowerPrompt.includes('pixar') || lowerPrompt.includes('cgi')) {
-    keywords.push('3D rendered', 'CGI animation style');
-  }
-  if (lowerPrompt.includes('2d') || lowerPrompt.includes('vector') || lowerPrompt.includes('flat')) {
-    keywords.push('2D flat style', 'vector illustration');
-  }
-  if (lowerPrompt.includes('anime') || lowerPrompt.includes('manga') || lowerPrompt.includes('shinkai')) {
-    keywords.push('anime art style', 'Japanese animation');
-  }
-  if (lowerPrompt.includes('webtoon') || lowerPrompt.includes('manhwa') || lowerPrompt.includes('korean')) {
-    keywords.push('Korean webtoon style', 'digital manhwa');
-  }
-  if (lowerPrompt.includes('lego') || lowerPrompt.includes('plastic')) {
-    keywords.push('LEGO brick style', 'plastic toy aesthetic');
-  }
-  if (lowerPrompt.includes('pixel')) {
-    keywords.push('pixel art only', 'retro game style');
-  }
-  if (lowerPrompt.includes('watercolor') || lowerPrompt.includes('ghibli') || lowerPrompt.includes('gouache')) {
-    keywords.push('hand-painted watercolor', 'Ghibli aesthetic');
-  }
-  if (lowerPrompt.includes('photorealistic') || lowerPrompt.includes('photograph') || lowerPrompt.includes('raw')) {
-    keywords.push('ultra realistic photography', 'no illustration');
-  }
-  if (lowerPrompt.includes('cyberpunk') || lowerPrompt.includes('neon')) {
-    keywords.push('cyberpunk aesthetic', 'neon lighting');
-  }
-  
-  return keywords.join(', ');
-}

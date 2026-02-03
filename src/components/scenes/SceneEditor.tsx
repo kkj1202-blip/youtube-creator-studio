@@ -26,13 +26,27 @@ import ScenePreview from './ScenePreview';
 import ImageUploader from './ImageUploader';
 import { generateImagePrompt } from '@/lib/api/imageGeneration';
 import { estimateAudioDuration } from '@/lib/api/voiceGeneration';
-import { buildFinalPrompt } from '@/lib/imageStyles';
-import type { Scene, MotionEffect, EmotionTag } from '@/types';
+import { buildFinalPrompt, NEGATIVE_PROMPT, imageStyleLibrary } from '@/lib/imageStyles';
+import type { Scene, MotionEffect, EmotionTag, TTSEngine } from '@/types';
 
 import {
   motionEffectOptions,
   emotionOptions,
 } from '@/constants/options';
+
+// TTS 엔진 옵션
+const ttsEngineOptions = [
+  { value: 'elevenlabs', label: '🎙️ ElevenLabs' },
+  { value: 'fishaudio', label: '🐟 FishAudio' },
+  { value: 'google', label: '🔊 Google TTS' },
+];
+
+// 구글 성우 옵션 (한국어) - 초기값 (API 호출 실패 시 폴백)
+const initialGoogleVoices = [
+  { value: 'ko-KR-Neural2-A', label: '구글 여성 1 (Neural2-A)' },
+  { value: 'ko-KR-Neural2-B', label: '구글 여성 2 (Neural2-B)' },
+  { value: 'ko-KR-Neural2-C', label: '구글 남성 1 (Neural2-C)' },
+];
 
 const SceneEditor: React.FC = () => {
   const {
@@ -51,9 +65,47 @@ const SceneEditor: React.FC = () => {
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState<{ percent: number; message: string } | null>(null);
   const [lastVideoBlob, setLastVideoBlob] = useState<Blob | null>(null);
-  const [showAdvancedVoice, setShowAdvancedVoice] = useState(false);
+  const [showAdvancedVoice, setShowAdvancedVoice] = useState(true);
+
+  // 동적 성우 목록 상태
+  const [googleVoices, setGoogleVoices] = useState<{value: string, label: string}[]>(initialGoogleVoices);
+  const [isLoadingVoices, setIsLoadingVoices] = useState(false);
 
   const activeScene = currentProject?.scenes.find((s) => s.id === activeSceneId);
+
+  // 구글 보이스 가져오기
+  const fetchGoogleVoices = async () => {
+    const apiKey = settings.googleTtsApiKey || settings.geminiApiKey;
+    if (!apiKey) return;
+
+    setIsLoadingVoices(true);
+    try {
+      const res = await fetch(`/api/generate-voice-google?apiKey=${apiKey}`);
+      const data = await res.json();
+      
+      if (res.ok && data.voices) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const formatted = data.voices.map((v: any) => ({
+          value: v.name,
+          label: `${v.name.replace('ko-KR-', '')} (${v.ssmlGender})`
+        })).sort((a: { value: string }, b: { value: string }) => a.value.localeCompare(b.value));
+        
+        setGoogleVoices(formatted);
+        console.log('[SceneEditor] Google Voices Fetched:', formatted.length);
+      }
+    } catch (e) {
+      console.error('Failed to fetch google voices', e);
+    } finally {
+      setIsLoadingVoices(false);
+    }
+  };
+
+  // TTS 엔진 변경 시 보이스 목록 로드
+  useEffect(() => {
+    if (activeScene?.ttsEngine === 'google') {
+      fetchGoogleVoices();
+    }
+  }, [activeScene?.ttsEngine, settings.googleTtsApiKey, settings.geminiApiKey]);
 
   const tabs = [
     { id: 'script', label: '대본', icon: <Type className="w-4 h-4" /> },
@@ -89,19 +141,46 @@ const SceneEditor: React.FC = () => {
     updateScene(activeScene.id, updates);
   };
 
-  // 즐겨찾기 보이스만 표시 (설정에서 직접 등록한 보이스)
-  const favoriteVoiceOptions = (settings.favoriteVoices || []).map((voice) => ({
+  // 현재 선택된 TTS 엔진
+  const currentTTSEngine: TTSEngine = activeScene.ttsEngine || 'elevenlabs';
+
+  // ElevenLabs 즐겨찾기 보이스
+  const elevenLabsVoiceOptions = (settings.favoriteVoices || []).map((voice) => ({
     value: voice.id,
     label: `⭐ ${voice.name}${voice.description ? ` - ${voice.description}` : ''}`,
   }));
+
+  // FishAudio 보이스
+  const fishAudioVoiceOptions = (settings.fishAudioVoices || []).map((voice) => ({
+    value: voice.id,
+    label: `🐟 ${voice.name}${voice.description ? ` - ${voice.description}` : ''}`,
+  }));
+
+  // 현재 TTS 엔진에 따른 보이스 옵션
+  let currentVoiceOptions = elevenLabsVoiceOptions;
+  if (currentTTSEngine === 'fishaudio') {
+    currentVoiceOptions = fishAudioVoiceOptions;
+  } else if (currentTTSEngine === 'google') {
+    // 구글은 즐겨찾기가 있으면 그것만 표시, 없으면 전체 목록 표시
+    if (settings.googleVoices && settings.googleVoices.length > 0) {
+      currentVoiceOptions = settings.googleVoices.map(v => ({
+        value: v.id,
+        label: `⭐ ${v.name} (${v.id})`
+      }));
+    } else {
+      currentVoiceOptions = googleVoices;
+    }
+  }
 
   // 이미지 프롬프트 자동 생성 (LLM 사용)
   const handleGeneratePrompt = async () => {
     if (!currentProject) return;
     
     const hasLLM = !!settings.geminiApiKey || !!settings.openaiApiKey;
-    const stylePrompt = currentProject.masterImageStylePrompt || 'high quality, detailed, professional illustration';
+    // 🔥 핵심 수정: DB에 저장된 구버전 프롬프트 대신, 라이브러리 최신 값 사용
     const styleId = currentProject.masterImageStyleId || 'default';
+    const foundStyle = imageStyleLibrary.flatMap(c => c.styles).find(s => s.id === styleId);
+    const stylePrompt = foundStyle ? foundStyle.prompt : (currentProject.masterImageStylePrompt || 'high quality, detailed, professional illustration');
     
     console.log('[SceneEditor] handleGeneratePrompt - hasLLM:', hasLLM);
     
@@ -117,6 +196,7 @@ const SceneEditor: React.FC = () => {
             stylePrompt: stylePrompt,
             styleName: styleId,
             characterDescription: currentProject.imageConsistency?.characterDescription,
+            backgroundDescription: currentProject.imageConsistency?.backgroundDescription,
             geminiApiKey: settings.geminiApiKey,
             openaiApiKey: settings.openaiApiKey,
           }),
@@ -152,7 +232,8 @@ const SceneEditor: React.FC = () => {
       return;
     }
     
-    if (!settings.kieApiKey) {
+    // API 키 확인 (Pollinations, Whisk 제외)
+    if (settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk' && !settings.kieApiKey) {
       console.error('[SceneEditor] API 키 없음');
       setGenerationError('설정에서 이미지 생성 API 키를 입력하세요.');
       return;
@@ -164,30 +245,24 @@ const SceneEditor: React.FC = () => {
     try {
       // 마스터 스타일 프롬프트 가져오기
       const masterStylePrompt = currentProject.masterImageStylePrompt || '';
-      console.log('[SceneEditor] masterStylePrompt:', masterStylePrompt ? masterStylePrompt.slice(0, 50) + '...' : '(없음)');
       
       // 일관성 설정 가져오기
       const consistencySettings = currentProject.imageConsistency;
-      console.log('[SceneEditor] consistencySettings:', consistencySettings);
+      const referenceImageUrls = consistencySettings?.referenceImageUrls || [];
+      const hasReference = referenceImageUrls.length > 0;
       
-      // 씬 설명 (사용자가 입력한 프롬프트 또는 대본 기반 생성)
-      const sceneDescription = activeScene.imagePrompt || activeScene.script;
-      console.log('[SceneEditor] sceneDescription:', sceneDescription?.slice(0, 50));
+      const width = currentProject.aspectRatio === '9:16' ? 768 : 1344;
+      const height = currentProject.aspectRatio === '9:16' ? 1344 : 768;
       
-      // 최종 프롬프트 조합
-      let finalPrompt: string;
-      
-      // LLM API 키 확인
-      const hasLLM = !!settings.geminiApiKey || !!settings.openaiApiKey;
-      const stylePrompt = masterStylePrompt || 'high quality, detailed, professional illustration';
+      // 🔥 핵심 수정: DB에 저장된 구버전 프롬프트 대신, 라이브러리 최신 값 사용
       const styleId = currentProject.masterImageStyleId || 'default';
+      const foundStyle = imageStyleLibrary.flatMap(c => c.styles).find(s => s.id === styleId);
+      const stylePrompt = foundStyle ? foundStyle.prompt : (masterStylePrompt || 'high quality, professional illustration');
       
-      console.log('[SceneEditor] hasLLM:', hasLLM);
+      let intermediatePrompt: string = activeScene.imagePrompt || activeScene.script;
       
-      if (hasLLM) {
-        // 🎯 LLM을 사용하여 대본에서 이미지 프롬프트 생성
-        console.log('[SceneEditor] ✅ LLM 사용하여 프롬프트 생성...');
-        
+      // 1. LLM을 통한 시각적 묘사 생성 (있는 경우)
+      if (!!settings.geminiApiKey || !!settings.openaiApiKey) {
         try {
           const llmResponse = await fetch('/api/generate-scene-prompt', {
             method: 'POST',
@@ -197,6 +272,7 @@ const SceneEditor: React.FC = () => {
               stylePrompt: stylePrompt,
               styleName: styleId,
               characterDescription: consistencySettings?.characterDescription,
+              backgroundDescription: consistencySettings?.backgroundDescription,
               geminiApiKey: settings.geminiApiKey,
               openaiApiKey: settings.openaiApiKey,
             }),
@@ -204,67 +280,101 @@ const SceneEditor: React.FC = () => {
           
           if (llmResponse.ok) {
             const llmData = await llmResponse.json();
-            finalPrompt = llmData.prompt;
-            console.log('[SceneEditor] ✅ LLM 프롬프트 생성 성공:', finalPrompt.slice(0, 150) + '...');
+            intermediatePrompt = llmData.prompt;
           } else {
-            console.warn('[SceneEditor] LLM 실패, 폴백 사용');
-            finalPrompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
+            const errorData = await llmResponse.json().catch(() => ({}));
+            console.warn('[SceneEditor] LLM Prompt Generation Failed:', errorData.error || llmResponse.status);
+            // Fallback
+            intermediatePrompt = buildFinalPrompt(activeScene.script, stylePrompt, consistencySettings, hasReference);
           }
         } catch (llmError) {
-          console.warn('[SceneEditor] LLM 오류:', llmError);
-          finalPrompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
+          console.warn('[SceneEditor] LLM 오류, 폴백 사용:', llmError);
+          // Fallback
+          intermediatePrompt = buildFinalPrompt(activeScene.script, stylePrompt, consistencySettings, hasReference);
         }
-      } else if (masterStylePrompt) {
-        // 마스터 스타일이 설정된 경우 새 방식 사용
-        finalPrompt = buildFinalPrompt(
-          sceneDescription,
-          masterStylePrompt,
-          consistencySettings
-        );
-        console.log('[SceneEditor] 마스터 스타일 적용된 최종 프롬프트:', finalPrompt.slice(0, 200) + '...');
+      }
+
+      // 2. 최종 프롬프트 빌드 (Style, Consistency, NO TEXT 필터 적용)
+      // LLM 결과물이라도 buildFinalPrompt를 통과시켜 일관된 필터링 적용
+      const finalPrompt = buildFinalPrompt(
+        intermediatePrompt,
+        stylePrompt,
+        consistencySettings,
+        hasReference
+      );
+
+      console.log('[SceneEditor] 최종 프롬프트:', finalPrompt);
+      console.log('[SceneEditor] 소스:', settings.imageSource);
+
+      let imageUrl = '';
+      let isDemo = false;
+
+      // 소스별 분기 처리
+      if (settings.imageSource === 'pollinations') {
+         const seed = Math.floor(Math.random() * 1000000);
+         const finalPollinationsPrompt = `${finalPrompt} --no ${NEGATIVE_PROMPT}`;
+         const encodedPrompt = encodeURIComponent(finalPollinationsPrompt);
+         imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=flux`;
+         
+      } else if (settings.imageSource === 'whisk') {
+          // Whisk (Unified)
+          const response = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                prompt: finalPrompt, 
+                imageSource: 'whisk',
+                cookies: settings.whiskCookie,
+                whiskMode: settings.whiskMode || 'api', // Default to API mode for speed
+                referenceImageUrls: referenceImageUrls,
+                referenceImages: {
+                  subject: referenceImageUrls[0], // Primary subject
+                  style: consistencySettings?.styleReferenceUrl, // If exists
+                  composition: consistencySettings?.compositionReferenceUrl // If exists
+                }
+            }),
+          });
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'Whisk Error');
+          imageUrl = data.imageUrl || data.images?.[0];
+          
       } else {
-        // 레거시 방식 (기존 스타일 프리셋)
-        finalPrompt = activeScene.imagePrompt || generateImagePrompt(
-          activeScene.script,
-          currentProject.imageStyle,
-          currentProject.customStylePrompt
-        );
-        console.log('[SceneEditor] 레거시 방식 프롬프트:', finalPrompt.slice(0, 200) + '...');
+          // KIE (Default)
+          const response = await fetch('/api/generate-image', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiKey: settings.kieApiKey,
+              prompt: finalPrompt,
+              aspectRatio: currentProject.aspectRatio,
+            }),
+          });
+          
+          const data = await response.json();
+          if (!response.ok) throw new Error(data.error || 'API Error');
+          imageUrl = data.imageUrl;
+          isDemo = data.demo;
       }
 
-      console.log('[SceneEditor] API 요청 시작...');
-      const response = await fetch('/api/generate-image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: settings.kieApiKey,
-          prompt: finalPrompt,
-          aspectRatio: currentProject.aspectRatio,
-        }),
-      });
-
-      console.log('[SceneEditor] API 응답 상태:', response.status);
-      const data = await response.json();
-      console.log('[SceneEditor] API 응답 데이터:', data);
-
-      if (!response.ok || !data.imageUrl) {
-        const errorMsg = data.error || data.originalMsg || '이미지 생성에 실패했습니다.';
-        console.error('[SceneEditor] API 에러:', errorMsg);
-        throw new Error(errorMsg);
+      if (!imageUrl) {
+        throw new Error('이미지 생성에 실패했습니다 (URL 없음)');
       }
 
-      // CORS 문제 해결을 위해 프록시 URL로 변환
-      const proxyImageUrl = `/api/proxy-image?url=${encodeURIComponent(data.imageUrl)}`;
-      console.log('[SceneEditor] ✅ 이미지 생성 성공:', data.imageUrl?.slice(0, 50));
-      console.log('[SceneEditor] 프록시 URL:', proxyImageUrl);
+      // CORS/COEP 문제 해결을 위해 모든 외부 이미지는 프록시 사용 (특히 Pollinations)
+      // Pollinations URL은 쿼리 파라미터가 길지만 proxy-image가 처리
+      
+      const finalImageUrl = imageUrl.startsWith('/uploads') 
+        ? imageUrl 
+        : `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
+
       handleUpdate({
-        imageUrl: proxyImageUrl,
-        imageSource: 'generated',
+        imageUrl: finalImageUrl,
+        imageSource: settings.imageSource === 'whisk' ? 'uploaded' : 'generated',
         imagePrompt: finalPrompt,
         error: undefined,
       });
 
-      if (data.demo) {
+      if (isDemo) {
         setGenerationError('데모 모드: 실제 API 키를 입력하면 실제 이미지가 생성됩니다.');
       }
     } catch (error) {
@@ -277,42 +387,95 @@ const SceneEditor: React.FC = () => {
     }
   };
 
-  // 음성 생성 (ElevenLabs만 지원)
+  // 음성 생성 (ElevenLabs / FishAudio / Google 지원)
   const handleGenerateAudio = async () => {
     if (!activeScene.script.trim()) {
       setGenerationError('대본을 입력하세요.');
       return;
     }
 
-    // ElevenLabs API 키 확인
-    const accountIndex = currentProject?.elevenLabsAccountIndex || 0;
-    const apiKey = settings.elevenLabsAccounts[accountIndex]?.apiKey;
+    const engine = currentTTSEngine;
     
-    if (!apiKey) {
-      setGenerationError('설정에서 ElevenLabs API 키를 입력하세요.');
-      return;
+    // API 키 확인
+    let apiKey: string | undefined;
+    if (engine === 'fishaudio') {
+      apiKey = settings.fishAudioApiKey;
+      if (!apiKey) {
+        setGenerationError('설정에서 FishAudio API 키를 입력하세요.');
+        return;
+      }
+    } else if (engine === 'google') {
+      // Google TTS는 사용자가 입력한 Google 키 또는 Gemini 키를 다 사용 가능
+      apiKey = settings.googleTtsApiKey || settings.geminiApiKey;
+      if (!apiKey) {
+        setGenerationError('설정에서 Google TTS 키 또는 Gemini API 키를 입력하세요.');
+        return;
+      }
+    } else {
+      const accountIndex = currentProject?.elevenLabsAccountIndex || 0;
+      apiKey = settings.elevenLabsAccounts[accountIndex]?.apiKey;
+      if (!apiKey) {
+        setGenerationError('설정에서 ElevenLabs API 키를 입력하세요.');
+        return;
+      }
     }
 
-    if (!activeScene.voiceId && !currentProject?.defaultVoiceId) {
-      setGenerationError('보이스를 선택하세요.');
-      return;
+    // 보이스 확인
+    const voiceId = activeScene.voiceId || currentProject?.defaultVoiceId;
+    // Google은 voiceId가 없어도 기본값(Neural2)이 있으므로 필수는 아님, 하지만 선택 유도
+    if (engine !== 'google' && !voiceId) {
+       setGenerationError('보이스를 선택하세요.');
+       return;
     }
 
     setIsGeneratingAudio(true);
     setGenerationError(null);
 
     try {
-      const response = await fetch('/api/generate-voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey,
-          voiceId: activeScene.voiceId || currentProject?.defaultVoiceId,
-          text: activeScene.script,
-          speed: activeScene.voiceSpeed,
-          emotion: activeScene.emotion,
-        }),
-      });
+      let response: Response;
+      
+      if (engine === 'fishaudio') {
+        // FishAudio API 호출
+        response = await fetch('/api/generate-voice-fish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey,
+            referenceId: voiceId,
+            text: activeScene.script,
+            speed: activeScene.voiceSpeed || 1.0,
+          }),
+        });
+      } else if (engine === 'google') {
+        // Google TTS API 호출
+        response = await fetch('/api/generate-voice-google', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey,
+            voiceId, // e.g. 'ko-KR-Neural2-A'
+            text: activeScene.script,
+          }),
+        });
+      } else {
+        // ElevenLabs API 호출
+        if (!voiceId) throw new Error('ElevenLabs 보이스를 선택하세요.');
+        response = await fetch('/api/generate-voice', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey,
+            voiceId,
+            text: activeScene.script,
+            speed: activeScene.voiceSpeed,
+            emotion: activeScene.emotion,
+            stability: activeScene.voiceStability,
+            similarity: activeScene.voiceSimilarity,
+            style: activeScene.voiceStyle,
+            useSpeakerBoost: activeScene.voiceSpeakerBoost,
+          }),
+        });
+      }
 
       const data = await response.json();
 
@@ -323,6 +486,7 @@ const SceneEditor: React.FC = () => {
       handleUpdate({
         audioUrl: data.audioUrl,
         audioGenerated: true,
+        imageDuration: (data.duration || 0) + (activeScene.postAudioGap || 0.5),
         error: undefined,
       });
 
@@ -365,13 +529,15 @@ const SceneEditor: React.FC = () => {
       // 렌더링 설정 가져오기
       const renderSettings = currentProject?.renderSettings;
       
-      const result = await renderVideo({
-        imageUrl: activeScene.imageUrl,
-        audioUrl: activeScene.audioUrl,
-        aspectRatio: currentProject?.aspectRatio || '16:9',
-        onProgress: (percent, message) => {
-          setRenderProgress({ percent, message });
-        },
+        const result = await renderVideo({
+          imageUrl: activeScene.imageUrl,
+          audioUrl: activeScene.audioUrl,
+          // duration: activeScene.imageDuration, // 제거 (Gap 변경 시 반영 안 됨)
+          padding: activeScene.postAudioGap || 0.5, // 항상 실시간 Gap 반영
+          aspectRatio: currentProject?.aspectRatio || '16:9',
+          onProgress: (percent, message) => {
+            setRenderProgress({ percent, message });
+          },
         // 효과 설정 (씬 → 프로젝트 기본값 → 'none')
         kenBurns: activeScene.kenBurns || currentProject?.defaultKenBurns || 'none',
         kenBurnsIntensity: activeScene.kenBurnsZoom || currentProject?.defaultKenBurnsZoom || 15,
@@ -596,7 +762,7 @@ const SceneEditor: React.FC = () => {
                   )}
                 </div>
                 {/* API 키 안내 */}
-                {!settings.kieApiKey && (
+                {!settings.kieApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk' && (
                   <div className="mt-3 p-3 bg-warning/10 border border-warning/30 rounded-lg">
                     <p className="text-xs text-warning flex items-center gap-2">
                       <AlertCircle className="w-4 h-4" />
@@ -610,11 +776,14 @@ const SceneEditor: React.FC = () => {
                     size="sm"
                     className="flex-1"
                     onClick={handleGenerateImage}
-                    disabled={isGeneratingImage || !settings.kieApiKey}
+                    disabled={isGeneratingImage || (!settings.kieApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk')}
                     isLoading={isGeneratingImage}
                     icon={<Wand2 className="w-4 h-4" />}
                   >
-                    {settings.kieApiKey ? 'AI 생성' : 'API 키 필요'}
+                    {isGeneratingImage ? '생성 중...' : 
+                     settings.imageSource === 'pollinations' ? 'AI 생성 (Pollinations)' :
+                     settings.imageSource === 'whisk' ? 'AI 생성 (Whisk)' :
+                     settings.kieApiKey ? 'AI 생성' : 'API 키 필요'}
                   </Button>
                   <Button
                     variant="ghost"
@@ -625,18 +794,61 @@ const SceneEditor: React.FC = () => {
                   >
                     업로드
                   </Button>
-                  {activeScene.imageUrl && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={handleGenerateImage}
-                      disabled={isGeneratingImage || !settings.kieApiKey}
-                      icon={<RefreshCw className="w-4 h-4" />}
-                    >
-                      재생성
-                    </Button>
-                  )}
                 </div>
+                {/* 전체 생성 버튼 (Whisk 모드일 때만) */}
+                {settings.imageSource === 'whisk' && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2 border-dashed border-primary/30 hover:bg-primary/5"
+                    onClick={async () => {
+                      if (!currentProject) return;
+                      if (!settings.whiskCookie) {
+                        setGenerationError('설정에서 Whisk 쿠키를 먼저 등록하세요.');
+                        return;
+                      }
+                      if (confirm('모든 씬의 이미지를 자동으로 생성하시겠습니까? (Whisk 사용)')) {
+                        const { generateAllImages } = await import('@/lib/api/batchProcessor');
+                        try {
+                          setIsGeneratingImage(true);
+                          await generateAllImages(
+                            currentProject,
+                            '', // API key not used for whisk
+                            undefined,
+                            updateScene,
+                            { concurrency: 1 }, // Whisk is sequential
+                            settings.whiskCookie,
+                            'whisk',
+                            settings.whiskMode,
+                            currentProject.imageConsistency?.referenceImageUrls
+                          );
+                          alert('모든 이미지 생성이 완료되었습니다!');
+                        } catch (e: any) {
+                          setGenerationError('일괄 생성 실패: ' + e.message);
+                        } finally {
+                          setIsGeneratingImage(false);
+                        }
+                      }
+                    }}
+                    disabled={isGeneratingImage}
+                    isLoading={isGeneratingImage}
+                    icon={<Sparkles className="w-4 h-4 text-primary" />}
+                  >
+                    전체 AI 이미지 생성 (Whisk)
+                  </Button>
+                )}
+                {activeScene.imageUrl && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full mt-2"
+                    onClick={handleGenerateImage}
+                    disabled={isGeneratingImage || (!settings.kieApiKey && settings.imageSource !== 'pollinations' && settings.imageSource !== 'whisk')}
+                    icon={<RefreshCw className="w-4 h-4" />}
+                  >
+                    재생성
+                  </Button>
+                )}
               </Card>
               {/* 모션 효과 (무료) */}
               <Card>
@@ -686,10 +898,34 @@ const SceneEditor: React.FC = () => {
             >
               {/* Audio Preview */}
               <Card>
-                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <Volume2 className="w-4 h-4 text-primary" />
-                  음성 미리듣기
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-primary" />
+                    음성 미리듣기
+                  </h3>
+                   {/* Reset to Defaults Button */}
+                   <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-xs px-2 text-muted hover:text-primary"
+                    onClick={() => {
+                        if(confirm('현재 씬의 음성 설정을 프로젝트 기본값으로 초기화하시겠습니까?')) {
+                            handleUpdate({
+                                voiceId: currentProject?.defaultVoiceId,
+                                voiceSpeed: currentProject?.defaultVoiceSpeed,
+                                emotion: currentProject?.defaultEmotion,
+                                voiceStability: currentProject?.defaultVoiceStability,
+                                voiceSimilarity: currentProject?.defaultVoiceSimilarity,
+                                voiceStyle: currentProject?.defaultVoiceStyle,
+                                voiceSpeakerBoost: currentProject?.defaultVoiceSpeakerBoost,
+                            });
+                        }
+                    }}
+                    icon={<RefreshCw className="w-3 h-3" />}
+                  >
+                    프로젝트 기본값 불러오기
+                  </Button>
+                </div>
                 
                 {activeScene.audioUrl ? (
                   <AudioPlayer src={activeScene.audioUrl} />
@@ -713,34 +949,104 @@ const SceneEditor: React.FC = () => {
                 </Button>
               </Card>
 
-              {/* Voice Settings - 목소리 선택만 */}
+              {/* Voice Settings - TTS 엔진 및 목소리 선택 */}
               <Card>
                 <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  🎤 목소리 선택
+                  🎙️ TTS 엔진 선택
                 </h3>
-                <div className="space-y-3">
+                <div className="space-y-4">
+                  {/* TTS 엔진 선택 버튼 */}
+                  <div className="flex gap-2">
+                    {ttsEngineOptions.map((option) => (
+                      <button
+                        key={option.value}
+                        onClick={() => handleUpdate({ 
+                          ttsEngine: option.value as TTSEngine,
+                          voiceId: undefined // 엔진 변경 시 보이스 초기화
+                        })}
+                        className={`flex-1 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                          currentTTSEngine === option.value
+                            ? 'bg-primary text-white'
+                            : 'bg-muted/20 text-muted hover:bg-muted/30'
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {/* API 키 상태 */}
+                  <div className={`text-xs px-3 py-2 rounded-lg ${
+                    (currentTTSEngine === 'fishaudio' && settings.fishAudioApiKey) ||
+                    (currentTTSEngine === 'elevenlabs' && settings.elevenLabsAccounts.some(acc => acc.apiKey && acc.isActive)) ||
+                    (currentTTSEngine === 'google' && (settings.googleTtsApiKey || settings.geminiApiKey))
+                      ? 'bg-success/10 text-success'
+                      : 'bg-warning/10 text-warning'
+                  }`}>
+                    {currentTTSEngine === 'fishaudio' 
+                      ? (settings.fishAudioApiKey ? '✅ FishAudio API 키 설정됨' : '⚠️ 설정에서 FishAudio API 키를 입력하세요')
+                      : currentTTSEngine === 'google'
+                        ? (settings.googleTtsApiKey || settings.geminiApiKey ? '✅ Google Cloud/Gemini API 키 설정됨' : '⚠️ 설정에서 Google TTS API 키를 입력하세요')
+                        : (settings.elevenLabsAccounts.some(acc => acc.apiKey && acc.isActive) ? '✅ ElevenLabs API 키 설정됨' : '⚠️ 설정에서 ElevenLabs API 키를 입력하세요')
+                    }
+                  </div>
+
+                  {/* 보이스 선택 */}
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-foreground">
+                      {currentTTSEngine === 'fishaudio' ? '🐟 FishAudio 보이스' : 
+                       currentTTSEngine === 'google' ? '🔊 Google Cloud 보이스' : '⭐ ElevenLabs 보이스'}
+                    </label>
+                    {currentTTSEngine === 'google' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={fetchGoogleVoices}
+                          disabled={isLoadingVoices}
+                          className="h-6 text-xs p-1"
+                          icon={<RefreshCw className={`w-3 h-3 ${isLoadingVoices ? 'animate-spin' : ''}`} />}
+                        >
+                          갱신
+                        </Button>
+                    )}
+                  </div>
                   <Select
-                    label="이 씬의 목소리"
                     options={
-                      favoriteVoiceOptions.length > 0 
-                        ? favoriteVoiceOptions 
-                        : [{ value: '', label: '설정에서 즐겨찾기 보이스를 추가하세요' }]
+                      currentVoiceOptions.length > 0 
+                        ? currentVoiceOptions 
+                        : [{ value: '', label: currentTTSEngine === 'fishaudio' ? '설정에서 FishAudio 보이스를 추가하세요' : currentTTSEngine === 'google' ? '설정에서 즐겨찾기를 추가하거나 갱신하세요' : '설정에서 즐겨찾기 보이스를 추가하세요' }]
                     }
                     value={activeScene.voiceId || currentProject?.defaultVoiceId || ''}
                     onChange={(value) => handleUpdate({ voiceId: value })}
                   />
+                  <p className="text-xs text-muted mt-1">
+                    {currentTTSEngine === 'fishaudio' 
+                      ? 'FishAudio에서 참조한 커스텀 보이스입니다.'
+                      : currentTTSEngine === 'google' 
+                        ? 'Google Cloud의 Neural2/WaveNet(한국어) 보이스입니다.'
+                        : 'ElevenLabs의 프리미엄 보이스입니다.'}
+                  </p> 
                   <p className="text-xs text-muted">
-                    ⭐ 즐겨찾기 {favoriteVoiceOptions.length}개 | 감정/속도는 프로젝트 설정에서 변경
+                    {currentTTSEngine === 'google'
+                      ? `🔊 Google Cloud 보이스 ${currentVoiceOptions.length}개 사용 가능`
+                      : currentTTSEngine === 'fishaudio' 
+                      ? `🐟 FishAudio 보이스 ${fishAudioVoiceOptions.length}개 사용 가능`
+                      : `⭐ ElevenLabs 즐겨찾기 ${elevenLabsVoiceOptions.length}개 사용 가능`
+                    }
                   </p>
                 </div>
-
               </Card>
 
               {/* Advanced Voice Settings */}
               <Card>
-                <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                  🎚️ 음성 세부 설정
-                </h3>
+                <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    🎚️ 음성 세부 설정
+                    </h3>
+                    <span className="text-[10px] text-muted bg-muted/20 px-2 py-1 rounded">
+                        이 씬에만 적용됨
+                    </span>
+                </div>
                 
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
@@ -751,7 +1057,7 @@ const SceneEditor: React.FC = () => {
                       onChange={(value) => handleUpdate({ emotion: value as EmotionTag })}
                     />
                     <Slider
-                      label={`속도 (${activeScene.voiceSpeed}x)`}
+                      label={`속도 (${(activeScene.voiceSpeed || 1.0).toFixed(2)}x)`}
                       value={activeScene.voiceSpeed}
                       onChange={(value) => handleUpdate({ voiceSpeed: value })}
                       min={0.5}
@@ -780,9 +1086,9 @@ const SceneEditor: React.FC = () => {
                           className="space-y-4 overflow-hidden"
                         >
                           <Slider
-                            label={`Stability (안정성): ${activeScene.voiceStability ?? 0.5}`}
+                            label={`Stability (안정성): ${activeScene.voiceStability ?? 0.50}`}
                             // description="낮을수록 감정 표현이 풍부하지만 불안정할 수 있습니다."
-                            value={activeScene.voiceStability ?? 0.5}
+                            value={activeScene.voiceStability ?? 0.50}
                             onChange={(value) => handleUpdate({ voiceStability: value })}
                             min={0.0}
                             max={1.0}

@@ -4,7 +4,6 @@ import React, { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import {
   Users,
-  Wand2,
   Loader2,
   CheckCircle2,
   Trash2,
@@ -12,10 +11,10 @@ import {
   Sparkles,
   Image as ImageIcon,
   RefreshCw,
-  ThumbsUp,
   AlertCircle,
   ChevronDown,
   Brain,
+  Upload,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import Button from '@/components/ui/Button';
@@ -47,54 +46,65 @@ interface CharacterAnalyzerProps {
 }
 
 // 캐릭터 이미지 생성
+// 캐릭터 이미지 생성
 async function generateCharacterImage(
   apiKey: string,
   prompt: string,
+  imageSource: 'kie' | 'dalle' | 'whisk' | 'pollinations' = 'kie',
+  whiskCookie?: string,
   onStatusChange?: (status: string) => void
 ): Promise<string> {
-  console.log('[CharacterAnalyzer] ========== API 호출 시작 ==========');
+  console.log(`[CharacterAnalyzer] ========== ${imageSource} 호출 시작 ==========`);
   console.log('[CharacterAnalyzer] Prompt:', prompt);
   
-  onStatusChange?.('API 요청 중...');
+  onStatusChange?.('이미지 생성 요청 중...');
 
   try {
-    const response = await fetch('/api/generate-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        apiKey,
-        prompt,
-        aspectRatio: '1:1',
-      }),
-    });
-    
-    console.log('[CharacterAnalyzer] Response status:', response.status);
-    
-    const responseText = await response.text();
-    console.log('[CharacterAnalyzer] Raw response:', responseText);
-    
-    let data;
-    try {
-      data = JSON.parse(responseText);
-    } catch (parseError) {
-      console.error('[CharacterAnalyzer] JSON 파싱 실패:', parseError);
-      throw new Error(`응답 파싱 실패: ${responseText.slice(0, 100)}`);
+    let imageUrl = '';
+
+    if (imageSource === 'whisk') {
+      if (!whiskCookie) throw new Error('Whisk 쿠키가 필요합니다.');
+      const response = await fetch('/api/generate-image/whisk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          prompt, 
+          cookies: whiskCookie,
+          mode: 'api'
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Whisk Error');
+      imageUrl = data.images && data.images.length > 0 ? data.images[0] : null;
+    } else if (imageSource === 'pollinations') {
+      const { generateImagePollinations } = await import('@/lib/api/imageGeneration');
+      const result = await generateImagePollinations(prompt, '1:1');
+      if (!result.success || !result.imageUrl) throw new Error(result.error || 'Pollinations Error');
+      imageUrl = result.imageUrl;
+    } else {
+      // Default KIE
+      const response = await fetch('/api/generate-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey,
+          prompt,
+          aspectRatio: '1:1',
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || `HTTP 오류 ${response.status}`);
+      imageUrl = data.imageUrl;
     }
-    
-    if (!response.ok) {
-      const errorMsg = data.error || `HTTP 오류 ${response.status}`;
-      console.error('[CharacterAnalyzer] API 에러:', errorMsg);
-      throw new Error(errorMsg);
-    }
-    
-    if (!data.imageUrl) {
+
+    if (!imageUrl) {
       throw new Error('이미지 URL을 받지 못했습니다.');
     }
     
     console.log('[CharacterAnalyzer] ========== 성공! ==========');
     
-    // 프록시 URL로 변환 (CORS 문제 해결)
-    const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(data.imageUrl)}`;
+    // 프록시 URL로 변환 (CORS 문제 해결 및 COEP 정책 대응)
+    const proxyUrl = imageUrl.startsWith('/uploads') ? imageUrl : `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
     
     onStatusChange?.('완료!');
     return proxyUrl;
@@ -169,7 +179,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
     } finally {
       setIsAnalyzing(false);
     }
-  }, [currentProject, settings]);
+  }, [currentProject, hasLLMKey, getLLMConfig]); // Fix missing dependencies
 
   const addCharacter = () => {
     if (characters.length >= 5) return;
@@ -250,6 +260,8 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
       const imageUrl = await generateCharacterImage(
         settings.kieApiKey, 
         prompt,
+        settings.imageSource,
+        settings.whiskCookie,
         (status) => updateCharacter(charId, { status })
       );
       
@@ -327,11 +339,12 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
         const imageUrl = await generateCharacterImage(
           settings.kieApiKey, 
           prompt,
+          settings.imageSource,
+          settings.whiskCookie,
           (status) => updateCharacter(char.id, { status: `${i+1}/${characters.length} ${status}` })
         );
         
         updateCharacter(char.id, { imageUrl, isGenerating: false, status: undefined });
-        successCount++;
       } catch (error) {
         failCount++;
         updateCharacter(char.id, { 
@@ -361,63 +374,85 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
   };
 
   const toggleApprove = (id: string) => {
-    setCharacters(prev => prev.map(c => c.id === id ? { ...c, approved: !c.approved } : c));
+    // 주인공은 최대 2명까지 선택 가능하도록 변경
+    setCharacters(prev => {
+      const char = prev.find(c => c.id === id);
+      const currentlyApprovedCount = prev.filter(c => c.approved).length;
+      
+      if (char?.approved) {
+        // 이미 선택된 경우 해제
+        return prev.map(c => c.id === id ? { ...c, approved: false } : c);
+      } else if (currentlyApprovedCount < 2) {
+        // 2명 미만일 때만 추가 선택 가능
+        return prev.map(c => c.id === id ? { ...c, approved: true } : c);
+      } else {
+        alert('주인공은 최대 2명까지만 선택할 수 있습니다.');
+        return prev;
+      }
+    });
+  };
+
+  const handleManualUpload = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    updateCharacter(id, { isGenerating: true, status: '업로드 중...' });
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+      
+      if (!response.ok) throw new Error('업로드 실패');
+      const data = await response.json();
+      
+      updateCharacter(id, { imageUrl: data.url, isGenerating: false, status: undefined });
+    } catch (error) {
+      updateCharacter(id, { isGenerating: false, error: '업로드 실패', status: undefined });
+    }
   };
 
   const handleFinalApprove = () => {
-    const approvedCharacters = characters.filter(c => c.approved && c.imageUrl);
+    const leadChars = characters.filter(c => c.approved && c.imageUrl);
     
-    if (approvedCharacters.length === 0) {
-      alert('최소 1명의 캐릭터를 승인해주세요.');
+    if (leadChars.length === 0) {
+      alert('주인공 캐릭터(Reference)를 최소 1명 선택해주세요.');
       return;
     }
 
     // 스타일 프롬프트 가져오기
     const style = getStyleById(selectedStyle);
     const stylePrompt = style?.prompt || '';
-    const styleName = style?.name || '실사화';
-
-    // 캐릭터 정보를 프로젝트에 저장 (일관성 유지용)
-    const characterDescription = approvedCharacters
-      .map(c => `${c.name}(${c.role}, ${c.gender}, ${c.ageRange}): ${c.appearance}`)
-      .join(' | ');
     
-    // 승인된 캐릭터들의 외형 프롬프트
-    const characterPrompts = approvedCharacters
-      .map(c => c.generatedPrompt || c.appearance)
-      .join('; ');
-    
-    console.log('[CharacterAnalyzer] 승인 완료');
-    console.log('  - 스타일:', styleName);
-    console.log('  - 스타일 프롬프트:', stylePrompt);
-    console.log('  - 캐릭터:', characterDescription);
-    
-    // 승인된 캐릭터 정보를 저장 형식으로 변환
-    const savedCharacters = approvedCharacters.map(c => ({
-      id: c.id,
-      name: c.name,
-      role: c.role,
-      gender: c.gender,
-      ageRange: c.ageRange,
-      appearance: c.appearance,
-      imageUrl: c.imageUrl!,
-      generatedPrompt: c.generatedPrompt,
-    }));
+    console.log('[CharacterAnalyzer] 주인공 확정:', leadChars.map(c => c.name).join(', '));
     
     updateProject({
-      // 마스터 스타일 프롬프트 저장 (전체 씬에 적용)
       masterImageStylePrompt: stylePrompt,
       masterImageStyleId: selectedStyle,
-      // 캐릭터 일관성 정보
       imageConsistency: {
-        characterDescription,
-        artDirection: characterPrompts,
+        characterDescription: leadChars.map(c => `${c.name}: ${c.appearance}`).join(' | '),
+        artDirection: leadChars.map(c => c.generatedPrompt || c.appearance).join('; '),
+        leadCharacterIds: leadChars.map(c => c.id),
+        referenceImageUrls: leadChars.map(c => c.imageUrl!), // Whisk 연동용 다중 레퍼런스
       },
-      // 승인된 캐릭터 정보 저장 (UI 표시용)
-      approvedCharacters: savedCharacters,
+      approvedCharacters: characters.filter(c => c.imageUrl).map(c => ({
+        id: c.id,
+        name: c.name,
+        role: c.role,
+        gender: c.gender,
+        ageRange: c.ageRange,
+        appearance: c.appearance,
+        imageUrl: c.imageUrl!,
+        referenceImageUrl: c.imageUrl!,
+        isLead: leadChars.some(lc => lc.id === c.id),
+        generatedPrompt: c.generatedPrompt,
+      })),
     });
 
-    onApprove(approvedCharacters);
+    onApprove(leadChars);
   };
 
   const approvedCount = characters.filter(c => c.approved && c.imageUrl).length;
@@ -494,6 +529,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
               <select
                 value={selectedStyle}
                 onChange={(e) => setSelectedStyle(e.target.value)}
+                title="이미지 스타일 선택"
                 className="w-full px-3 py-2 bg-card border border-border rounded-lg text-sm appearance-none cursor-pointer hover:border-primary/50 focus:border-primary focus:outline-none"
               >
                 {imageStyleLibrary.map(cat => (
@@ -552,6 +588,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                       <button
                         onClick={() => generateSingleImage(char.id)}
                         className="absolute top-1 right-1 p-1 rounded bg-black/60 hover:bg-black/80"
+                        title="이미지 다시 생성"
                       >
                         <RefreshCw className="w-3 h-3 text-white" />
                       </button>
@@ -574,7 +611,11 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                       }`}>
                         {char.role}
                       </span>
-                      <button onClick={() => removeCharacter(char.id)} className="text-muted hover:text-error p-1">
+                      <button 
+                        onClick={() => removeCharacter(char.id)} 
+                        className="text-muted hover:text-error p-1"
+                        title="캐릭터 삭제"
+                      >
                         <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
@@ -584,19 +625,25 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
                       <span className="px-2 py-0.5 bg-muted/20 rounded">{char.ageRange || '나이 미상'}</span>
                     </div>
                     
-                    <Input
-                      value={char.appearance}
-                      onChange={(e) => updateCharacter(char.id, { appearance: e.target.value })}
-                      placeholder="외형 (예: 긴 검은 머리, 날카로운 눈매, 단정한 정장)"
-                      className="text-sm"
-                    />
-                    
-                    <Input
-                      value={char.personality}
-                      onChange={(e) => updateCharacter(char.id, { personality: e.target.value })}
-                      placeholder="성격 (예: 차분하고 지적인)"
-                      className="text-sm"
-                    />
+                    <div className="flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="flex-1 text-[10px] h-7"
+                        onClick={() => document.getElementById(`upload-${char.id}`)?.click()}
+                        icon={<Upload className="w-3 h-3" />}
+                      >
+                        이미지 업로드
+                      </Button>
+                      <input
+                        id={`upload-${char.id}`}
+                        type="file"
+                        accept="image/*"
+                        title="이미지 파일 선택"
+                        className="hidden"
+                        onChange={(e) => handleManualUpload(char.id, e)}
+                      />
+                    </div>
                     
                     {char.error && (
                       <div className="text-xs text-error bg-error/10 p-2 rounded flex items-center gap-1">
@@ -661,19 +708,28 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
               <motion.div
                 key={char.id}
                 className={`relative rounded-lg overflow-hidden border-2 cursor-pointer transition-colors ${
-                  char.approved ? 'border-success' : 'border-transparent hover:border-primary/50'
+                  char.approved ? 'border-primary shadow-lg ring-2 ring-primary/20' : 'border-transparent hover:border-primary/50'
                 }`}
                 onClick={() => toggleApprove(char.id)}
               >
                 <img src={char.imageUrl} alt={char.name} className="w-full aspect-square object-cover" />
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+                
+                {/* 주인공 뱃지 */}
+                {char.approved && (
+                   <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-primary text-white text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                     <Sparkles className="w-3 h-3" />
+                     주인공 확정
+                   </div>
+                )}
+
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <div className="font-medium text-white text-sm">{char.name}</div>
-                      <div className="text-xs text-white/70">{char.role} · {char.gender} · {char.ageRange}</div>
+                      <div className="text-xs text-white/70">{char.role} · {char.gender}</div>
                     </div>
                     {char.approved && (
-                      <div className="w-6 h-6 rounded-full bg-success flex items-center justify-center">
+                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center border border-white/30 shadow-sm">
                         <CheckCircle2 className="w-4 h-4 text-white" />
                       </div>
                     )}
@@ -711,7 +767,7 @@ export default function CharacterAnalyzer({ onApprove, onClose }: CharacterAnaly
             </Button>
           </div>
           <p className="text-xs text-muted text-center mt-2">
-            확정 후 "전체 이미지 생성" 버튼으로 씬 이미지를 생성합니다
+            확정 후 &quot;전체 이미지 생성&quot; 버튼으로 씬 이미지를 생성합니다
           </p>
         </>
       )}

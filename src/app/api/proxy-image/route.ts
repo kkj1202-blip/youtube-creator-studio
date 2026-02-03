@@ -1,62 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-/**
- * 이미지 프록시 API
- * KIE에서 반환된 이미지 URL을 프록시하여 CORS 문제 해결
- */
 export async function GET(request: NextRequest) {
+  const url = request.nextUrl.searchParams.get('url');
+
+  if (!url) {
+    return new NextResponse('Missing URL parameter', { status: 400 });
+  }
+
   try {
-    const { searchParams } = new URL(request.url);
-    const imageUrl = searchParams.get('url');
-    
-    if (!imageUrl) {
-      return NextResponse.json(
-        { error: 'URL 파라미터가 필요합니다.' },
-        { status: 400 }
-      );
-    }
-
-    // URL 유효성 검사
-    try {
-      new URL(imageUrl);
-    } catch {
-      return NextResponse.json(
-        { error: '유효하지 않은 URL입니다.' },
-        { status: 400 }
-      );
-    }
-
-    // 이미지 가져오기
-    const response = await fetch(imageUrl, {
+    // Fetch with browser-like headers to avoid anti-bot blocks
+    const response = await fetch(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; ImageProxy/1.0)',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://www.instagram.com/',
       },
     });
 
     if (!response.ok) {
-      return NextResponse.json(
-        { error: `이미지 로드 실패: ${response.status}` },
-        { status: response.status }
-      );
+      return new NextResponse(`Failed to fetch image: ${response.status}`, { status: response.status });
     }
 
-    const contentType = response.headers.get('content-type') || 'image/png';
-    const imageBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
+    const buffer = await response.arrayBuffer();
 
-    // 이미지 응답 반환 (CORS 헤더 포함)
-    return new NextResponse(imageBuffer, {
-      status: 200,
+    // Serve back with COEP-friendly headers
+    return new NextResponse(buffer, {
       headers: {
         'Content-Type': contentType,
-        'Cache-Control': 'public, max-age=86400', // 24시간 캐시
-        'Access-Control-Allow-Origin': '*',
+        'Cache-Control': 'public, max-age=3600',
+        'Cross-Origin-Resource-Policy': 'cross-origin', // Critical for COEP
       },
     });
   } catch (error) {
-    console.error('[Image Proxy] Error:', error);
-    return NextResponse.json(
-      { error: '이미지 프록시 오류' },
-      { status: 500 }
-    );
+    console.error('Proxy error:', error);
+    return new NextResponse('Internal Server Error', { status: 500 });
   }
 }

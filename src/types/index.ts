@@ -39,8 +39,8 @@ export type EmotionTag = 'normal' | 'emphasis' | 'whisper' | 'excited';
 
 export type RenderQuality = 'preview' | 'high' | 'ultra';
 
-// TTS 엔진 타입 (ElevenLabs만 지원)
-export type TTSEngine = 'elevenlabs';
+// TTS 엔진 타입 (ElevenLabs, FishAudio 지원)
+export type TTSEngine = 'elevenlabs' | 'fishaudio' | 'kokoro' | 'google' | 'google-gemini';
 
 // Ken Burns 세부 설정
 export interface KenBurnsSettings {
@@ -78,7 +78,9 @@ export interface Scene {
   
   // 음성 설정
   voiceId?: string;
+  audioDuration?: number; // 오디오 길이 (초) - Vrew 내보내기 및 렌더링 시 중요
   voiceSpeed: number; // 0.8 ~ 1.3
+  geminiSpeed?: number; // 0.5 ~ 2.0 (Gemini전용)
   emotion: EmotionTag;
   ttsEngine: TTSEngine; // TTS 엔진 선택
   
@@ -138,6 +140,10 @@ export interface Project {
     backgroundDescription?: string; // 배경 설명
     colorPalette?: string;          // 색상 팔레트
     artDirection?: string;          // 아트 디렉션 추가 지시
+    leadCharacterIds?: string[];    // 주인공 캐릭터 IDs (최대 2명)
+    referenceImageUrls?: string[];  // 캐시된 레퍼런스 이미지 URLs (Whisk 연동용)
+    styleReferenceUrl?: string;     // 스타일 레퍼런스 (NEW)
+    compositionReferenceUrl?: string; // 구성/장면 레퍼런스 (NEW)
   };
   
   // 승인된 메인 캐릭터 정보
@@ -171,6 +177,7 @@ export interface Project {
   
   // TTS 설정
   defaultTTSEngine: TTSEngine;
+  defaultGeminiSpeed?: number; // 0.5 ~ 2.0 (Gemini)
   
   // BGM 설정
   bgmEnabled: boolean;
@@ -251,6 +258,19 @@ export interface Settings {
   // Replicate API 키
   replicateApiKey: string;
   
+  // FishAudio API 설정
+  fishAudioApiKey: string;
+  fishAudioVoices: FavoriteVoice[]; // FishAudio 보이스 목록 (reference_id 사용)
+
+  // Google TTS API 설정
+  googleTtsApiKey?: string; // Google Cloud Text-to-Speech API Key
+  googleVoices: FavoriteVoice[]; // Google 즐겨찾기 보이스 목록
+
+  // 이미지 생성 소스
+  imageSource: 'kie' | 'dalle' | 'whisk' | 'pollinations';
+  whiskCookie: string; // JSON string of cookies
+  whiskMode: 'api' | 'dom'; // 'api' | 'dom', added for Whisk generation mode
+  
   // 기본 설정
   defaultAspectRatio: AspectRatio;
   defaultImageStyle: ImageStyle;
@@ -264,6 +284,7 @@ export interface Settings {
     ttsEngine: TTSEngine;
     voiceId?: string;
     voiceSpeed: number;
+    geminiSpeed?: number; // Gemini 속도
     emotion: EmotionTag;
     transition: TransitionType;
     kenBurns: KenBurnsEffect;

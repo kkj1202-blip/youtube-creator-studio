@@ -7,10 +7,10 @@
  * - 일시정지/재개 기능
  */
 
-import type { Scene, Project } from '@/types';
 import { generateImage, generateImagePrompt } from './imageGeneration';
 import { generateVoice } from './voiceGeneration';
 import { buildFinalPrompt } from '@/lib/imageStyles';
+import type { Scene, Project, Settings } from '@/types';
 // 브라우저 렌더링은 동적 import로 사용 (서버 사이드 호환성)
 
 // ==================== 타입 정의 ====================
@@ -155,7 +155,7 @@ class ProcessingQueue<T, R> {
       }
 
       // 병렬 처리
-      const results = await Promise.allSettled(
+      await Promise.allSettled(
         chunk.map(async (item) => {
           item.status = 'processing';
           this.reportProgress();
@@ -234,6 +234,53 @@ class ProcessingQueue<T, R> {
 
 // ==================== 일괄 처리 함수 ====================
 
+// 모든 씬의 이미지 프롬프트만 일괄 생성 (이미지 생성 X)
+export async function generateAllPrompts(
+  project: Project,
+  onProgress?: ProgressCallback,
+  updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
+  options?: Partial<BatchOptions>
+): Promise<BatchProcessingResult> {
+  // 프롬프트 없는 씬만 필터링하거나, 옵션에 따라 전체 재생성
+  const scenesToProcess = project.scenes.map(s => ({ id: s.id, data: s }));
+
+  // 1. 큐 생성
+  const queue = new ProcessingQueue<Scene, { prompt: string }>(
+    async (scene) => {
+      // 프롬프트 생성 로직
+      // 기존 generateImage 내부 로직과 유사하지만 프롬프트만 생성
+      let prompt = scene.imagePrompt;
+      
+      // 프롬프트가 없으면 생성 (LLM or Rule-based)
+      if (!prompt) {
+        // 여기서는 간단히 스타일 기반 생성 호출
+        // 실제로는 generate-scene-prompt API를 호출해야 함 (LLM 사용 시)
+        // 일단은 기본 로직 사용
+         prompt = await generateImagePrompt(scene.script, project.imageStyle || 'realistic');
+      }
+
+      // API 호출 시뮬레이션 (너무 빠르면 UI 업데이트가 안 보일 수 있음)
+      await delay(100);
+
+      return { prompt };
+    },
+    'image', // UI 진행바는 이미지 단계 사용
+    { ...defaultOptions, ...options, concurrency: 5 }, // 프롬프트 생성은 빠르므로 병렬 5
+    onProgress,
+    (scene, result) => {
+      if (result && updateScene) {
+        updateScene(scene.id, {
+          imagePrompt: result.prompt,
+        });
+      }
+    }
+  );
+
+  // 2. 데이터 추가 및 실행
+  queue.addItems(scenesToProcess);
+  return queue.process();
+}
+
 /**
  * 모든 씬의 이미지 일괄 생성 (최적화)
  */
@@ -242,7 +289,11 @@ export async function generateAllImages(
   apiKey: string,
   onProgress?: ProgressCallback,
   updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
-  options?: Partial<BatchOptions>
+  options?: Partial<BatchOptions>,
+  whiskCookie?: string,
+  imageSource: 'kie' | 'dalle' | 'whisk' | 'pollinations' = 'kie',
+  whiskMode: 'api' | 'dom' = 'api',
+  referenceImageUrls?: string[]
 ): Promise<BatchProcessingResult> {
   const scenes = project.scenes.filter((s) => !s.imageUrl || s.imageSource === 'none');
   
@@ -261,14 +312,16 @@ export async function generateAllImages(
     
     if (masterStylePrompt) {
       // 2026 마스터 스타일 라이브러리 사용
-      const sceneDescription = scene.imagePrompt || scene.script;
+      // [!] scene.script를 직접 쓰지 않고, 분석된 imagePrompt만 사용 (없으면 빈값 전달하여 기본 키워드 생성 유도)
+      const sceneDescription = scene.imagePrompt || ''; 
       prompt = buildFinalPrompt(
         sceneDescription,
         masterStylePrompt,
-        consistencySettings
+        consistencySettings,
+        !!(referenceImageUrls && referenceImageUrls.length > 0)
       );
     } else {
-      // 레거시 방식
+      // 레거시 방식 (최소한의 안전장치)
       prompt = scene.imagePrompt || generateImagePrompt(
         scene.script,
         project.imageStyle,
@@ -278,11 +331,56 @@ export async function generateAllImages(
 
     console.log(`[BatchProcessor] Scene ${scene.order + 1} prompt:`, prompt.slice(0, 100) + '...');
 
-    const result = await generateImage(apiKey, {
-      prompt,
-      style: project.imageStyle,
-      aspectRatio: project.aspectRatio,
-    });
+    let result: { success: boolean; imageUrl?: string; error?: string; prompt: string };
+
+    if (imageSource === 'whisk') {
+       // Whisk Automation Call
+       if (!whiskCookie) throw new Error('Whisk 쿠키가 필요합니다.');
+       
+       try {
+           const response = await fetch('/api/generate-image/whisk', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ 
+                   prompt, 
+                   cookies: whiskCookie,
+                   mode: whiskMode,
+                   referenceImageUrls: referenceImageUrls
+               }),
+           });
+           const data = await response.json();
+           
+           if (!response.ok) throw new Error(data.error || 'Whisk Error');
+           
+           // Return the first image (Whisk usually generates 2-4)
+           const finalImageUrl = data.images && data.images.length > 0 ? data.images[0] : null;
+           if (!finalImageUrl) throw new Error('No images returned from Whisk');
+           
+           result = { success: true, imageUrl: finalImageUrl, prompt };
+        } catch(e) {
+             const errorMessage = e instanceof Error ? e.message : String(e);
+             result = { success: false, error: errorMessage, prompt };
+       }
+
+    } else if (imageSource === 'pollinations') {
+        // Pollinations AI Call
+        const { generateImagePollinations } = await import('./imageGeneration');
+        const pollResult = await generateImagePollinations(prompt, project.aspectRatio);
+        if (pollResult.success && pollResult.imageUrl) {
+             result = { ...pollResult, prompt };
+        } else {
+             result = { success: false, error: pollResult.error, prompt };
+        }
+
+    } else {
+        // Default KIE
+        const kieResult = await generateImage(apiKey, {
+        prompt,
+        style: project.imageStyle,
+        aspectRatio: project.aspectRatio,
+        });
+        result = { ...kieResult, prompt };
+    }
 
     if (!result.success || !result.imageUrl) {
       throw new Error(result.error || '이미지 생성 실패');
@@ -294,15 +392,23 @@ export async function generateAllImages(
   const queue = new ProcessingQueue(
     processor,
     'image',
-    { ...options, delayBetweenItems: 1000 }, // 이미지 API rate limit
+    { 
+        ...options, 
+        // Whisk needs longer delay to avoid flooding/detection and longer timeout
+        delayBetweenItems: imageSource === 'whisk' ? 5000 : 1000,
+        concurrency: imageSource === 'whisk' ? 1 : (options?.concurrency || 3) 
+    },
     onProgress,
     (scene, result, error) => {
       if (result) {
-        // CORS 문제 해결을 위해 프록시 URL로 변환
-        const proxyImageUrl = `/api/proxy-image?url=${encodeURIComponent(result.imageUrl)}`;
+        // CORS/COEP 문제 해결을 위해 프록시 URL로 변환
+        // Pollinations 포함 모든 외부 이미지는 프록시를 거쳐야 COEP 정책(require-corp)을 만족함
+        const isLocal = result.imageUrl.startsWith('/uploads');
+        const finalUrl = isLocal ? result.imageUrl : `/api/proxy-image?url=${encodeURIComponent(result.imageUrl)}`;
+        
         updateScene?.(scene.id, {
-          imageUrl: proxyImageUrl,
-          imageSource: 'generated',
+          imageUrl: finalUrl,
+          imageSource: 'uploaded', // Always mark Whisk as 'uploaded' for compatibility
           imagePrompt: result.prompt,
           isProcessing: false,
           error: undefined,
@@ -335,8 +441,7 @@ interface ElevenLabsAccountInfo {
  */
 export async function generateAllVoices(
   project: Project,
-  apiKey: string,
-  defaultVoiceId: string,
+  settings: Settings,
   onProgress?: ProgressCallback,
   updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
   options?: Partial<BatchOptions>
@@ -350,16 +455,54 @@ export async function generateAllVoices(
   const processor = async (scene: Scene) => {
     updateScene?.(scene.id, { isProcessing: true, error: undefined });
 
+    // TTS 엔진 및 API 키 결정
+    const ttsEngine = scene.ttsEngine || project.defaultTTSEngine || 'elevenlabs';
+    
+    let apiKey = '';
+    let voiceId = scene.voiceId || project.defaultVoiceId;
+
+    if (ttsEngine === 'elevenlabs') {
+      const activeAccount = settings.elevenLabsAccounts.find(acc => acc.isActive && acc.apiKey);
+      apiKey = activeAccount?.apiKey || '';
+      // If voiceId is still empty, try to get from active account
+      if (!voiceId && activeAccount && activeAccount.voices && activeAccount.voices.length > 0) {
+        voiceId = activeAccount.voices[0].id;
+      }
+    } else if (ttsEngine === 'fishaudio') {
+      apiKey = settings.fishAudioApiKey;
+      // If voiceId is empty, try to get from settings 
+      if (!voiceId && settings.fishAudioVoices?.length > 0) {
+        voiceId = settings.fishAudioVoices[0].id;
+      }
+    } else if (ttsEngine === 'google') {
+      apiKey = settings.googleTtsApiKey || '';
+      if (!voiceId && settings.googleVoices?.length > 0) {
+        voiceId = settings.googleVoices[0].id;
+      }
+    } else if (ttsEngine === 'kokoro') {
+      // Kokoro doesn't use API key usually, but standardized
+      apiKey = ''; 
+    }
+
+    if (!apiKey && ttsEngine !== 'kokoro') {
+       throw new Error(`API Key missing for ${ttsEngine}`);
+    }
+
+    if (!voiceId) {
+        throw new Error('Voice ID is missing');
+    }
+
     const result = await generateVoice(apiKey, {
       text: scene.script,
-      voiceId: scene.voiceId || defaultVoiceId,
+      voiceId: voiceId,
       speed: scene.voiceSpeed,
       emotion: scene.emotion,
       stability: scene.voiceStability,
       similarity: scene.voiceSimilarity,
       style: scene.voiceStyle,
       useSpeakerBoost: scene.voiceSpeakerBoost,
-    });
+      ttsEngine: ttsEngine
+    }, ttsEngine);
 
     if (!result.success || !result.audioUrl) {
       throw new Error(result.error || '음성 생성 실패');
@@ -377,6 +520,7 @@ export async function generateAllVoices(
       if (result) {
         updateScene?.(scene.id, {
           audioUrl: result.audioUrl,
+          audioDuration: result.duration,
           audioGenerated: true,
           isProcessing: false,
           error: undefined,
@@ -571,7 +715,7 @@ export async function renderAllScenes(
   project: Project,
   onProgress?: ProgressCallback,
   updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
-  options?: Partial<BatchOptions>
+  _options?: Partial<BatchOptions>
 ): Promise<BatchProcessingResult> {
   // 브라우저 환경 체크
   if (typeof window === 'undefined') {
@@ -659,6 +803,8 @@ export async function renderAllScenes(
         resolution: renderSettings?.resolution || '1080p',
         fps: renderSettings?.fps || 30,
         bitrate: renderSettings?.bitrate || 'high',
+        // 자막 (스크립트 내용)
+        text: (project.subtitleEnabled && (scene.subtitleEnabled ?? true)) ? scene.script : undefined, 
       });
 
       console.log(`[renderAllScenes] ${sceneLabel} 렌더링 완료`);
@@ -730,8 +876,7 @@ export async function processSceneRange(
   startIndex: number,
   endIndex: number,
   type: 'image' | 'voice' | 'render',
-  apiKey: string,
-  defaultVoiceId: string,
+  settings: Settings,
   onProgress?: ProgressCallback,
   updateScene?: (sceneId: string, updates: Partial<Scene>) => void
 ): Promise<BatchProcessingResult> {
@@ -740,9 +885,9 @@ export async function processSceneRange(
 
   switch (type) {
     case 'image':
-      return generateAllImages(tempProject, apiKey, onProgress, updateScene);
+      return generateAllImages(tempProject, settings.kieApiKey, onProgress, updateScene);
     case 'voice':
-      return generateAllVoices(tempProject, apiKey, defaultVoiceId, onProgress, updateScene);
+      return generateAllVoices(tempProject, settings, onProgress, updateScene);
     case 'render':
       return renderAllScenes(tempProject, onProgress, updateScene);
   }
@@ -755,9 +900,7 @@ export async function processSceneRange(
  */
 export async function runFullPipeline(
   project: Project,
-  imageApiKey: string,
-  voiceApiKey: string,
-  defaultVoiceId: string,
+  settings: Settings,
   onProgress?: (stage: string, progress: BatchProcessingProgress) => void,
   updateScene?: (sceneId: string, updates: Partial<Scene>) => void,
   options?: Partial<BatchOptions>,
@@ -786,7 +929,7 @@ export async function runFullPipeline(
 
   const imageResult = await generateAllImages(
     project,
-    imageApiKey,
+    settings.kieApiKey,
     (p) => onProgress?.('image', p),
     updateScene,
     options
@@ -807,8 +950,7 @@ export async function runFullPipeline(
 
   const voiceResult = await generateAllVoices(
     projectForVoice,
-    voiceApiKey,
-    defaultVoiceId,
+    settings,
     (p) => onProgress?.('voice', p),
     updateScene,
     options

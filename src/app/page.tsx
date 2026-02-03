@@ -19,6 +19,7 @@ import {
   Keyboard,
   Eye,
   Save,
+  Zap,
 } from 'lucide-react';
 import { MainLayout } from '@/components/layout';
 import {
@@ -40,6 +41,7 @@ const PerformancePredictor = dynamic(() => import('@/components/tools/Performanc
 const ScriptAssistant = dynamic(() => import('@/components/tools/ScriptAssistant'), { ssr: false });
 const MultiPlatformExport = dynamic(() => import('@/components/tools/MultiPlatformExport'), { ssr: false });
 const KeyboardShortcutsHelp = dynamic(() => import('@/components/tools/KeyboardShortcutsHelp'), { ssr: false });
+const WhiskAutomation = dynamic(() => import('@/components/tools/WhiskAutomation'), { ssr: false });
 
 type EditorView = 'input' | 'editor';
 type EditorTab = 'scenes' | 'settings';
@@ -69,6 +71,7 @@ export default function Home() {
   const [showScriptAssistant, setShowScriptAssistant] = useState(false);
   const [showMultiPlatformExport, setShowMultiPlatformExport] = useState(false);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [showWhiskAutomation, setShowWhiskAutomation] = useState(false);
 
   // 저장 알림
   const [showSaveNotification, setShowSaveNotification] = useState(false);
@@ -145,6 +148,7 @@ export default function Home() {
     { icon: <BarChart3 className="w-4 h-4" />, label: '성과 예측', onClick: () => setShowPerformancePredictor(true) },
     { icon: <Wand2 className="w-4 h-4" />, label: 'AI 스크립트 도우미', onClick: () => setShowScriptAssistant(true) },
     { icon: <Palette className="w-4 h-4" />, label: '브랜딩 프리셋', onClick: () => setShowBrandingPresets(true) },
+    { icon: <Zap className="w-4 h-4" />, label: 'Whisk Automation Pro', onClick: () => setShowWhiskAutomation(true) },
     { icon: <Keyboard className="w-4 h-4" />, label: '단축키 도움말', onClick: () => setShowKeyboardHelp(true), shortcut: 'Ctrl+/' },
   ];
 
@@ -491,6 +495,10 @@ export default function Home() {
       <KeyboardShortcutsHelp
         isOpen={showKeyboardHelp}
         onClose={() => setShowKeyboardHelp(false)}
+      />
+      <WhiskAutomation
+        isOpen={showWhiskAutomation}
+        onClose={() => setShowWhiskAutomation(false)}
       />
     </MainLayout>
   );

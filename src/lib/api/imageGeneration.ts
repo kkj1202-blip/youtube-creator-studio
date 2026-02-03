@@ -151,3 +151,51 @@ export function extractSceneNumber(filename: string): number | null {
   
   return null;
 }
+
+/**
+ * Pollinations AI 이미지 생성
+ * 무료, No API Key
+ */
+export async function generateImagePollinations(
+  prompt: string,
+  aspectRatio: '16:9' | '9:16' | '1:1' = '16:9'
+): Promise<ImageGenerationResponse> {
+  try {
+    // Pollinations AI URL (Quality Boosted, No Enhance to prevent distortion)
+    // enhance=true를 제거하고 프롬프트 제어로 변경 (얼굴 왜곡 방지)
+    const qualityBoost = 'masterpiece, best quality, ultra-detailed, 8k, majestic, cinematic lighting, professional photography';
+    const negativePrompt = 'nsfw, nude, ugly, deformed, noisy, blurry, distorted, grain, low quality, bad anatomy, bad proportions, cross-eyed, duplicate, error, missing fingers, extra digits, fewer digits, cropped, worst quality, low quality, normal quality, jpeg artifacts, signature, watermark, username, blur';
+    
+    // 프롬프트에 부정형 포함 (Pollinations는 파라미터가 없으므로 텍스트로 처리 시도)
+    const finalPrompt = `${prompt}, ${qualityBoost} --no ${negativePrompt}`;
+    const encodedPrompt = encodeURIComponent(finalPrompt);
+    
+    // Aspect ratio to resolution mapping
+    let width = 1280;
+    let height = 720;
+    if (aspectRatio === '9:16') {
+      width = 720;
+      height = 1280;
+    } else if (aspectRatio === '1:1') {
+      width = 1024;
+      height = 1024;
+    }
+
+    const seed = Math.floor(Math.random() * 10000);
+    const imageUrl = `https://image.pollinations.ai/prompt/${encodedPrompt}?width=${width}&height=${height}&seed=${seed}&nologo=true&model=flux`;
+
+    // 이미지 유효성 검사 (실제 로드는 클라이언트에서 하거나, 여기서 fetch로 확인 가능)
+    // 여기서는 URL만 반환 (Pollinations는 GET 요청으로 바로 이미지 반환)
+    
+    // 간단한 fetch로 이미지가 실제로 생성되는지 확인 (선택 사항)
+    // const check = await fetch(imageUrl);
+    // if (!check.ok) throw new Error('Pollinations service error');
+
+    return { success: true, imageUrl };
+  } catch (error) {
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Pollinations 이미지 생성 실패' 
+    };
+  }
+}

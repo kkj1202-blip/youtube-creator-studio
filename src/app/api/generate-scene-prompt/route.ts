@@ -19,57 +19,83 @@ interface RequestBody {
 
 // Gemini API 호출
 async function callGemini(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      contents: [{
-        parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
-      }],
-      generationConfig: {
-        temperature: 0.7,
-        maxOutputTokens: 1024,
+  try {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        contents: [{
+          parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }]
+        }],
+        generationConfig: {
+          temperature: 0.7,
+          maxOutputTokens: 1024,
+        }
+      }),
+    });
+
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const data = await response.json();
+        errorDetail = data.error?.message || JSON.stringify(data);
+      } catch (e) {
+        errorDetail = await response.text();
       }
-    }),
-  });
+      
+      if (errorDetail.includes('expired') || errorDetail.includes('renew')) {
+        throw new Error('Gemini API 키가 만료되었습니다.');
+      }
+      throw new Error(`Gemini API 오류: ${response.status} - ${errorDetail}`);
+    }
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Gemini API 오류: ${response.status} - ${error}`);
+    const data = await response.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error('Gemini 연결 중 오류 발생');
   }
-
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 // OpenAI API 호출
 async function callOpenAI(apiKey: string, systemPrompt: string, userPrompt: string): Promise<string> {
-  const response = await fetch(OPENAI_API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 1024,
-    }),
-  });
+  try {
+    const response = await fetch(OPENAI_API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 1024,
+      }),
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`OpenAI API 오류: ${response.status} - ${error}`);
+    if (!response.ok) {
+      let errorDetail = '';
+      try {
+        const data = await response.json();
+        errorDetail = data.error?.message || JSON.stringify(data);
+      } catch (e) {
+        errorDetail = await response.text();
+      }
+      throw new Error(`OpenAI API 오류: ${response.status} - ${errorDetail}`);
+    }
+
+    const data = await response.json();
+    return data.choices?.[0]?.message?.content || '';
+  } catch (error) {
+    if (error instanceof Error) throw error;
+    throw new Error('OpenAI 연결 중 오류 발생');
   }
-
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content || '';
 }
 
 export async function POST(request: NextRequest) {
@@ -114,54 +140,42 @@ export async function POST(request: NextRequest) {
          - Even background characters must be stickmen`
       : `STYLE: ${styleName} - Follow this art style for all elements`;
 
-    const systemPrompt = `You are a VISUAL SCENE DIRECTOR who converts Korean narration into detailed English image prompts.
+    const systemPrompt = `You are a professional CINEMATIC DIRECTOR and VISUAL ANALYST.
+    Your mission is to transform a Korean narration script into a SAFE, RICH, and DETAILED visual scene description.
+    
+    CRITICAL OBJECTIVE: You MUST capture Situation, Environment, and Action while FOLLOWING GOOGLE SAFETY POLICIES.
 
-${styleRule}
+    AI GENERATION RULES:
+    - START EVERY PROMPT WITH: "PURE VISUAL SCENE, WITHOUT ANY TEXT OR WORDS,"
+    - SUBJECT IDENTITY: If a [MAIN CHARACTER IDENTITY] is defined below, YOU MUST USE IT (e.g. "A white tiger in a suit"). Do NOT use generic terms like "The Lead Character" if a specific description exists.
+    - COMPOSITION: Default to "Cinematic Wide Shot, Establishing Shot, Rule of Thirds" to show the full context. Avoid close-ups or portraits unless explicitly requested.
+    - EMOTION: Extract the emotional vibe from the script but express it through body language and atmosphere, not just facial expressions.
+    - FOCUS: Use 60% on Environment/Background, 20% on Action, and 20% on Composition/Lighting. The character should be naturally integrated into the scene.
 
-CRITICAL TASK: Extract SPECIFIC VISUAL ELEMENTS from the Korean script and describe them for image generation.
+    ${styleRule}`;
 
-ANALYSIS STEPS:
-1. IDENTIFY the main SUBJECT/TOPIC (e.g., money, fraud, factory, company, crisis)
-2. FIND SPECIFIC NUMBERS/AMOUNTS and visualize them (e.g., "270억 달러" → "piles of money, financial documents")
-3. IDENTIFY LOCATIONS mentioned (e.g., "베트남" → "Vietnam factory district")
-4. IDENTIFY ACTIONS (e.g., "짐을 싸고" → "packing boxes, moving trucks")
-5. IDENTIFY EMOTIONS/MOOD (e.g., "충격" → "shocked expressions")
-
-ABSOLUTE RULES:
-1. Output ONLY the English prompt - NO explanations, NO Korean text
-2. Start with: "NO TEXT, NO WORDS, NO LETTERS,"
-3. ${isStickman ? 'Add "ONLY white stickman characters, NO realistic humans, NO detailed faces" right after NO LETTERS' : 'Follow the art style exactly'}
-4. Include SPECIFIC VISUAL ELEMENTS from the script
-5. MAINTAIN CHARACTER CONSISTENCY - if a character is described, use that EXACT description`;
-
-    // 캐릭터 일관성 강화
+    // 상세 분석 지시
     const characterSection = characterDescription 
-      ? `\n\nMAIN CHARACTER (MUST appear in EVERY scene with EXACT same appearance):
+      ? `\n\n[MAIN CHARACTER IDENTITY]:
 ${characterDescription}
-- This character MUST be recognizable across all scenes
-- Keep the SAME features: glasses, hair, clothing, body type
-- This is the narrator/protagonist - they should be the focus of the scene`
+Maintain this character's look (hair, clothing, facial features) in every action.`
       : '';
 
-    const userPrompt = `ANALYZE this Korean script and create a DETAILED image prompt:
+    const backgroundSection = (body as any).backgroundDescription
+      ? `\n\n[WORLD/BACKGROUND SETTING]:
+${(body as any).backgroundDescription}
+All scenes must take place in or follow this environment theme.`
+      : '';
 
-===== SCRIPT =====
+    const userPrompt = `TASK: ANALYZE the script and output ONLY Comma-Separated VISUAL Keywords.
+
+===== KOREAN SCRIPT =====
 ${script}
-==================
+========================
+${characterSection}${backgroundSection}
 
-REQUIRED VISUAL ELEMENTS TO EXTRACT:
-- What is the MAIN TOPIC? (money, fraud, company, crisis, etc.)
-- What SPECIFIC OBJECTS should appear? (cash, documents, boxes, factories, etc.)
-- What LOCATION/BACKGROUND fits this scene?
-- What ACTIONS are happening?
-- What EMOTIONS should characters show?
-${characterSection}
-
-ART STYLE: ${styleName}
-${isStickman ? 'REMEMBER: ALL characters must be simple white stickman figures - NO realistic humans!' : ''}
-
-OUTPUT FORMAT (English only, no explanation):
-NO TEXT, NO WORDS, NO LETTERS, ${isStickman ? 'ONLY white stickman characters, NO realistic humans, ' : ''}[main subject/object from script], [specific visual elements], [background/location], [character actions/emotions], [mood/lighting]`;
+OUTPUT FORMAT:
+NO TEXT, NO WORDS, NO LETTERS, [Art Style Keywords], [Detailed Background/Environment], [Main Subject & Specific Action], [Lighting & Mood], [Cinematic Composition]`;
 
     let prompt: string;
 

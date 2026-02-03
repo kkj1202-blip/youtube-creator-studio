@@ -1,0 +1,30 @@
+[
+  {
+    "version": 1,
+    "mediaId": "sLczG-3IxF",
+    "sourceOrigin": "VREW_RESOURCE",
+    "fileSize": 82125,
+    "name": "\uc548\ub155\ud558\uc138\uc694 \ub098\ub294 \uc548\ud2f0\uadf8\ub798\ube44\ud2f0\uc785\ub2c8\ub2e4..mp3",
+    "type": "AVMedia",
+    "videoAudioMetaInfo": {
+      "duration": 4.02,
+      "audioInfo": {
+        "sampleRate": 24000,
+        "codec": "mp3",
+        "channelCount": 1
+      }
+    },
+    "sourceFileType": "TTS",
+    "fileLocation": "IN_MEMORY"
+  },
+  {
+    "version": 1,
+    "mediaId": "39777b91-eead-4cfc-b7f9-76302d41795a",
+    "sourceOrigin": "USER",
+    "fileSize": 1871664,
+    "name": "39777b91-eead-4cfc-b7f9-76302d41795a.png",
+    "type": "Image",
+    "isTransparent": false,
+    "fileLocation": "IN_MEMORY"
+  }
+]

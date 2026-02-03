@@ -37,7 +37,7 @@ import { useStore } from '@/store/useStore';
 import SceneCard from './SceneCard';
 import { Button, Input, Badge } from '@/components/ui';
 import { generateImagePrompt } from '@/lib/api/imageGeneration';
-import { buildFinalPrompt } from '@/lib/imageStyles';
+import { buildFinalPrompt, imageStyleLibrary } from '@/lib/imageStyles';
 import type { Scene } from '@/types';
 
 // 페이지당 씬 수
@@ -212,6 +212,8 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       }
       console.log('[SceneList] consistencySettings:', consistencySettings);
       
+      const hasReference = consistencySettings?.referenceImageUrls && consistencySettings.referenceImageUrls.length > 0;
+      
       // 씬 설명
       const sceneDescription = scene.imagePrompt || scene.script;
       console.log('[SceneList] sceneDescription:', sceneDescription?.slice(0, 50));
@@ -228,8 +230,17 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       
       // 🔥 핵심 수정: LLM은 masterStylePrompt 없이도 사용 가능!
       // 스타일 정보 - 없으면 기본값 사용
-      const stylePrompt = masterStylePrompt || 'high quality, detailed, professional illustration';
+      // 🔥 핵심 수정: DB에 저장된 구버전 프롬프트(masterStylePrompt) 대신, 코드로 최신화된 라이브러리 프롬프트를 우선 사용
       const styleId = currentProject.masterImageStyleId || 'default';
+      
+      // 라이브러리에서 최신 스타일 정의 찾기
+      const foundStyle = imageStyleLibrary.flatMap(c => c.styles).find(s => s.id === styleId);
+      
+      // 스타일 프롬프트 결정: 라이브러리에 있으면 그거 쓰고, 없으면(커스텀 등) 기존 DB값 사용
+      const stylePrompt = foundStyle ? foundStyle.prompt : (masterStylePrompt || 'high quality, detailed, professional illustration');
+      
+      console.log('[SceneList] 적용된 스타일 ID:', styleId);
+      console.log('[SceneList] 적용된 스타일 소스:', foundStyle ? '✅ 라이브러리(최신)' : '⚠️ DB(기존/커스텀)');
       
       // 🔍 디버그 로그
       console.log('[SceneList] ========== 프롬프트 생성 디버그 ==========');
@@ -266,6 +277,7 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
               stylePrompt: stylePrompt,
               styleName: styleId,
               characterDescription: finalCharacterDescription,
+              backgroundDescription: consistencySettings.backgroundDescription,
               geminiApiKey: settings.geminiApiKey,
               openaiApiKey: settings.openaiApiKey,
             }),
@@ -273,23 +285,26 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
           
           if (llmResponse.ok) {
             const llmData = await llmResponse.json();
-            prompt = llmData.prompt;
-            console.log('[SceneList] ✅ LLM 프롬프트 생성 성공:', prompt.slice(0, 150) + '...');
+            const intermediatePrompt = llmData.prompt;
+            // LLM 결과물도 buildFinalPrompt를 통과시켜 레퍼런스 트리거 및 클리닝 적용
+            prompt = buildFinalPrompt(intermediatePrompt, stylePrompt, consistencySettings, hasReference);
+            console.log('[SceneList] ✅ LLM 프롬프트 생성 성공 & 보정:', prompt.slice(0, 150) + '...');
           } else {
             const errorData = await llmResponse.json().catch(() => ({}));
             console.warn('[SceneList] LLM 프롬프트 생성 실패:', errorData.error || llmResponse.status);
-            prompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
+            prompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings, hasReference);
           }
         } catch (llmError) {
           console.warn('[SceneList] LLM 오류, 폴백 사용:', llmError);
-          prompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings);
+          prompt = buildFinalPrompt(sceneDescription, stylePrompt, consistencySettings, hasReference);
         }
       } else if (masterStylePrompt) {
         // 캐릭터 분석으로 스타일이 설정된 경우 - 기존 방식 (LLM 없음)
         prompt = buildFinalPrompt(
           sceneDescription,
           masterStylePrompt,
-          consistencySettings
+          consistencySettings,
+          hasReference
         );
         console.log('[SceneList] 마스터 스타일 적용된 최종 프롬프트:', prompt.slice(0, 200) + '...');
       } else {
@@ -303,19 +318,49 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
       }
 
       console.log('[SceneList] API 요청 시작...');
+      
+      // 일관성 설정에서 레퍼런스 이미지 추출 (상단 변수 재사용)
+      const referenceImageUrls = consistencySettings?.referenceImageUrls || [];
+      // hasReference는 상단에 이미 정의됨
+      
+      let bodyPayload: any = {
+        apiKey: settings.kieApiKey,
+        prompt,
+        aspectRatio: currentProject.aspectRatio,
+        imageSource: settings.imageSource, // 소스 명시
+      };
+
+      // Whisk 모드일 경우 추가 파라미터 전달
+      if (settings.imageSource === 'whisk') {
+         bodyPayload = {
+            ...bodyPayload,
+            imageSource: 'whisk',
+            whiskCookie: settings.whiskCookie,
+            whiskMode: settings.whiskMode || 'dom',
+            referenceImageUrls: referenceImageUrls,
+            referenceImages: {
+                subject: referenceImageUrls[0], // Primary subject
+                style: consistencySettings?.styleReferenceUrl, // If exists
+                composition: consistencySettings?.compositionReferenceUrl // If exists
+            }
+         };
+         console.log('[SceneList] Whisk 모드 파라미터 추가됨:', bodyPayload.referenceImages);
+      }
+
       const response = await fetch('/api/generate-image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: settings.kieApiKey,
-          prompt,
-          aspectRatio: currentProject.aspectRatio,
-        }),
+        body: JSON.stringify(bodyPayload),
       });
 
       console.log('[SceneList] API 응답 상태:', response.status);
       const data = await response.json();
       console.log('[SceneList] API 응답 데이터:', data);
+
+      if (settings.imageSource === 'whisk' && data.images && data.images.length > 0) {
+          // Whisk는 images 배열로 반환됨
+          data.imageUrl = data.images[0];
+      }
 
       if (!response.ok) {
         const errorMsg = data.error || data.originalMsg || '이미지 생성 실패';
@@ -413,8 +458,14 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
     setIsGeneratingAllPrompts(true);
     setPromptProgress(0);
 
-    const stylePrompt = currentProject.masterImageStylePrompt || 'high quality, detailed, professional illustration';
     const styleId = currentProject.masterImageStyleId || 'default';
+    
+    // 라이브러리에서 최신 스타일 정의 찾기
+    const foundStyle = imageStyleLibrary.flatMap(c => c.styles).find(s => s.id === styleId);
+    
+    const stylePrompt = foundStyle ? foundStyle.prompt : (currentProject.masterImageStylePrompt || 'high quality, detailed, professional illustration');
+    
+    console.log('[SceneList] 일괄 프롬프트 생성 - 적용된 스타일:', stylePrompt.slice(0, 50) + '...');
     const characterDescription = currentProject.imageConsistency?.characterDescription;
 
     let successCount = 0;
@@ -598,6 +649,51 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
     }
   }, [currentProject]);
 
+  // Vrew 내보내기 핸들러 (Excel/CSV)
+  const handleExportVrew = useCallback(() => {
+    if (!currentProject || currentProject.scenes.length === 0) {
+      alert('내보낼 씬이 없습니다.');
+      return;
+    }
+
+    // CSV 헤더
+    const headers = ['Order', 'Script', 'Image Path', 'Audio Path', 'Duration'];
+    
+    // CSV 데이터 행 생성
+    const rows = currentProject.scenes.map((scene) => {
+      // 로컬/절대 경로가 필요할 수 있으므로, 웹 URL 대신 파일명을 사용하거나 
+      // 사용자가 매칭하기 쉽게 포맷팅
+      const imageFileName = scene.imageUrl ? scene.imageUrl.split('/').pop() : '';
+      const audioFileName = scene.audioUrl ? scene.audioUrl.split('/').pop() : '';
+      
+      // CSV 이스케이프 처리 (따옴표, 콤마 등)
+      const scriptSafe = `"${(scene.script || '').replace(/"/g, '""')}"`;
+      
+      return [
+        scene.order + 1,
+        scriptSafe,
+        imageFileName,
+        audioFileName,
+        scene.duration || 5
+      ].join(',');
+    });
+
+    // BOM 추가 (한글 깨짐 방지) + CSV 문자열 결합
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    
+    // 다운로드 트리거
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `${currentProject.name || 'project'}_vrew_export.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    alert('Vrew용 데이터가 CSV로 내보내졌습니다!\nVrew에서 "영상 가져오기" 또는 "대본 불러오기"시 활용하세요.');
+  }, [currentProject]);
+
   // 페이지 변경
   const changePage = useCallback((page: number) => {
     setCurrentPage(Math.max(1, Math.min(page, totalPages)));
@@ -705,6 +801,18 @@ const SceneList: React.FC<SceneListProps> = ({ compact: defaultCompact = false, 
             </Button>
           )}
         </div>
+      )}
+
+      {/* Vrew 내보내기 버튼 */}
+      {stats.total > 0 && (
+         <Button
+            variant="ghost"
+            className="w-full mt-2 border border-dashed border-success/30 hover:bg-success/5 text-success"
+            onClick={handleExportVrew}
+            icon={<FileText className="w-4 h-4" />}
+          >
+            🎬 Vrew용 내보내기 (Excel/CSV)
+          </Button>
       )}
 
       {/* 검색 및 필터 */}

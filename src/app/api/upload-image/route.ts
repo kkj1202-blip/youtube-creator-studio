@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * 이미지 업로드 API 엔드포인트
@@ -34,24 +36,34 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 파일을 Base64로 변환 (클라이언트에서 바로 사용 가능)
+    // 파일 시스템에 저장 (public/uploads)
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const extension = file.name.split('.').pop() || 'jpg';
+    const filename = `image-${uniqueSuffix}.${extension}`;
+    const filepath = path.join(uploadDir, filename);
+
     const bytes = await file.arrayBuffer();
     const buffer = Buffer.from(bytes);
-    const base64 = buffer.toString('base64');
-    const mimeType = file.type;
-    const imageUrl = `data:${mimeType};base64,${base64}`;
+    fs.writeFileSync(filepath, buffer);
+
+    const imageUrl = `/uploads/${filename}`;
 
     // 파일명에서 씬 번호 추출 (자동 매칭용)
     let extractedSceneNumber: number | null = null;
-    const filename = file.name;
+    const originalFilename = file.name;
     
     // 숫자만 있는 파일명: 1.png, 2.jpg
-    const simpleMatch = filename.match(/^(\d+)\./);
+    const simpleMatch = originalFilename.match(/^(\d+)\./);
     if (simpleMatch) {
       extractedSceneNumber = parseInt(simpleMatch[1], 10);
     } else {
       // scene_1.png, 씬1.jpg 등
-      const prefixMatch = filename.match(/[_\-]?(\d+)\./);
+      const prefixMatch = originalFilename.match(/[_\-]?(\d+)\./);
       if (prefixMatch) {
         extractedSceneNumber = parseInt(prefixMatch[1], 10);
       }
@@ -64,9 +76,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ 
       imageUrl,
-      filename: file.name,
+      filename: originalFilename,
       size: file.size,
-      mimeType,
+      mimeType: file.type,
       sceneNumber: finalSceneNumber,
     });
   } catch (error) {

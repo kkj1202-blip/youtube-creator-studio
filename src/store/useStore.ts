@@ -49,8 +49,21 @@ const defaultSettings: Settings = {
   geminiApiKey: '',
   openaiApiKey: '',
   llmProvider: 'gemini',
-  // Replicate API 키
-  replicateApiKey: '',
+  // Google TTS API 설정
+  googleTtsApiKey: '',
+  googleVoices: [], // Google 즐겨찾기 보이스 목록 초기화
+  // FishAudio 설정
+  fishAudioApiKey: '',
+  fishAudioVoices: [
+    { id: '7d51998b1048465085fe628dd2bf922b', name: '필재', description: '남성 보이스' },
+    { id: 'c392cd5c42244789acc91f481b376282', name: '준기', description: '남성 보이스' },
+    { id: '9c39aa0f5834463a9107d56ff3689bfb', name: '창수', description: '남성 보이스' },
+    { id: '3aa1eef717bc4526b2203e6d03213970', name: '광필재', description: '남성 보이스 (New)' },
+    { id: '3def33523e4649ec85313b4dc2fef7aa', name: '광준기', description: '남성 보이스 (New)' },
+  ],
+  imageSource: 'kie',
+  whiskCookie: '',
+  whiskMode: 'api', // 'api' | 'dom', default to 'api' as requested
   defaultAspectRatio: '16:9',
   defaultImageStyle: 'realistic',
   defaultVoiceId: undefined,
@@ -65,13 +78,14 @@ const defaultSettings: Settings = {
     ttsEngine: 'elevenlabs',
     voiceId: '8jHHF8rMqMlg8if2mOUe', // 한 여성 기본
     voiceSpeed: 1.0,
+    geminiSpeed: 1.0,
     emotion: 'normal',
     transition: 'none',
     kenBurns: 'zoom-in',
     subtitleEnabled: true,
     
     // 일레븐랩스 기본 고급 설정
-    voiceStability: 0.5,
+    voiceStability: 0.7,
     voiceSimilarity: 0.75,
     voiceStyle: 0.0,
     voiceSpeakerBoost: true,
@@ -101,6 +115,7 @@ const createDefaultScene = (order: number, script: string = '', lastUsed?: Setti
   rendered: false,
   voiceId: lastUsed?.voiceId,
   voiceSpeed: lastUsed?.voiceSpeed ?? 1.0,
+  geminiSpeed: lastUsed?.geminiSpeed ?? 1.0,
   emotion: lastUsed?.emotion ?? 'normal',
   ttsEngine: lastUsed?.ttsEngine ?? 'elevenlabs',
   voiceStability: lastUsed?.voiceStability ?? 0.5,
@@ -136,6 +151,8 @@ const createDefaultProject = (name: string = '새 프로젝트'): Project => ({
     backgroundDescription: undefined,
     colorPalette: undefined,
     artDirection: undefined,
+    styleReferenceUrl: undefined,
+    compositionReferenceUrl: undefined,
   },
   scenes: [],
   defaultVoiceSpeed: 1.0,
@@ -150,6 +167,7 @@ const createDefaultProject = (name: string = '새 프로젝트'): Project => ({
   defaultCombineEffects: true,
   defaultPostAudioGap: 0.5,
   defaultTTSEngine: 'elevenlabs',
+  defaultGeminiSpeed: 1.0,
   bgmEnabled: false,
   bgmVolume: 0.3,
   subtitleEnabled: true,
@@ -398,6 +416,7 @@ export const useStore = create<AppState>()(
           if (updates.ttsEngine !== undefined) lastUsedUpdates.ttsEngine = updates.ttsEngine;
           if (updates.voiceId !== undefined) lastUsedUpdates.voiceId = updates.voiceId;
           if (updates.voiceSpeed !== undefined) lastUsedUpdates.voiceSpeed = updates.voiceSpeed;
+          if (updates.geminiSpeed !== undefined) lastUsedUpdates.geminiSpeed = updates.geminiSpeed;
           if (updates.emotion !== undefined) lastUsedUpdates.emotion = updates.emotion;
           if (updates.transition !== undefined) lastUsedUpdates.transition = updates.transition;
           if (updates.kenBurns !== undefined) lastUsedUpdates.kenBurns = updates.kenBurns;
@@ -553,27 +572,51 @@ export const useStore = create<AppState>()(
           return;
         }
 
-        // 활성 ElevenLabs 계정 찾기
-        const activeAccountIndex = settings.elevenLabsAccounts.findIndex(
-          (acc) => acc.isActive && acc.apiKey
-        );
-        if (activeAccountIndex === -1) {
-          console.error('[Store] generateAllAudio: No active ElevenLabs account');
-          alert('설정에서 ElevenLabs API 키를 입력하고 계정을 활성화하세요.');
-          return;
-        }
+        let apiKey = '';
+        let defaultVoiceId = currentProject.defaultVoiceId;
+        const engine = currentProject.defaultTTSEngine || 'elevenlabs';
 
-        const apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
-        const defaultVoiceId = currentProject.defaultVoiceId ||
-          settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id ||
-          settings.favoriteVoices?.[0]?.id;
+        if (engine === 'google-gemini') {
+            apiKey = settings.geminiApiKey;
+            if (!apiKey) {
+                alert('설정 > AI 대본 분석 설정에서 Gemini API 키를 입력하세요.');
+                return;
+            }
+            if (!defaultVoiceId) defaultVoiceId = 'Kore';
+        } else if (engine === 'fishaudio') {
+            apiKey = settings.fishAudioApiKey;
+            if (!apiKey) {
+                alert('설정에서 FishAudio API 키를 입력하세요.');
+                return;
+            }
+            if (!defaultVoiceId && settings.fishAudioVoices.length > 0) {
+                defaultVoiceId = settings.fishAudioVoices[0].id;
+            }
+        } else if (engine === 'elevenlabs') {
+            // 활성 ElevenLabs 계정 찾기
+            const activeAccountIndex = settings.elevenLabsAccounts.findIndex(
+              (acc) => acc.isActive && acc.apiKey
+            );
+            if (activeAccountIndex === -1) {
+              console.error('[Store] generateAllAudio: No active ElevenLabs account');
+              alert('설정에서 ElevenLabs API 키를 입력하고 계정을 활성화하세요.');
+              return;
+            }
+            apiKey = settings.elevenLabsAccounts[activeAccountIndex].apiKey;
+            if (!defaultVoiceId) {
+                defaultVoiceId = settings.elevenLabsAccounts[activeAccountIndex].voices[0]?.id ||
+                settings.favoriteVoices?.[0]?.id;
+            }
+        } else if (engine === 'google') {
+             apiKey = settings.googleTtsApiKey || settings.geminiApiKey; // Fallback to Gemini key if google missing
+        }
 
         if (!defaultVoiceId) {
           alert('기본 보이스를 선택하세요.');
           return;
         }
 
-        console.log('[Store] generateAllAudio: Starting...');
+        console.log('[Store] generateAllAudio: Starting...', { engine, voiceId: defaultVoiceId });
         try {
           const { generateAllVoices } = await import('@/lib/api/batchProcessor');
           const result = await generateAllVoices(

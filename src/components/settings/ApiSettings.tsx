@@ -29,7 +29,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { useStore } from '@/store/useStore';
-import { Button, Input, Card, Badge } from '@/components/ui';
+import { Button, Input, Card, Badge, Toggle } from '@/components/ui';
 import type { VoiceOption, FavoriteVoice } from '@/types';
 
 // 카테고리 옵션
@@ -71,6 +71,91 @@ const ApiSettings: React.FC = () => {
   const [newVoiceName, setNewVoiceName] = useState('');
   const [newVoiceDesc, setNewVoiceDesc] = useState('');
   const [showAddVoiceForm, setShowAddVoiceForm] = useState(false);
+
+  // FishAudio 커스텀 보이스 추가 폼
+  const [newFishVoiceId, setNewFishVoiceId] = useState('');
+  const [newFishVoiceName, setNewFishVoiceName] = useState('');
+  const [showAddFishVoiceForm, setShowAddFishVoiceForm] = useState(false);
+
+  // Google TTS 커스텀 보이스 추가 폼
+  const [newGoogleVoiceId, setNewGoogleVoiceId] = useState('');
+  const [newGoogleVoiceName, setNewGoogleVoiceName] = useState('');
+
+  // Google TTS 전체 보이스 목록 상태
+  const [googleAllVoices, setGoogleAllVoices] = useState<{name: string, ssmlGender: string}[]>([]);
+  // Google TTS 전체 보이스 목록 상태
+  const [googleAllVoices, setGoogleAllVoices] = useState<{name: string, ssmlGender: string}[]>([]);
+  const [isLoadingGoogleVoices, setIsLoadingGoogleVoices] = useState(false);
+  
+  // Gemini TTS 테스트 상태
+  const [geminiTestVoice, setGeminiTestVoice] = useState('Kore');
+
+  // 구글 보이스 전체 목록 가져오기
+  const fetchGoogleAllVoices = async () => {
+    const apiKey = settings.googleTtsApiKey || settings.geminiApiKey;
+    if (!apiKey) return;
+
+    setIsLoadingGoogleVoices(true);
+    try {
+      const res = await fetch(`/api/generate-voice-google?apiKey=${apiKey}`);
+      const data = await res.json();
+      
+      if (res.ok && data.voices) {
+        setGoogleAllVoices(data.voices);
+      } else {
+        setTestResults(prev => ({...prev, googleTts: { status: 'error', message: data.error || '목록 불러오기 실패' }}));
+      }
+    } catch (e: any) {
+      console.error('Failed to fetch google voices', e);
+      setTestResults(prev => ({...prev, googleTts: { status: 'error', message: e.message }}));
+    } finally {
+      setIsLoadingGoogleVoices(false);
+    }
+  };
+
+  // Gemini TTS 테스트
+  const testGeminiTts = async () => {
+    if (!settings.geminiApiKey) return;
+
+    setLoading((prev) => ({ ...prev, geminiTts: true }));
+    setTestResults((prev) => ({ ...prev, geminiTts: null }));
+
+    try {
+      const response = await fetch('/api/generate-voice-google-gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: settings.geminiApiKey,
+          text: '안녕하세요. Gemini TTS 목소리 테스트입니다. 자연스럽게 들리시나요?',
+          voiceId: geminiTestVoice,
+          speed: 1.0,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.audioUrl) {
+        const audio = new Audio(data.audioUrl);
+        audio.play();
+        setTestResults((prev) => ({ 
+          ...prev, 
+          geminiTts: { status: 'success', message: '오디오 생성 성공! (재생 중)' } 
+        }));
+      } else {
+        setTestResults((prev) => ({ 
+          ...prev, 
+          geminiTts: { status: 'error', message: data.error || '생성 실패' } 
+        }));
+      }
+    } catch (error: any) {
+      setTestResults((prev) => ({ 
+        ...prev, 
+        geminiTts: { status: 'error', message: '연결 오류: ' + error.message } 
+      }));
+    }
+
+    setLoading((prev) => ({ ...prev, geminiTts: false }));
+  };
 
   const toggleShowKey = (key: string) => {
     setShowKeys((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -516,7 +601,7 @@ const ApiSettings: React.FC = () => {
           
           {/* Gemini API Key */}
           <div>
-            <label className="text-sm font-medium text-foreground mb-1 block">Gemini API 키</label>
+            <label className="text-sm font-medium text-foreground mb-1 block">Gemini API 키 (대본 분석 & TTS)</label>
             <div className="flex gap-2">
               <div className="flex-1 relative">
                 <Input
@@ -533,6 +618,56 @@ const ApiSettings: React.FC = () => {
                   {showKeys.gemini ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+            </div>
+            <p className="text-xs text-muted mt-1">
+              * AI Studio (aistudio.google.com)에서 발급받은 키를 입력하세요.
+              * 대본 분석과 <b>Google Gemini TTS</b> 생성에 사용됩니다.
+            </p>
+            
+            {/* Gemini TTS Test UI */}
+            <div className="mt-3 p-3 bg-indigo-500/10 rounded-lg border border-indigo-500/20">
+                <h5 className="font-semibold text-xs mb-2 flex items-center gap-1 text-indigo-600">
+                    <Volume2 className="w-3 h-3" /> Gemini TTS 테스트 (자연스러운 한국어)
+                </h5>
+                <div className="flex gap-2 items-center">
+                    <div className="w-[200px]">
+                        <select 
+                            className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            value={geminiTestVoice}
+                            onChange={(e) => setGeminiTestVoice(e.target.value)}
+                        >
+                            <option value="Kore">Kore (여성/차분/추천)</option>
+                            <option value="Puck">Puck (남성/쾌활)</option>
+                            <option value="Charon">Charon (남성/깊음)</option>
+                            <option value="Fenrir">Fenrir (남성/거침)</option>
+                            <option value="Aoede">Aoede (여성/부드러움)</option>
+                            <option value="Zephyr">Zephyr (여성/맑음)</option>
+                        </select>
+                    </div>
+                    <Button
+                        size="sm"
+                        variant="primary"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white border-none"
+                        onClick={testGeminiTts}
+                        disabled={!settings.geminiApiKey || loading.geminiTts}
+                        isLoading={loading.geminiTts}
+                    >
+                        {loading.geminiTts ? '생성 중...' : '미리듣기'}
+                    </Button>
+                </div>
+                 {testResults.geminiTts && (
+                    <div className={`mt-2 flex items-center gap-2 text-sm ${testResults.geminiTts.status === 'success' ? 'text-success' : 'text-error'}`}>
+                        {testResults.geminiTts.status === 'success' ? (
+                            <CheckCircle2 className="w-4 h-4" />
+                        ) : (
+                            <XCircle className="w-4 h-4" />
+                        )}
+                        {testResults.geminiTts.message}
+                    </div>
+                )}
+                <p className="text-[10px] text-muted mt-2">
+                    * Gemini 2.5 Flash 모델 기반. 속도 조절은 프로젝트 설정에서 가능합니다.
+                </p>
             </div>
           </div>
           
@@ -606,51 +741,683 @@ const ApiSettings: React.FC = () => {
         </div>
       </Card>
 
-      {/* KIE (Image Generation) API */}
+      {/* 🖼️ 이미지 생성 설정 (통합) */}
       <Card>
         <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
           <ImageIcon className="w-5 h-5 text-primary" />
-          이미지 생성 API (KIE)
+          이미지 생성 설정
         </h3>
-        <div className="space-y-3">
+        
+        <div className="space-y-6">
+            {/* 기본 생성기 선택 */}
+            <div className="space-y-3">
+                <label className="text-sm font-medium text-foreground">기본 이미지 생성 엔진 선택</label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <button
+                        onClick={() => updateSettings({ imageSource: 'kie' })}
+                        className={`p-3 rounded-lg border text-left transition-all ${
+                            settings.imageSource === 'kie' || !settings.imageSource // Default
+                            ? 'border-primary bg-primary/10 ring-1 ring-primary' 
+                            : 'border-border bg-card hover:bg-card-hover'
+                        }`}
+                    >
+                        <div className="font-medium text-sm flex items-center gap-2">
+                            <ImageIcon className="w-4 h-4 text-primary" />
+                            KIE (기본)
+                        </div>
+                        <div className="text-xs text-muted mt-1">고품질, 다양한 스타일</div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({ imageSource: 'pollinations' })}
+                        className={`p-3 rounded-lg border text-left transition-all ${
+                            settings.imageSource === 'pollinations'
+                            ? 'border-pink-500 bg-pink-500/10 ring-1 ring-pink-500' 
+                            : 'border-border bg-card hover:bg-card-hover'
+                        }`}
+                    >
+                        <div className="font-medium text-sm flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-pink-500" />
+                            Pollinations
+                        </div>
+                        <div className="text-xs text-muted mt-1">무료, 설정 불필요</div>
+                    </button>
+
+                    <button
+                        onClick={() => updateSettings({ imageSource: 'whisk' })}
+                        className={`p-3 rounded-lg border text-left transition-all ${
+                            settings.imageSource === 'whisk'
+                            ? 'border-purple-500 bg-purple-500/10 ring-1 ring-purple-500' 
+                            : 'border-border bg-card hover:bg-card-hover'
+                        }`}
+                    >
+                        <div className="font-medium text-sm flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-purple-500" />
+                            Whisk (Google)
+                        </div>
+                        <div className="text-xs text-muted mt-1">고품질, 쿠키 필요</div>
+                    </button>
+                </div>
+            </div>
+
+            <div className="border-t border-border pt-4"></div>
+
+            {/* KIE Config */}
+            <div className={settings.imageSource === 'kie' ? 'block' : 'hidden'}>
+                <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                    KIE API 설정
+                    <Badge variant="secondary">Required</Badge>
+                </h4>
+                <div className="space-y-3">
+                    <div className="flex gap-2">
+                        <div className="flex-1 relative">
+                            <Input
+                                type={showKeys.kie ? 'text' : 'password'}
+                                value={settings.kieApiKey}
+                                onChange={(e) => updateSettings({ kieApiKey: e.target.value })}
+                                placeholder="KIE API 키 입력"
+                                icon={<Key className="w-4 h-4" />}
+                            />
+                             <button
+                                onClick={() => toggleShowKey('kie')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                            >
+                                {showKeys.kie ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                        </div>
+                        <Button
+                            variant="ghost"
+                            onClick={testKieApiKey}
+                            disabled={!settings.kieApiKey || loading.kie}
+                            isLoading={loading.kie}
+                        >
+                            테스트
+                        </Button>
+                    </div>
+                     {testResults.kie && (
+                        <div className={`flex items-center gap-2 text-sm ${testResults.kie.status === 'success' ? 'text-success' : 'text-error'}`}>
+                        {testResults.kie.status === 'success' ? (
+                            <CheckCircle2 className="w-4 h-4" />
+                        ) : (
+                            <XCircle className="w-4 h-4" />
+                        )}
+                        {testResults.kie.message}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* Pollinations Config */}
+            <div className={settings.imageSource === 'pollinations' ? 'block' : 'hidden'}>
+                 <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2 text-pink-500">
+                    Pollinations AI
+                    <Badge variant="secondary" className="bg-pink-500/10 text-pink-600">설정 없음</Badge>
+                </h4>
+                <div className="p-3 bg-pink-500/5 border border-pink-500/20 rounded-lg text-sm text-muted">
+                    Pollinations AI는 별도의 설정 없이 바로 사용할 수 있습니다.
+                    <div className="mt-2 flex justify-end">
+                        <Button
+                            size="sm"
+                            variant="primary"
+                            className="bg-pink-500 hover:bg-pink-600 border-pink-600"
+                            onClick={async () => {
+                                if (confirm('테스트 이미지를 생성하시겠습니까? (새 탭에서 열립니다)')) {
+                                    const testUrl = `https://image.pollinations.ai/prompt/beautiful%20landscape%20painting?width=1280&height=720&seed=${Math.floor(Math.random()*1000)}&nologo=true&model=flux`;
+                                    window.open(testUrl, '_blank');
+                                }
+                            }}
+                        >
+                            <Sparkles className="w-3 h-3 mr-1" />
+                            생성 테스트
+                        </Button>
+                    </div>
+                </div>
+            </div>
+
+            {/* Whisk Config */}
+            <div className={settings.imageSource === 'whisk' ? 'block' : 'hidden'}>
+                <h4 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2 text-purple-500">
+                    Whisk 설정
+                    <Badge variant="secondary" className="bg-purple-500/10 text-purple-600">쿠키 필요</Badge>
+                </h4>
+                <div className="space-y-3">
+                    <div className="bg-purple-500/5 p-3 rounded-lg border border-purple-500/20 mb-3">
+                        <h5 className="font-semibold text-xs mb-1 flex items-center gap-1">
+                            <Sparkles className="w-3 h-3 text-purple-500" /> 간편 로그인 (추천)
+                        </h5>
+                        <p className="text-xs text-muted mb-2">
+                            복잡한 쿠키 설정 없이, 브라우저 창에서 로그인하면 자동으로 설정됩니다.
+                        </p>
+                        <Button
+                            size="sm"
+                            className="w-full bg-purple-500 hover:bg-purple-600 text-white border-none"
+                            onClick={async () => {
+                                if (!confirm('새 브라우저 창이 열리면 구글 계정으로 로그인해주세요.\n로그인이 완료되면 창이 자동으로 닫히고 설정이 완료됩니다.')) return;
+                                
+                                setLoading(prev => ({ ...prev, whisk: true }));
+                                try {
+                                    const res = await fetch('/api/auth/google', { method: 'POST' });
+                                    const data = await res.json();
+                                    
+                                    if (data.success && data.cookies) {
+                                        updateSettings({ whiskCookie: data.cookies });
+                                        alert('✅ 로그인 성공! Whisk 설정이 완료되었습니다.');
+                                    } else {
+                                        throw new Error(data.error || '인증 실패');
+                                    }
+                                } catch (e: any) {
+                                    alert(`❌ 인증 설정 실패: ${e.message}\n(Python Playwright가 설치되어 있어야 합니다)`);
+                                } finally {
+                                    setLoading(prev => ({ ...prev, whisk: false }));
+                                }
+                            }}
+                            disabled={loading.whisk}
+                        >
+                            {loading.whisk ? '로그인 대기중...' : '🚀 구글 로그인하고 자동 설정하기'}
+                        </Button>
+                    </div>
+
+                    <div className="flex flex-col gap-3 p-3 bg-card-hover rounded-lg border border-border">
+                        <label className="text-sm font-medium text-foreground flex items-center justify-between">
+                            <span>생성 모드 선택</span>
+                            <Badge variant="outline" className="text-[10px] h-5">Experimental</Badge>
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                onClick={() => updateSettings({ whiskMode: 'api' })}
+                                className={`p-2 rounded-md text-sm border transition-all flex flex-col items-center justify-center gap-1 ${
+                                    settings.whiskMode === 'api'
+                                    ? 'bg-purple-500/20 border-purple-500 text-purple-600 font-bold'
+                                    : 'bg-card border-border text-muted hover:border-purple-300'
+                                }`}
+                            >
+                                <span>🚀 API 모드 (추천)</span>
+                                <span className="text-[10px] font-normal opacity-80">초고속 (1~2초), 백그라운드</span>
+                            </button>
+                            <button
+                                onClick={() => updateSettings({ whiskMode: 'dom' })}
+                                className={`p-2 rounded-md text-sm border transition-all flex flex-col items-center justify-center gap-1 ${
+                                    settings.whiskMode === 'dom'
+                                    ? 'bg-blue-500/20 border-blue-500 text-blue-600 font-bold'
+                                    : 'bg-card border-border text-muted hover:border-blue-300'
+                                }`}
+                            >
+                                <span>🖥️ 브라우저 모드</span>
+                                <span className="text-[10px] font-normal opacity-80">안정적, 화면 보임</span>
+                            </button>
+                        </div>
+                        <p className="text-xs text-muted">
+                            {settings.whiskMode === 'api' 
+                                ? 'API 모드는 브라우저 없이 백그라운드에서 빠르게 이미지를 생성합니다. (토큰 만료 시 자동으로 브라우저 모드로 갱신함)' 
+                                : '브라우저 모드는 실제 크롬 창을 띄워 이미지를 생성합니다. (느리지만 가장 안정적임)'}
+                        </p>
+                    </div>
+
+                    <div className="relative">
+                        <div className="absolute inset-0 flex items-center">
+                            <span className="w-full border-t border-border" />
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-card px-2 text-muted-foreground">또는 수동 입력</span>
+                        </div>
+                    </div>
+
+                    <label className="text-xs text-muted block mt-2">
+                    구글 쿠키 (JSON) - ImageFX 사이트에서 추출
+                    </label>
+                    <div className="relative">
+                    <textarea
+                        className="w-full h-24 px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 text-xs font-mono resize-y"
+                        value={settings.whiskCookie || ''}
+                        onChange={(e) => updateSettings({ whiskCookie: e.target.value })}
+                        placeholder='[{"domain": ".google.com", "name": "__Secure-1PSID", ...}]'
+                    />
+                    <div className="absolute bottom-2 right-2">
+                        <Button
+                            size="sm"
+                            variant="primary"
+                            disabled={!settings.whiskCookie || loading.whisk}
+                            isLoading={loading.whisk}
+                            onClick={async () => {
+                                setLoading(prev => ({ ...prev, whisk: true }));
+                                try {
+                                    const response = await fetch('/api/generate-image/whisk', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ 
+                                            prompt: 'cute futuristic robot cat, 3d render, 8k', 
+                                            cookies: settings.whiskCookie 
+                                        }),
+                                    });
+                                    const data = await response.json();
+                                    if (response.ok && data.images?.length > 0) {
+                                        alert('✅ 테스트 성공!');
+                                    } else {
+                                        alert(`❌ 테스트 실패: ${data.error}`);
+                                    }
+                                } catch (e: any) {
+                                    alert(`❌ 오류: ${e.message}`);
+                                } finally {
+                                    setLoading(prev => ({ ...prev, whisk: false }));
+                                }
+                            }}
+                        >
+                            검증 & 테스트
+                        </Button>
+                    </div>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+      </Card>
+
+      {/* 🐟 FishAudio TTS API */}
+      <Card className="border-cyan-500/30 bg-cyan-500/5">
+        <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          🐟 FishAudio TTS
+          <Badge variant="secondary" className="bg-cyan-500/20 text-cyan-600">NEW</Badge>
+        </h3>
+        <div className="space-y-4">
           <div className="flex gap-2">
             <div className="flex-1 relative">
               <Input
-                type={showKeys.kie ? 'text' : 'password'}
-                value={settings.kieApiKey}
-                onChange={(e) => updateSettings({ kieApiKey: e.target.value })}
-                placeholder="이미지 생성 API 키를 입력하세요"
+                type={showKeys.fishAudio ? 'text' : 'password'}
+                value={settings.fishAudioApiKey || ''}
+                onChange={(e) => updateSettings({ fishAudioApiKey: e.target.value })}
+                placeholder="FishAudio API 키를 입력하세요"
                 icon={<Key className="w-4 h-4" />}
               />
               <button
-                onClick={() => toggleShowKey('kie')}
+                onClick={() => toggleShowKey('fishAudio')}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
               >
-                {showKeys.kie ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showKeys.fishAudio ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
             <Button
               variant="ghost"
-              onClick={testKieApiKey}
-              disabled={!settings.kieApiKey || loading.kie}
-              isLoading={loading.kie}
+              onClick={async () => {
+                if (!settings.fishAudioApiKey) return;
+                setLoading((prev) => ({ ...prev, fishAudio: true }));
+                try {
+                  const response = await fetch('/api/generate-voice-fish', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      apiKey: settings.fishAudioApiKey,
+                      referenceId: settings.fishAudioVoices?.[0]?.id || '7d51998b1048465085fe628dd2bf922b',
+                      text: '테스트입니다.',
+                    }),
+                  });
+                  const data = await response.json();
+                  if (response.ok && data.audioUrl) {
+                    setTestResults((prev) => ({
+                      ...prev,
+                      fishAudio: { status: 'success', message: 'API 키가 유효합니다!' },
+                    }));
+                  } else {
+                    setTestResults((prev) => ({
+                      ...prev,
+                      fishAudio: { status: 'error', message: data.error || 'API 키가 유효하지 않습니다' },
+                    }));
+                  }
+                } catch (error) {
+                  setTestResults((prev) => ({
+                    ...prev,
+                    fishAudio: { status: 'error', message: '연결 오류가 발생했습니다' },
+                  }));
+                }
+                setLoading((prev) => ({ ...prev, fishAudio: false }));
+              }}
+              disabled={!settings.fishAudioApiKey || loading.fishAudio}
+              isLoading={loading.fishAudio}
             >
               테스트
             </Button>
           </div>
-          {testResults.kie && (
-            <div className={`flex items-center gap-2 text-sm ${testResults.kie.status === 'success' ? 'text-success' : 'text-error'}`}>
-              {testResults.kie.status === 'success' ? (
+          {testResults.fishAudio && (
+            <div className={`flex items-center gap-2 text-sm ${testResults.fishAudio.status === 'success' ? 'text-success' : 'text-error'}`}>
+              {testResults.fishAudio.status === 'success' ? (
                 <CheckCircle2 className="w-4 h-4" />
               ) : (
                 <XCircle className="w-4 h-4" />
               )}
-              {testResults.kie.message}
+              {testResults.fishAudio.message}
             </div>
           )}
+          
+          {/* FishAudio 보이스 목록 */}
+          <div className="border-t border-border pt-4">
+            <h4 className="text-sm font-medium mb-3 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                등록된 보이스 ({(settings.fishAudioVoices || []).length}개)
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowAddFishVoiceForm(!showAddFishVoiceForm)}
+                className="h-7 text-xs"
+                icon={<Star className="w-3 h-3" />}
+              >
+                {showAddFishVoiceForm ? '취소' : '보이스 추가'}
+              </Button>
+            </h4>
+
+            {/* 새 보이스 추가 폼 */}
+            {showAddFishVoiceForm && (
+              <div className="mb-4 p-3 bg-secondary/10 rounded-lg border border-secondary/20 space-y-3">
+                <Input
+                  label="Reference ID"
+                  value={newFishVoiceId}
+                  onChange={(e) => setNewFishVoiceId(e.target.value)}
+                  placeholder="FishAudio Reference ID 입력"
+                  className="bg-background"
+                />
+                <Input
+                  label="이름 (별칭)"
+                  value={newFishVoiceName}
+                  onChange={(e) => setNewFishVoiceName(e.target.value)}
+                  placeholder="예: 나만의 보이스"
+                  className="bg-background"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full"
+                  disabled={!newFishVoiceId || !newFishVoiceName}
+                  onClick={() => {
+                    if (newFishVoiceId && newFishVoiceName) {
+                      const newVoice = {
+                        id: newFishVoiceId.trim(),
+                        name: newFishVoiceName.trim(),
+                        description: '사용자 추가 보이스',
+                      };
+                      updateSettings({
+                        fishAudioVoices: [...(settings.fishAudioVoices || []), newVoice],
+                      });
+                      setNewFishVoiceId('');
+                      setNewFishVoiceName('');
+                      setShowAddFishVoiceForm(false);
+                    }
+                  }}
+                >
+                  보이스 추가하기
+                </Button>
+              </div>
+            )}
+
+            <div className="space-y-2">
+              {(settings.fishAudioVoices || []).map((voice) => (
+                <div
+                  key={voice.id}
+                  className="flex items-center justify-between p-2 bg-card-hover rounded-lg group"
+                >
+                  <div className="flex items-center gap-2 overflow-hidden">
+                    <span className="text-lg flex-shrink-0">🐟</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm truncate">{voice.name}</span>
+                        {voice.description && (
+                          <span className="text-xs text-muted flex-shrink-0">({voice.description})</span>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted font-mono truncate max-w-[200px]">{voice.id}</p>
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost" 
+                    size="sm"
+                    className="opacity-0 group-hover:opacity-100 text-error hover:bg-error/10 h-7 w-7 p-0"
+                    onClick={() => {
+                        if (confirm(`'${voice.name}' 보이스를 삭제하시겠습니까?`)) {
+                            updateSettings({
+                                fishAudioVoices: settings.fishAudioVoices.filter(v => v.id !== voice.id)
+                            });
+                        }
+                    }}
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <p className="text-xs text-muted">
-            KIE 이미지 생성 API 키를 입력하세요. 2D 애니, 3D 애니, 실사 스타일의 이미지를 생성할 수 있습니다.
+            FishAudio는 한국어를 포함한 다국어 고품질 TTS를 제공합니다.
+            <a
+              href="https://fish.audio"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-primary ml-1 hover:underline"
+            >
+              API 키 발급 →
+            </a>
           </p>
+        </div>
+      </Card>
+
+      {/* Google TTS (New) */}
+      <Card className="border-blue-500/30 bg-blue-500/5">
+        <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+          <Volume2 className="w-5 h-5 text-blue-500" />
+          Google TTS (Cloud Text-to-Speech)
+        </h3>
+        <div className="space-y-4">
+             <div className="p-3 bg-blue-500/10 rounded-lg text-sm text-blue-700 mb-2">
+                <strong>💡 팁:</strong> 별도의 키 없이 위의 <strong>Gemini API 키</strong>를 그대로 사용할 수 있습니다.
+             </div>
+             
+             <div className="flex gap-2">
+                <div className="flex-1 relative">
+                    <Input
+                        type={showKeys.googleTts ? 'text' : 'password'}
+                        value={settings.googleTtsApiKey || ''}
+                        onChange={(e) => updateSettings({ googleTtsApiKey: e.target.value })}
+                        placeholder="입력하지 않으면 Gemini API 키를 자동으로 사용합니다"
+                        icon={<Key className="w-4 h-4" />}
+                    />
+                    <button
+                        onClick={() => toggleShowKey('googleTts')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-foreground"
+                    >
+                        {showKeys.googleTts ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                </div>
+                <Button
+                    variant="ghost"
+                    onClick={async () => {
+                         // Use specific TTS key OR fallback to Gemini key
+                         const keyToUse = settings.googleTtsApiKey || settings.geminiApiKey;
+                         if (!keyToUse) {
+                             alert('Gemini API 키 또는 Google TTS API 키가 필요합니다.');
+                             return;
+                         }
+
+                         setLoading(prev => ({ ...prev, googleTts: true }));
+                         try {
+                             const res = await fetch(`https://texttospeech.googleapis.com/v1/text:synthesize?key=${keyToUse}`, {
+                                 method: 'POST',
+                                 body: JSON.stringify({
+                                     input: { text: "테스트" },
+                                     voice: { languageCode: "ko-KR", name: "ko-KR-Neural2-A" },
+                                     audioConfig: { audioEncoding: "MP3" }
+                                 })
+                             });
+                             const data = await res.json();
+                             if(res.ok && data.audioContent) {
+                                 const audio = new Audio(`data:audio/mp3;base64,${data.audioContent}`);
+                                 audio.play();
+                                 setTestResults(prev => ({...prev, googleTts: { status: 'success', message: '성공! (Gemini 키 사용)' }}));
+                             } else {
+                                 setTestResults(prev => ({...prev, googleTts: { status: 'error', message: data.error?.message || '실패: Cloud TTS API가 활성화되어 있나요?' }}));
+                             }
+                         } catch(e: any) {
+                             setTestResults(prev => ({...prev, googleTts: { status: 'error', message: e.message }}));
+                         }
+                         setLoading(prev => ({ ...prev, googleTts: false }));
+                    }}
+                    disabled={(!settings.googleTtsApiKey && !settings.geminiApiKey) || loading.googleTts}
+                    isLoading={loading.googleTts}
+                >
+                    테스트
+                </Button>
+            </div>
+             {testResults.googleTts && (
+              <div className={`flex flex-col gap-2 p-3 rounded-lg text-sm ${testResults.googleTts.status === 'success' ? 'bg-success/10 text-success border border-success/20' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
+                <div className="flex items-center gap-2 font-medium">
+                  {testResults.googleTts.status === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                  {testResults.googleTts.status === 'success' ? '테스트 성공!' : '테스트 실패'}
+                </div>
+                
+                <div className="text-xs break-all">
+                  {testResults.googleTts.message}
+                </div>
+
+                {/* API 미활성화 에러 감지 및 버튼 표시 */}
+                {testResults.googleTts.status === 'error' && testResults.googleTts.message?.includes('console.developers.google.com') && (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    className="self-start mt-1 bg-error/10 hover:bg-error/20 text-error border-error/20"
+                    onClick={() => {
+                      const match = testResults.googleTts?.message?.match(/https:\/\/console\.developers\.google\.com[^\s]+/);
+                      if (match) window.open(match[0], '_blank');
+                    }}
+                  >
+                    🚀 클릭하여 API 활성화하기 (구글 콘솔)
+                  </Button>
+                )}
+              </div>
+            )}
+            
+            {/* Google Favorites Management */}
+            <div className="pt-4 border-t border-border mt-4">
+              <h4 className="text-sm font-medium text-foreground mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Star className="w-4 h-4 text-yellow-500 fill-current" />
+                  즐겨찾는 구글 성우 선택
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={fetchGoogleAllVoices}
+                  disabled={isLoadingGoogleVoices}
+                  className="h-6 text-xs"
+                  icon={<RefreshCw className={`w-3 h-3 ${isLoadingGoogleVoices ? 'animate-spin' : ''}`} />}
+                >
+                  전체 목록 불러오기
+                </Button>
+              </h4>
+
+              {/* Favorites List (Existing) */}
+              {(settings.googleVoices && settings.googleVoices.length > 0) && (
+                <div className="flex flex-wrap gap-2 mb-4 p-3 bg-secondary/10 rounded-lg">
+                  {settings.googleVoices.map((voice) => (
+                    <Badge 
+                      key={voice.id} 
+                      variant="secondary"
+                      className="flex items-center gap-1 pr-1 bg-background border-border"
+                    >
+                      <span>{voice.name}</span>
+                      <button
+                        onClick={() => {
+                          updateSettings({
+                            googleVoices: settings.googleVoices.filter(v => v.id !== voice.id)
+                          });
+                        }}
+                        className="ml-1 p-0.5 hover:bg-destructive/10 rounded-full text-muted hover:text-destructive transition-colors"
+                        title="즐겨찾기 제거"
+                      >
+                        <XCircle className="w-3 h-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+
+              {/* Full Voice List */}
+              {googleAllVoices.length > 0 ? (
+                <div className="space-y-1 max-h-60 overflow-y-auto pr-2 border border-border rounded-md p-2 bg-card">
+                  {googleAllVoices.map((voice) => {
+                     // Check if favorite
+                     const isFav = settings.googleVoices?.some(v => v.id === voice.name);
+                     
+                     return (
+                      <div 
+                        key={voice.name} 
+                        className={`flex items-center justify-between p-2 rounded-md transition-colors ${
+                          isFav ? 'bg-primary/10 border border-primary/20' : 'hover:bg-secondary/20 border border-transparent'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                            {isFav ? (
+                                <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                            ) : (
+                                <Volume2 className="w-4 h-4 text-muted" />
+                            )}
+                            <div className="flex flex-col">
+                                <span className={`text-sm ${isFav ? 'font-semibold text-primary' : 'font-medium'}`}>
+                                    {voice.name.replace('ko-KR-', '')}
+                                </span>
+                                <span className="text-xs text-muted flex items-center gap-1">
+                                    {voice.ssmlGender} 
+                                    <span className="opacity-50">|</span> 
+                                    {voice.name}
+                                </span>
+                            </div>
+                        </div>
+                        <Button
+                          variant={isFav ? "ghost" : "secondary"}
+                          size="sm"
+                          className={isFav ? "text-destructive hover:text-destructive hover:bg-destructive/10 h-7" : "h-7"}
+                          onClick={() => {
+                            const newFavs = settings.googleVoices || [];
+                            if (isFav) {
+                                // Remove
+                                updateSettings({
+                                    googleVoices: newFavs.filter(v => v.id !== voice.name)
+                                });
+                            } else {
+                                // Add
+                                const simpleName = voice.name.replace('ko-KR-', '');
+                                updateSettings({
+                                    googleVoices: [...newFavs, { 
+                                        id: voice.name, 
+                                        name: `${simpleName} (${voice.ssmlGender})` 
+                                    }]
+                                });
+                            }
+                          }}
+                        >
+                          {isFav ? '제거' : '추가'}
+                        </Button>
+                      </div>
+                     );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-6 text-muted border border-dashed border-border rounded-md">
+                    {isLoadingGoogleVoices ? (
+                        <div className="flex flex-col items-center gap-2">
+                            <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                            <span className="text-xs">구글 성우 목록을 불러오는 중입니다...</span>
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center gap-2 cursor-pointer hover:text-primary transition-colors" onClick={fetchGoogleAllVoices}>
+                            <RefreshCw className="w-8 h-8 opacity-50" />
+                            <span className="text-xs">버튼을 눌러 전체 성우 목록을 불러오세요</span>
+                        </div>
+                    )}
+                </div>
+              )}
+            </div>
+            
+            <p className="text-xs text-muted">
+                Google Cloud Text-to-Speech API를 사용합니다. 
+                (Gemini 키를 사용하는 경우에도, 해당 Google Cloud 프로젝트에서 <a href="https://console.cloud.google.com/apis/library/texttospeech.googleapis.com" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-bold">Cloud Text-to-Speech API</a>가 "사용 설정" 되어 있어야 합니다.)
+            </p>
         </div>
       </Card>
 
