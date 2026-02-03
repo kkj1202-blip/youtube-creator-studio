@@ -73,14 +73,13 @@ export async function POST(req: NextRequest) {
     const videoWidth = isShorts ? 1080 : 1920;
     const videoHeight = isShorts ? 1920 : 1080;
 
-    // Create the Vrew Project Zip
-    // ✅ 실제 Vrew 파일 분석 결과: media/ 경로 사용 (folder() 사용 안 함!)
-    const projectZip = new JSZip();
-
     // 1. Prepare Assets - 병렬 처리로 최적화
     // Map으로 빠른 lookup을 위해 저장
     const imageAssetMap = new Map<number, any>();
     const audioAssetMap = new Map<number, any>();
+    
+    // 미디어 파일 버퍼 저장 (나중에 ZIP에 추가)
+    const mediaFiles = new Map<string, Buffer>();
 
     // 동시에 10개씩 병렬 처리 (메모리와 네트워크 밸런스)
     const BATCH_SIZE = 10;
@@ -124,8 +123,8 @@ export async function POST(req: NextRequest) {
                     // 크기 읽기 실패해도 계속 진행
                 }
                 
-                // ✅ 실제 Vrew: media/ 경로에 저장 (folder() 사용 안 함!)
-                projectZip.file(`media/${imageId}.png`, imgBuffer);
+                // 미디어 파일 버퍼에 저장 (나중에 ZIP에 추가)
+                mediaFiles.set(`media/${imageId}.png`, imgBuffer);
                 
                 imageAssetMap.set(index, {
                     "version": 1,
@@ -174,8 +173,8 @@ export async function POST(req: NextRequest) {
             if (audioBuffer) {
                 const duration = Number(scene.audioDuration) || Number(scene.imageDuration) || 5;
                 
-                // ✅ 실제 Vrew: media/ 경로에 저장 (folder() 사용 안 함!)
-                projectZip.file(`media/${audioId}.mp3`, audioBuffer);
+                // 미디어 파일 버퍼에 저장 (나중에 ZIP에 추가)
+                mediaFiles.set(`media/${audioId}.mp3`, audioBuffer);
                 
                 audioAssetMap.set(index, {
                     "version": 1,
@@ -506,23 +505,15 @@ export async function POST(req: NextRequest) {
 
     console.log(`[export-vrew] Building ZIP file...`);
     
-    // 빈 media/ 폴더 제거 (JSZip이 자동 생성한 것)
-    if (projectZip.files['media/'] && !projectZip.files['media/'].dir === false) {
-        delete projectZip.files['media/'];
-    }
-    
-    // 새 ZIP 생성 - project.json을 먼저 추가하고 media 파일들 추가
+    // ZIP 생성 - project.json 먼저, 그 다음 media 파일들
     const finalZip = new JSZip();
     
-    // 1. project.json 먼저 (압축된 JSON)
+    // 1. project.json 먼저 추가 (압축된 JSON, 줄바꿈 없이)
     finalZip.file("project.json", JSON.stringify(projectJson));
     
-    // 2. media 파일들 추가 (폴더 엔트리 없이 파일만)
-    for (const [name, file] of Object.entries(projectZip.files)) {
-        if (name !== 'media/' && name.startsWith('media/') && !file.dir) {
-            const content = await (file as any).async('uint8array');
-            finalZip.file(name, content);
-        }
+    // 2. media 파일들 추가 (폴더 엔트리 없이 파일만!)
+    for (const [filename, buffer] of mediaFiles.entries()) {
+        finalZip.file(filename, buffer);
     }
     
     // ZIP 생성 - STORE 방식 (실제 Vrew 파일과 동일)
