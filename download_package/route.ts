@@ -23,9 +23,49 @@ function generateUUID(): string {
     });
 }
 
+// 병렬 처리를 위한 배치 함수 (동시에 최대 N개씩 처리)
+async function processInBatches<T, R>(
+    items: T[],
+    batchSize: number,
+    processor: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+    const results: R[] = [];
+    for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+            batch.map((item, idx) => processor(item, i + idx))
+        );
+        results.push(...batchResults);
+    }
+    return results;
+}
+
+// 이미지/오디오 fetch with timeout
+async function fetchWithTimeout(url: string, timeoutMs: number = 30000): Promise<ArrayBuffer | null> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    
+    try {
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (res.ok) {
+            return await res.arrayBuffer();
+        }
+        return null;
+    } catch (err) {
+        clearTimeout(timeoutId);
+        console.warn(`Fetch timeout or error for ${url}:`, err);
+        return null;
+    }
+}
+
+export const maxDuration = 300; // Vercel 함수 타임아웃 5분으로 설정
+
 export async function POST(req: NextRequest) {
   try {
     const { scenes, aspectRatio } = await req.json();
+    
+    console.log(`[export-vrew] Starting export for ${scenes.length} scenes`);
     
     // Aspect Ratio Logic
     const isShorts = aspectRatio === '9:16';
@@ -37,128 +77,132 @@ export async function POST(req: NextRequest) {
     const projectZip = new JSZip();
     const mediaFolder = projectZip.folder("media");
 
-    // 1. Prepare Assets (Images & Audio)
-    const allAssets: any[] = [];
-    
-    // Process scenes sequentially to maintain order
-    for (let index = 0; index < scenes.length; index++) {
-      const scene = scenes[index];
-      
-      // -- Image Processing --
-      if (scene.imageUrl) {
-          const imageId = generateUUID();
-          let imgBuffer: Buffer | null = null;
+    // 1. Prepare Assets - 병렬 처리로 최적화
+    // Map으로 빠른 lookup을 위해 저장
+    const imageAssetMap = new Map<number, any>();
+    const audioAssetMap = new Map<number, any>();
 
-          try {
+    // 동시에 10개씩 병렬 처리 (메모리와 네트워크 밸런스)
+    const BATCH_SIZE = 10;
+    
+    console.log(`[export-vrew] Processing images...`);
+    
+    // 이미지 병렬 처리
+    await processInBatches(scenes, BATCH_SIZE, async (scene: any, index: number) => {
+        if (!scene.imageUrl) return;
+        
+        const imageId = generateUUID();
+        let imgBuffer: Buffer | null = null;
+
+        try {
             if (scene.imageUrl.startsWith('data:')) {
-              const base64Data = scene.imageUrl.split(',')[1];
-              imgBuffer = Buffer.from(base64Data, 'base64');
+                const base64Data = scene.imageUrl.split(',')[1];
+                imgBuffer = Buffer.from(base64Data, 'base64');
             } else if (scene.imageUrl.startsWith('http')) {
-              const res = await fetch(scene.imageUrl);
-              if (res.ok) {
-                const ab = await res.arrayBuffer();
-                imgBuffer = Buffer.from(ab);
-              }
+                const ab = await fetchWithTimeout(scene.imageUrl);
+                if (ab) {
+                    imgBuffer = Buffer.from(ab);
+                }
             } else {
-              // Local File
-              let localPath = decodeURIComponent(scene.imageUrl.replace(/^file:\/\/\/?/, ''));
-              localPath = path.normalize(localPath);
-              if (fs.existsSync(localPath)) {
-                imgBuffer = await fs.promises.readFile(localPath);
-              }
+                // Local File
+                let localPath = decodeURIComponent(scene.imageUrl.replace(/^file:\/\/\/?/, ''));
+                localPath = path.normalize(localPath);
+                if (fs.existsSync(localPath)) {
+                    imgBuffer = await fs.promises.readFile(localPath);
+                }
             }
 
             if (imgBuffer) {
-              const fileSize = imgBuffer.length;
-              let imgWidth = 1920;
-              let imgHeight = 1080;
-              try {
-                const dims = sizeOf(imgBuffer);
-                imgWidth = dims.width || 1920;
-                imgHeight = dims.height || 1080;
-              } catch (e) {
-                console.warn('Could not read image dimensions:', e);
-              }
-              
-              // Store in media/ folder like real Vrew
-              mediaFolder?.file(`${imageId}.png`, imgBuffer);
-              
-              allAssets.push({
-                "version": 1,
-                "mediaId": imageId,
-                "sourceOrigin": "USER",
-                "fileSize": fileSize,
-                "name": `${imageId}.png`,
-                "type": "Image",
-                "isTransparent": false,
-                "fileLocation": "IN_MEMORY",
-                "_sceneIndex": index,
-                "_dims": { width: imgWidth, height: imgHeight }
-              });
+                const fileSize = imgBuffer.length;
+                let imgWidth = 1920;
+                let imgHeight = 1080;
+                try {
+                    const dims = sizeOf(imgBuffer);
+                    imgWidth = dims.width || 1920;
+                    imgHeight = dims.height || 1080;
+                } catch (e) {
+                    // 크기 읽기 실패해도 계속 진행
+                }
+                
+                // Store in media/ folder
+                mediaFolder?.file(`${imageId}.png`, imgBuffer);
+                
+                imageAssetMap.set(index, {
+                    "version": 1,
+                    "mediaId": imageId,
+                    "sourceOrigin": "USER",
+                    "fileSize": fileSize,
+                    "name": `${imageId}.png`,
+                    "type": "Image",
+                    "isTransparent": false,
+                    "fileLocation": "IN_MEMORY",
+                    "_dims": { width: imgWidth, height: imgHeight }
+                });
             }
-          } catch (err) {
+        } catch (err) {
             console.error(`Error processing image for scene ${index}:`, err);
-          }
-      }
+        }
+    });
+    
+    console.log(`[export-vrew] Processed ${imageAssetMap.size} images`);
+    console.log(`[export-vrew] Processing audio...`);
 
-      // -- Audio Processing --
-      if (scene.audioUrl) {
-          const audioId = generateShortId(10);
-          let audioBuffer: Buffer | null = null;
-          
-          try {
-              if (scene.audioUrl.startsWith('http')) {
-                  const res = await fetch(scene.audioUrl);
-                  if (res.ok) {
-                      const ab = await res.arrayBuffer();
-                      audioBuffer = Buffer.from(ab);
-                  }
-              } else if (scene.audioUrl.startsWith('data:')) {
-                  const base64Data = scene.audioUrl.split(',')[1];
-                  audioBuffer = Buffer.from(base64Data, 'base64');
-              } else {
-                  let localPath = decodeURIComponent(scene.audioUrl.replace(/^file:\/\/\/?/, ''));
-                  localPath = path.normalize(localPath);
-                  if (fs.existsSync(localPath)) {
-                      audioBuffer = await fs.promises.readFile(localPath);
-                  }
-              }
+    // 오디오 병렬 처리
+    await processInBatches(scenes, BATCH_SIZE, async (scene: any, index: number) => {
+        if (!scene.audioUrl) return;
+        
+        const audioId = generateShortId(10);
+        let audioBuffer: Buffer | null = null;
+        
+        try {
+            if (scene.audioUrl.startsWith('http')) {
+                const ab = await fetchWithTimeout(scene.audioUrl);
+                if (ab) {
+                    audioBuffer = Buffer.from(ab);
+                }
+            } else if (scene.audioUrl.startsWith('data:')) {
+                const base64Data = scene.audioUrl.split(',')[1];
+                audioBuffer = Buffer.from(base64Data, 'base64');
+            } else {
+                let localPath = decodeURIComponent(scene.audioUrl.replace(/^file:\/\/\/?/, ''));
+                localPath = path.normalize(localPath);
+                if (fs.existsSync(localPath)) {
+                    audioBuffer = await fs.promises.readFile(localPath);
+                }
+            }
 
-              if (audioBuffer) {
-                  // Use audioDuration if available, otherwise imageDuration
-                  const duration = Number(scene.audioDuration) || Number(scene.imageDuration) || 5;
-                  
-                  // Store in media/ folder like real Vrew
-                  mediaFolder?.file(`${audioId}.mp3`, audioBuffer);
-                  
-                  allAssets.push({
-                      "version": 1,
-                      "mediaId": audioId,
-                      "sourceOrigin": "VREW_RESOURCE",
-                      "fileSize": audioBuffer.length,
-                      "name": `${scene.script?.substring(0, 30) || audioId}.mp3`,
-                      "type": "AVMedia",
-                      "videoAudioMetaInfo": {
-                          "duration": duration,
-                          "audioInfo": { 
-                              "sampleRate": 24000, 
-                              "codec": "mp3", 
-                              "channelCount": 1 
-                          }
-                      },
-                      "sourceFileType": "TTS",
-                      "fileLocation": "IN_MEMORY",
-                      "_sceneIndex": index,
-                      "_speechText": scene.script || "",
-                      "_duration": duration
-                  });
-              }
-
-          } catch (err) {
-              console.error(`Error processing audio for scene ${index}:`, err);
-          }
-      }
-    }
+            if (audioBuffer) {
+                const duration = Number(scene.audioDuration) || Number(scene.imageDuration) || 5;
+                
+                mediaFolder?.file(`${audioId}.mp3`, audioBuffer);
+                
+                audioAssetMap.set(index, {
+                    "version": 1,
+                    "mediaId": audioId,
+                    "sourceOrigin": "VREW_RESOURCE",
+                    "fileSize": audioBuffer.length,
+                    "name": `${(scene.script || '').substring(0, 30) || audioId}.mp3`,
+                    "type": "AVMedia",
+                    "videoAudioMetaInfo": {
+                        "duration": duration,
+                        "audioInfo": { 
+                            "sampleRate": 24000, 
+                            "codec": "mp3", 
+                            "channelCount": 1 
+                        }
+                    },
+                    "sourceFileType": "TTS",
+                    "fileLocation": "IN_MEMORY",
+                    "_speechText": scene.script || "",
+                    "_duration": duration
+                });
+            }
+        } catch (err) {
+            console.error(`Error processing audio for scene ${index}:`, err);
+        }
+    });
+    
+    console.log(`[export-vrew] Processed ${audioAssetMap.size} audio files`);
 
     // 2. Build project.json structure
     const scenesPayload: any[] = [];
@@ -176,14 +220,16 @@ export async function POST(req: NextRequest) {
       "emotion": "calm"
     };
 
+    // 씬 데이터 구성 (동기 처리 - 빠름)
     scenes.forEach((scene: any, index: number) => {
       const sceneId = generateShortId(10);
       const clipId = generateShortId(10);
       
       const script = String(scene.script || "");
       
-      const matchedImage = allAssets.find(a => a._sceneIndex === index && a.type === "Image");
-      const matchedAudio = allAssets.find(a => a._sceneIndex === index && a.type === "AVMedia");
+      // Map에서 O(1)로 조회
+      const matchedImage = imageAssetMap.get(index);
+      const matchedAudio = audioAssetMap.get(index);
       
       // Use audio duration if available
       const duration = matchedAudio?._duration || Number(scene.audioDuration) || Number(scene.imageDuration) || 5;
@@ -216,27 +262,21 @@ export async function POST(req: NextRequest) {
           };
       }
 
-      // Build words array - Vrew uses specific word structure
+      // Build words array
       const words: any[] = [];
-
-      // Split script into words for Vrew subtitle sync
       const rawWords = script.split(/\s+/).filter((w: string) => w.length > 0);
       const totalWords = rawWords.length || 1;
       
-      // Calculate timing - simple even distribution
       let currentTime = 0;
-      const wordDuration = duration / (totalWords + 1); // +1 for spacing
-      
-      // mediaId는 오디오가 있으면 오디오 ID, 없으면 null
+      const wordDuration = duration / (totalWords + 1);
       const audioMediaId = matchedAudio?.mediaId || null;
       
       rawWords.forEach((wordText: string, i: number) => {
-          // Add word (type 0)
           const wordEntry: any = {
               "id": generateShortId(10),
               "text": wordText,
               "startTime": currentTime,
-              "duration": wordDuration * 0.8, // 80% for word
+              "duration": wordDuration * 0.8,
               "aligned": false,
               "type": 0,
               "originalDuration": wordDuration * 0.8,
@@ -248,22 +288,19 @@ export async function POST(req: NextRequest) {
               "playbackRate": 1
           };
           
-          // 오디오가 있을 때만 mediaId 추가
           if (audioMediaId) {
               wordEntry.mediaId = audioMediaId;
           }
           
           words.push(wordEntry);
-          
           currentTime += wordDuration * 0.8;
           
-          // Add blank/pause between words (type 1) - except for last word
           if (i < rawWords.length - 1) {
               const blankEntry: any = {
                   "id": generateShortId(10),
                   "text": "",
                   "startTime": currentTime,
-                  "duration": wordDuration * 0.2, // 20% for pause
+                  "duration": wordDuration * 0.2,
                   "aligned": false,
                   "type": 1,
                   "originalDuration": wordDuration * 0.2,
@@ -284,7 +321,7 @@ export async function POST(req: NextRequest) {
           }
       });
 
-      // Add End Marker (type 2)
+      // End Marker
       const endMarker: any = {
           "id": generateShortId(10),
           "text": "",
@@ -307,7 +344,7 @@ export async function POST(req: NextRequest) {
       
       words.push(endMarker);
       
-      // Add to ttsClipInfosMap only if audio exists
+      // ttsClipInfosMap
       if (matchedAudio) {
           ttsClipInfosMap[matchedAudio.mediaId] = {
               "duration": duration,
@@ -324,7 +361,7 @@ export async function POST(req: NextRequest) {
           };
       }
 
-      // Build scene payload - matching real Vrew structure
+      // Scene payload
       scenesPayload.push({
         "id": sceneId,
         "clips": [
@@ -333,58 +370,51 @@ export async function POST(req: NextRequest) {
               "words": words,
               "captionMode": "MANUAL",
               "captions": [
-                  { 
-                    "text": [ { "insert": script + "\n" } ]
-                  },
-                  {
-                    "text": [ { "insert": "\n" } ]
-                  }
+                  { "text": [ { "insert": script + "\n" } ] },
+                  { "text": [ { "insert": "\n" } ] }
               ],
               "assetIds": assetIds, 
-              "dirty": { 
-                  "blankDeleted": false, 
-                  "caption": false, 
-                  "video": false 
-              },
-              "translationModified": {
-                  "result": false,
-                  "source": false
-              },
+              "dirty": { "blankDeleted": false, "caption": false, "video": false },
+              "translationModified": { "result": false, "source": false },
               "audioIds": []
            }
         ],
         "name": "",
-        "dirty": { 
-            "video": false 
-        }
+        "dirty": { "video": false }
       });
     });
 
-    // Build files array - only include necessary fields for IN_MEMORY
-    const filesPayload = allAssets.map(asset => {
-        const baseFile: any = {
+    // Build files array from Maps
+    const filesPayload: any[] = [];
+    
+    imageAssetMap.forEach((asset) => {
+        filesPayload.push({
             "version": 1,
             "mediaId": asset.mediaId,
             "sourceOrigin": asset.sourceOrigin,
             "fileSize": asset.fileSize,
             "name": asset.name,
             "type": asset.type,
+            "isTransparent": false,
             "fileLocation": "IN_MEMORY"
-        };
-        
-        if (asset.type === "Image") {
-            baseFile.isTransparent = false;
-        }
-        
-        if (asset.type === "AVMedia") {
-            baseFile.videoAudioMetaInfo = asset.videoAudioMetaInfo;
-            baseFile.sourceFileType = asset.sourceFileType;
-        }
-        
-        return baseFile;
+        });
+    });
+    
+    audioAssetMap.forEach((asset) => {
+        filesPayload.push({
+            "version": 1,
+            "mediaId": asset.mediaId,
+            "sourceOrigin": asset.sourceOrigin,
+            "fileSize": asset.fileSize,
+            "name": asset.name,
+            "type": asset.type,
+            "videoAudioMetaInfo": asset.videoAudioMetaInfo,
+            "sourceFileType": asset.sourceFileType,
+            "fileLocation": "IN_MEMORY"
+        });
     });
 
-    // Format date like real Vrew: "2026-1-1 19:18:49"
+    // Format date
     const now = new Date();
     const analyzeDate = `${now.getFullYear()}-${now.getMonth() + 1}-${now.getDate()} ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
 
@@ -446,16 +476,8 @@ export async function POST(req: NextRequest) {
           "wordCorrectionCount": { "0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0, "7": 0 },
           "projectStartMode": "ai_voice",
           "saveInfo": {
-              "created": { 
-                  "version": "3.5.4", 
-                  "date": now.toISOString().replace('Z', '+09:00'), 
-                  "stage": "release" 
-              },
-              "updated": { 
-                  "version": "3.5.4", 
-                  "date": now.toISOString().replace('Z', '+09:00'), 
-                  "stage": "release" 
-              },
+              "created": { "version": "3.5.4", "date": now.toISOString().replace('Z', '+09:00'), "stage": "release" },
+              "updated": { "version": "3.5.4", "date": now.toISOString().replace('Z', '+09:00'), "stage": "release" },
               "loadCount": 0, 
               "saveCount": 1
           },
@@ -465,21 +487,24 @@ export async function POST(req: NextRequest) {
           "videoRemixInfos": {},
           "isAIWritingUsed": false,
           "clientLinebreakExecuteCount": 0,
-          "agentStats": { 
-              "isEdited": false, 
-              "requestCount": 0, 
-              "responseCount": 0, 
-              "toolCallCount": 0, 
-              "toolErrorCount": 0 
-          }
+          "agentStats": { "isEdited": false, "requestCount": 0, "responseCount": 0, "toolCallCount": 0, "toolErrorCount": 0 }
       },
       "lastTTSSettings": lastTTSSettings
     };
 
-    // Write project.json at root level
+    console.log(`[export-vrew] Building ZIP file...`);
+    
+    // Write project.json
     projectZip.file("project.json", JSON.stringify(projectJson, null, 2));
     
-    const vrewContent = await projectZip.generateAsync({ type: 'uint8array' });
+    // ZIP 생성 최적화 옵션
+    const vrewContent = await projectZip.generateAsync({ 
+        type: 'uint8array',
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 } // 밸런스 있는 압축 레벨
+    });
+    
+    console.log(`[export-vrew] Export complete! File size: ${(vrewContent.length / 1024 / 1024).toFixed(2)}MB`);
 
     return new NextResponse(vrewContent as any, {
       status: 200,
