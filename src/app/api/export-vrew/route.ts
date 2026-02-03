@@ -516,6 +516,11 @@ export async function POST(req: NextRequest) {
         finalZip.file(filename, buffer);
     }
     
+    // 3. JSZip이 자동 생성한 media/ 폴더 엔트리 제거!
+    if (finalZip.files['media/']) {
+        delete finalZip.files['media/'];
+    }
+    
     // ZIP 생성 - STORE 방식 (실제 Vrew 파일과 동일)
     const vrewContent = await finalZip.generateAsync({ 
         type: 'uint8array',
