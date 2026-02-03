@@ -334,7 +334,53 @@ export async function POST(req: NextRequest) {
               "mediaId": audioMediaId
           });
       } else {
-          // 오디오 없을 때: 최소한 End Marker는 필요할 수 있음
+          // 오디오 없을 때: 텍스트 words + End Marker 추가 (mediaId 없이)
+          const rawWords = script.split(/\s+/).filter((w: string) => w.length > 0);
+          const totalWords = rawWords.length || 1;
+          
+          let currentTime = 0;
+          const wordDuration = duration / (totalWords + 1);
+          
+          rawWords.forEach((wordText: string, i: number) => {
+              words.push({
+                  "id": generateShortId(10),
+                  "text": wordText,
+                  "startTime": currentTime,
+                  "duration": wordDuration * 0.8,
+                  "aligned": false,
+                  "type": 0,
+                  "originalDuration": wordDuration * 0.8,
+                  "originalStartTime": currentTime,
+                  "truncatedWords": [],
+                  "autoControl": false,
+                  "audioIds": [],
+                  "assetIds": [],
+                  "playbackRate": 1
+                  // mediaId 없음 (오디오 없음)
+              });
+              currentTime += wordDuration * 0.8;
+              
+              if (i < rawWords.length - 1) {
+                  words.push({
+                      "id": generateShortId(10),
+                      "text": "",
+                      "startTime": currentTime,
+                      "duration": wordDuration * 0.2,
+                      "aligned": false,
+                      "type": 1,
+                      "originalDuration": wordDuration * 0.2,
+                      "originalStartTime": currentTime,
+                      "truncatedWords": [],
+                      "autoControl": false,
+                      "audioIds": [],
+                      "assetIds": [],
+                      "playbackRate": 1
+                  });
+                  currentTime += wordDuration * 0.2;
+              }
+          });
+          
+          // End Marker
           words.push({
               "id": generateShortId(10),
               "text": "",
