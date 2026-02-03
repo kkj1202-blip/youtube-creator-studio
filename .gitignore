@@ -49,3 +49,7 @@ __pycache__
 # Output
 results/
 output/
+"python-core/uploads/" 
+"public/uploads/" 
+"public/downloads/" 
+"*.mp4" 
