@@ -40,43 +40,6 @@ async function processInBatches<T, R>(
     return results;
 }
 
-// 무음 WAV 생성 (Vrew 호환: 32-bit float, 16000Hz, mono)
-function generateSilentWav(durationSec: number = 1): Buffer {
-    const sampleRate = 16000;
-    const numChannels = 1;
-    const bytesPerSample = 4; // 32-bit float
-    const numSamples = Math.floor(sampleRate * durationSec);
-    const dataSize = numSamples * numChannels * bytesPerSample;
-    const fileSize = 44 + dataSize - 8; // RIFF chunk size
-    
-    const buffer = Buffer.alloc(44 + dataSize);
-    let offset = 0;
-    
-    // RIFF header
-    buffer.write('RIFF', offset); offset += 4;
-    buffer.writeUInt32LE(fileSize, offset); offset += 4;
-    buffer.write('WAVE', offset); offset += 4;
-    
-    // fmt chunk
-    buffer.write('fmt ', offset); offset += 4;
-    buffer.writeUInt32LE(16, offset); offset += 4; // chunk size
-    buffer.writeUInt16LE(3, offset); offset += 2;  // format = 3 (IEEE float)
-    buffer.writeUInt16LE(numChannels, offset); offset += 2;
-    buffer.writeUInt32LE(sampleRate, offset); offset += 4;
-    buffer.writeUInt32LE(sampleRate * numChannels * bytesPerSample, offset); offset += 4; // byte rate
-    buffer.writeUInt16LE(numChannels * bytesPerSample, offset); offset += 2; // block align
-    buffer.writeUInt16LE(32, offset); offset += 2; // bits per sample
-    
-    // data chunk
-    buffer.write('data', offset); offset += 4;
-    buffer.writeUInt32LE(dataSize, offset); offset += 4;
-    
-    // Silent samples (all zeros = silence for float)
-    // Already zero-filled by Buffer.alloc
-    
-    return buffer;
-}
-
 // 이미지/오디오 fetch with timeout
 async function fetchWithTimeout(url: string, timeoutMs: number = 30000): Promise<ArrayBuffer | null> {
     const controller = new AbortController();
@@ -110,13 +73,14 @@ export async function POST(req: NextRequest) {
     const videoWidth = isShorts ? 1080 : 1920;
     const videoHeight = isShorts ? 1920 : 1080;
 
+    // Create the Vrew Project Zip
+    // 🔴 지침서 v2: 모든 파일을 ZIP 루트에 배치 (media/ 폴더 금지!)
+    const projectZip = new JSZip();
+
     // 1. Prepare Assets - 병렬 처리로 최적화
     // Map으로 빠른 lookup을 위해 저장
     const imageAssetMap = new Map<number, any>();
     const audioAssetMap = new Map<number, any>();
-    
-    // 미디어 파일 버퍼 저장 (나중에 ZIP에 추가)
-    const mediaFiles = new Map<string, Buffer>();
 
     // 동시에 10개씩 병렬 처리 (메모리와 네트워크 밸런스)
     const BATCH_SIZE = 10;
@@ -125,59 +89,26 @@ export async function POST(req: NextRequest) {
     
     // 이미지 병렬 처리
     await processInBatches(scenes, BATCH_SIZE, async (scene: any, index: number) => {
-        if (!scene.imageUrl) {
-            console.log(`[export-vrew] Scene ${index}: No imageUrl`);
-            return;
-        }
-        
-        console.log(`[export-vrew] Scene ${index}: Processing imageUrl = ${scene.imageUrl.substring(0, 100)}...`);
+        if (!scene.imageUrl) return;
         
         const imageId = generateUUID();
         let imgBuffer: Buffer | null = null;
 
         try {
             if (scene.imageUrl.startsWith('data:')) {
-                // Base64 data URL
                 const base64Data = scene.imageUrl.split(',')[1];
                 imgBuffer = Buffer.from(base64Data, 'base64');
-                console.log(`[export-vrew] Scene ${index}: Loaded from data URL, size=${imgBuffer.length}`);
             } else if (scene.imageUrl.startsWith('http')) {
-                // External HTTP URL
                 const ab = await fetchWithTimeout(scene.imageUrl);
                 if (ab) {
                     imgBuffer = Buffer.from(ab);
-                    console.log(`[export-vrew] Scene ${index}: Loaded from HTTP, size=${imgBuffer.length}`);
                 }
-            } else if (scene.imageUrl.startsWith('/uploads/') || scene.imageUrl.startsWith('/public/')) {
-                // 상대 경로 (/uploads/...) - public 폴더에서 읽기
-                const relativePath = scene.imageUrl.startsWith('/public/') 
-                    ? scene.imageUrl.replace('/public/', '') 
-                    : scene.imageUrl.replace('/', '');
-                const localPath = path.join(process.cwd(), 'public', relativePath);
-                console.log(`[export-vrew] Scene ${index}: Trying local path = ${localPath}`);
-                if (fs.existsSync(localPath)) {
-                    imgBuffer = await fs.promises.readFile(localPath);
-                    console.log(`[export-vrew] Scene ${index}: Loaded from local, size=${imgBuffer.length}`);
-                } else {
-                    console.error(`[export-vrew] Scene ${index}: File not found at ${localPath}`);
-                }
-            } else if (scene.imageUrl.startsWith('file://')) {
-                // file:// URL
+            } else {
+                // Local File
                 let localPath = decodeURIComponent(scene.imageUrl.replace(/^file:\/\/\/?/, ''));
                 localPath = path.normalize(localPath);
                 if (fs.existsSync(localPath)) {
                     imgBuffer = await fs.promises.readFile(localPath);
-                    console.log(`[export-vrew] Scene ${index}: Loaded from file://, size=${imgBuffer.length}`);
-                }
-            } else {
-                // 기타 경로 - public 폴더 기준으로 시도
-                const localPath = path.join(process.cwd(), 'public', scene.imageUrl);
-                console.log(`[export-vrew] Scene ${index}: Trying fallback path = ${localPath}`);
-                if (fs.existsSync(localPath)) {
-                    imgBuffer = await fs.promises.readFile(localPath);
-                    console.log(`[export-vrew] Scene ${index}: Loaded from fallback, size=${imgBuffer.length}`);
-                } else {
-                    console.error(`[export-vrew] Scene ${index}: File not found at ${localPath}`);
                 }
             }
 
@@ -193,8 +124,8 @@ export async function POST(req: NextRequest) {
                     // 크기 읽기 실패해도 계속 진행
                 }
                 
-                // 미디어 파일 버퍼에 저장 (나중에 ZIP에 추가)
-                mediaFiles.set(`media/${imageId}.png`, imgBuffer);
+                // 🔴 지침서 v2: ZIP 루트에 직접 저장 (media/ 폴더 X)
+                projectZip.file(`${imageId}.png`, imgBuffer);
                 
                 imageAssetMap.set(index, {
                     "version": 1,
@@ -243,8 +174,8 @@ export async function POST(req: NextRequest) {
             if (audioBuffer) {
                 const duration = Number(scene.audioDuration) || Number(scene.imageDuration) || 5;
                 
-                // 미디어 파일 버퍼에 저장 (나중에 ZIP에 추가)
-                mediaFiles.set(`media/${audioId}.mp3`, audioBuffer);
+                // 🔴 지침서 v2: ZIP 루트에 직접 저장 (media/ 폴더 X)
+                projectZip.file(`${audioId}.mp3`, audioBuffer);
                 
                 audioAssetMap.set(index, {
                     "version": 1,
@@ -278,7 +209,6 @@ export async function POST(req: NextRequest) {
     const scenesPayload: any[] = [];
     const propsAssets: Record<string, any> = {};
     const ttsClipInfosMap: Record<string, any> = {};
-    const originalClipsMap: Record<string, any[]> = {};
 
     const lastTTSSettings = {
       "pitch": 1, "speed": 0, "volume": 4,
@@ -403,92 +333,8 @@ export async function POST(req: NextRequest) {
               "playbackRate": 1,
               "mediaId": audioMediaId
           });
-      } else {
-          // 오디오 없을 때: 무음 WAV 생성 + type 7 (TTS 대기 상태) - Vrew 호환!
-          const placeholderAudioId = generateShortId(10);
-          const silentWav = generateSilentWav(1); // 1초 무음
-          
-          // 무음 WAV를 media 파일에 추가
-          mediaFiles.set(`media/${placeholderAudioId}.wav`, silentWav);
-          
-          // audioAssetMap에 placeholder 추가
-          audioAssetMap.set(index, {
-              "version": 1,
-              "mediaId": placeholderAudioId,
-              "sourceOrigin": "VREW_RESOURCE",
-              "fileSize": silentWav.length,
-              "name": `${placeholderAudioId}.mp3`, // Vrew는 .mp3로 표시
-              "type": "AVMedia",
-              "videoAudioMetaInfo": {
-                  "duration": 1,
-                  "audioInfo": { 
-                      "sampleRate": 16000, 
-                      "codec": "mp3", 
-                      "channelCount": 1 
-                  }
-              },
-              "sourceFileType": "TTS",
-              "fileLocation": "IN_MEMORY",
-              "_speechText": script,
-              "_duration": 1,
-              "_isPlaceholder": true // 내부 표시용
-          });
-          
-          // type 7 word (TTS 대기 상태) + End marker
-          words.push({
-              "id": generateShortId(10),
-              "text": "",
-              "startTime": 0,
-              "duration": 1,
-              "aligned": false,
-              "type": 7,  // TTS 대기 상태!
-              "originalDuration": 1,
-              "originalStartTime": 0,
-              "truncatedWords": [],
-              "autoControl": false,
-              "mediaId": placeholderAudioId,
-              "audioIds": [],
-              "assetIds": [],
-              "playbackRate": 1
-          });
-          
-          // End Marker
-          words.push({
-              "id": generateShortId(10),
-              "text": "",
-              "startTime": 1,
-              "duration": 0,
-              "aligned": false,
-              "type": 2,
-              "originalDuration": 0,
-              "originalStartTime": 1,
-              "truncatedWords": [],
-              "autoControl": false,
-              "mediaId": placeholderAudioId,
-              "audioIds": [],
-              "assetIds": [],
-              "playbackRate": 1
-          });
-          
-          // ttsClipInfosMap에 TTS 대기 정보 추가 (errorInfo 포함!)
-          ttsClipInfosMap[placeholderAudioId] = {
-              "pitch": 1, 
-              "speed": 0, 
-              "volume": 4,
-              "speaker": lastTTSSettings.speaker,
-              "emotion": "calm",
-              "text": {
-                  "raw": script,
-                  "processed": script,
-                  "textAspectLang": "ko-KR"
-              },
-              "duration": 1,
-              "errorInfo": {
-                  "reason": "NOT_COMPLETED",
-                  "msg": "tts.not_completed"
-              }
-          };
       }
+      // 오디오 없으면 words는 빈 배열 [] 그대로 유지
       
       // ttsClipInfosMap
       if (matchedAudio) {
@@ -507,14 +353,12 @@ export async function POST(req: NextRequest) {
           };
       }
 
-      // originalClipsMap에 클립 ID 추가
-      originalClipsMap[clipId] = [];
-
       // Scene payload
       scenesPayload.push({
         "id": sceneId,
         "clips": [
            {
+              "id": clipId,
               "words": words,
               "captionMode": "MANUAL",
               "captions": [
@@ -524,7 +368,6 @@ export async function POST(req: NextRequest) {
               "assetIds": assetIds, 
               "dirty": { "blankDeleted": false, "caption": false, "video": false },
               "translationModified": { "result": false, "source": false },
-              "id": clipId,  // id를 마지막으로 이동 (실제 Vrew 구조와 동일)
               "audioIds": []
            }
         ],
@@ -614,7 +457,7 @@ export async function POST(req: NextRequest) {
         "pronunciationDisplay": true,
         "projectAudioLanguage": "ko",
         "audioLanguagesMap": {},
-        "originalClipsMap": originalClipsMap,
+        "originalClipsMap": {},
         "ttsClipInfosMap": ttsClipInfosMap
       },
       "comment": `3.5.4\t${now.toISOString()}`,
@@ -643,26 +486,14 @@ export async function POST(req: NextRequest) {
 
     console.log(`[export-vrew] Building ZIP file...`);
     
-    // ZIP 생성 - project.json 먼저, 그 다음 media 파일들
-    const finalZip = new JSZip();
+    // Write project.json
+    projectZip.file("project.json", JSON.stringify(projectJson, null, 2));
     
-    // 1. project.json 먼저 추가 (압축된 JSON, 줄바꿈 없이)
-    finalZip.file("project.json", JSON.stringify(projectJson));
-    
-    // 2. media 파일들 추가 (폴더 엔트리 없이 파일만!)
-    for (const [filename, buffer] of mediaFiles.entries()) {
-        finalZip.file(filename, buffer);
-    }
-    
-    // 3. JSZip이 자동 생성한 media/ 폴더 엔트리 제거!
-    if (finalZip.files['media/']) {
-        delete finalZip.files['media/'];
-    }
-    
-    // ZIP 생성 - STORE 방식 (실제 Vrew 파일과 동일)
-    const vrewContent = await finalZip.generateAsync({ 
+    // ZIP 생성 최적화 옵션
+    const vrewContent = await projectZip.generateAsync({ 
         type: 'uint8array',
-        compression: 'STORE'  // 압축 안 함 (실제 Vrew와 동일)
+        compression: 'DEFLATE',
+        compressionOptions: { level: 6 } // 밸런스 있는 압축 레벨
     });
     
     console.log(`[export-vrew] Export complete! File size: ${(vrewContent.length / 1024 / 1024).toFixed(2)}MB`);

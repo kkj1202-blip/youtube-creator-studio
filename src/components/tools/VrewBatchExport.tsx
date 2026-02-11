@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Modal, Button } from '@/components/ui';
-import { Download, Split } from 'lucide-react';
+import { Download, Split, Info, Volume2, VolumeX } from 'lucide-react';
 import { useStore } from '@/store/useStore';
 import { exportNativeVrewProject } from '@/lib/api/exportService';
 
@@ -13,6 +13,17 @@ export default function VrewBatchExport({ isOpen, onClose }: VrewBatchExportProp
   const { currentProject } = useStore();
   const [splitSize, setSplitSize] = useState<number>(0); // 0 = All
   const [isExporting, setIsExporting] = useState(false);
+
+  // Check audio status for info display
+  const audioStatus = useMemo(() => {
+    if (!currentProject?.scenes.length) return { hasAll: false, missing: 0, total: 0, withAudio: 0 };
+    
+    const total = currentProject.scenes.length;
+    const withAudio = currentProject.scenes.filter(s => s.audioUrl || s.audioGenerated).length;
+    const missing = total - withAudio;
+    
+    return { hasAll: missing === 0, missing, total, withAudio };
+  }, [currentProject]);
 
   // Split preview calculation
   const batches = useMemo(() => {
@@ -41,7 +52,7 @@ export default function VrewBatchExport({ isOpen, onClose }: VrewBatchExportProp
     setIsExporting(true);
     try {
         await exportNativeVrewProject(currentProject, splitSize);
-        alert('🎉 Vrew 실행파일(.vrew) 생성이 완료되었습니다.');
+        alert('🎉 Vrew 실행파일(.vrew) 생성이 완료되었습니다.\n\nVrew에서 파일을 열어 TTS 음성을 생성하세요!');
         onClose();
     } catch (e: any) {
         alert(`Export failed: ${e.message}`);
@@ -53,6 +64,34 @@ export default function VrewBatchExport({ isOpen, onClose }: VrewBatchExportProp
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Vrew 파일 내보내기" size="lg">
       <div className="space-y-6">
+        {/* Audio Status Info */}
+        <div className={`border rounded-xl p-4 ${audioStatus.hasAll ? 'bg-success/10 border-success/30' : 'bg-blue-500/10 border-blue-500/30'}`}>
+          <div className="flex items-start gap-3">
+            <Info className={`w-5 h-5 flex-shrink-0 mt-0.5 ${audioStatus.hasAll ? 'text-success' : 'text-blue-500'}`} />
+            <div>
+              <h4 className={`font-semibold ${audioStatus.hasAll ? 'text-success' : 'text-blue-500'}`}>
+                {audioStatus.hasAll ? '✅ 모든 씬에 TTS 음성이 준비됨' : '💡 TTS 음성은 Vrew에서 생성됩니다'}
+              </h4>
+              <p className="text-sm text-muted mt-1">
+                {audioStatus.hasAll 
+                  ? `총 ${audioStatus.total}개 씬 모두 음성이 포함됩니다.`
+                  : `음성 없는 ${audioStatus.missing}개 씬은 Vrew에서 TTS를 생성할 수 있습니다.`
+                }
+              </p>
+              <div className="mt-2 flex items-center gap-4 text-sm">
+                <span className="text-success flex items-center gap-1">
+                  <Volume2 className="w-4 h-4" /> 음성 있음: {audioStatus.withAudio}개
+                </span>
+                {audioStatus.missing > 0 && (
+                  <span className="text-blue-500 flex items-center gap-1">
+                    <VolumeX className="w-4 h-4" /> 음성 없음: {audioStatus.missing}개
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div>
             <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
                 <Split className="w-4 h-4" /> 분할 단위 선택
